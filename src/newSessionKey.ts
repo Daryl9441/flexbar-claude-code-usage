@@ -7,6 +7,8 @@
  * (new width or settings) and for the brief press feedback; there are no
  * periodic redraws.
  */
+import os from 'node:os';
+
 import {
   CommandRunner,
   TerminalOpener,
@@ -94,6 +96,33 @@ const DEFAULT_TIMINGS: NewSessionTimings = {
   debounceMs: 1_000,
 };
 
+/**
+ * Longest wait for the global settings before a press goes ahead without
+ * them (FlexDesigner's getConfig has no timeout of its own)
+ */
+const CONFIG_WAIT_MS = 1_000;
+
+/** The settings, or null when they fail or take longer than `ms`. */
+function loadConfigBriefly(
+  load: () => Promise<PluginConfig | null | undefined>,
+  ms: number
+): Promise<PluginConfig | null> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+    load().then(
+      config => {
+        clearTimeout(timer);
+        resolve(config ?? null);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}
+
 export type NewSessionKeyDeps = {
   /** Runs a draw after every draw queued before it */
   enqueue: (task: () => Promise<void>) => Promise<void>;
@@ -121,6 +150,8 @@ export type NewSessionKeyDeps = {
   /** Home folder for `~` (defaults to the user's) */
   home?: string;
   timings?: Partial<NewSessionTimings>;
+  /** Longest wait for the global settings on a press (default 1 s) */
+  configWaitMs?: number;
 };
 
 type Feedback = {
@@ -231,11 +262,18 @@ export class NewSessionKeys implements KeyGroup {
     this.showFeedback(id, 'opening', this.timings.openingMs);
     const appName = this.provider.launcher.appName;
     try {
-      const home = this.deps.home;
+      // launchers look for programs under the home folder: always pass one
+      const home = this.deps.home ?? os.homedir();
       const data = (pressed?.data ?? {}) as Record<string, unknown>;
       const settings = newSessionSettings(data, home);
+      const load = this.deps.loadConfig;
       const config =
-        (await this.deps.loadConfig?.().catch(() => null)) ?? undefined;
+        this.provider.launcher.needsConfig && load
+          ? await loadConfigBriefly(
+              load,
+              this.deps.configWaitMs ?? CONFIG_WAIT_MS
+            )
+          : null;
       const request: NewSessionRequest = {
         data,
         rawFolder: settings.folder,
@@ -350,6 +388,18 @@ export class NewSessionKeys implements KeyGroup {
     const view = buildNewSessionView(state, settings, this.strings);
     if (state === 'error' && feedback?.title) {
       view.title = pick(feedback.title, settings.lang);
+    }
+    const subtitle = this.provider.launcher.subtitle;
+    if (subtitle && state !== 'error') {
+      try {
+        view.subtitle = subtitle(
+          (key?.data ?? {}) as Record<string, unknown>,
+          settings.folderName,
+          settings.lang
+        );
+      } catch {
+        // keep the folder name
+      }
     }
     const width = this.deps.keyWidth(key);
     const options = { bgColor: this.deps.bgColor(key), ...this.look };

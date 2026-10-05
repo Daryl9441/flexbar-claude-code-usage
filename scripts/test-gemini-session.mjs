@@ -753,7 +753,7 @@ describe('Gemini session monitor', () => {
     const mon = monitor(path.join(empty, 'missing-home'), { cliInstalled: () => false, probe: async () => assert.fail('no probe without a Gemini home') });
     await mon.rescan();
     assert.equal(mon.getStatus('', Date.now(), 15 * MIN).status, null);
-    assert.deepEqual(mon.notice(), { label: { en: 'No sessions', zh: '无会话' }, text: { en: 'Gemini CLI not found', zh: '未找到 Gemini CLI' } });
+    assert.deepEqual(mon.notice(), { label: { en: 'Not installed', zh: '未安装' }, text: { en: 'Install Gemini CLI', zh: '请先安装 Gemini CLI' } });
     const installed = monitor(path.join(empty, 'missing-home'), { cliInstalled: () => true });
     await installed.rescan();
     assert.equal(installed.notice(), null);
@@ -786,7 +786,7 @@ describe('Gemini session provider contract', () => {
       assert.deepEqual(source.listRunning('', Date.now(), 15 * 60_000), []);
       await source.rescan();
       // geminiPath points nowhere: the CLI counts as missing
-      assert.equal(source.notice().text.en, 'Gemini CLI not found');
+      assert.equal(source.notice().text.en, 'Install Gemini CLI');
     } finally {
       source.stop();
     }
@@ -799,7 +799,7 @@ describe('Gemini session provider contract', () => {
       assert.ok(field in reply, field);
     }
     assert.equal(reply.projectsDir, path.join(CONFIG.geminiDir, 'tmp'));
-    assert.equal(reply.notice.label.en, 'No sessions');
+    assert.equal(reply.notice.label.en, 'Not installed');
 
     const now = Date.now();
     const home = makeHome();
@@ -1008,5 +1008,14 @@ describe('Gemini New Session launcher', () => {
     assert.deepEqual(seen, ['/opt/gemini/bin/gemini']);
     assert.ok(titles.includes('未找到 Gemini CLI'), titles.join(' | '));
     await keys.dead(SERIAL, []);
+  });
+
+  test('a Gemini app key names the app, not the hidden folder', () => {
+    const { subtitle, needsConfig } = NS.newSessionLauncher;
+    assert.equal(needsConfig, true);
+    const data = { target: 'gemini-app', folder: '~/work/demo-app' };
+    assert.equal(subtitle(data, 'demo-app', 'en'), 'Gemini app');
+    assert.equal(subtitle(data, 'demo-app', 'zh'), 'Gemini App');
+    assert.equal(subtitle({ folder: '~/work/demo-app' }, 'demo-app', 'en'), 'demo-app');
   });
 });

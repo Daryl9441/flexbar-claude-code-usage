@@ -5,6 +5,7 @@ import type { KeyMark } from './providers/types';
 import {
   COLORS,
   KEY_HEIGHT,
+  drawBrandEdge,
   drawMark as drawProviderMark,
   ellipsize,
   getClawdImage,
@@ -35,6 +36,11 @@ export type SessionRenderOptions = {
   bgColor?: string;
   /** Provider mark drawn where Clawd goes (ignored while showClawd is on) */
   mark?: KeyMark;
+  /**
+   * The mark's brand colour: a thin right edge names the provider on keys
+   * too narrow for the mark
+   */
+  markColor?: string;
 };
 
 // Provider marks sit in a square this tall, left of the text
@@ -348,6 +354,11 @@ export async function renderSessionKey(
       );
       ctx.globalAlpha = 1;
       x += MARK_SIZE + 10;
+    } else if (options.markColor) {
+      // dimmed like the mark on idle faces
+      ctx.globalAlpha = view.tone === 'idle' ? 0.45 : 1;
+      drawBrandEdge(ctx, keyWidth, options.markColor);
+      ctx.globalAlpha = 1;
     }
   }
   const contentWidth = rightX - x;
@@ -359,9 +370,24 @@ export async function renderSessionKey(
   }
 
   const hasProgress = !!view.progress;
-  drawHeader(ctx, view, x, rightX, hasProgress ? 18 : 23);
+  // notices ("Install Gemini CLI") get the free second line rather than
+  // losing the part that says what to do
+  let lines: string[] | null = null;
+  if (view.wrap && view.text && !hasProgress) {
+    ctx.font = TEXT_FONT;
+    if (textWidth(ctx, view.text) > contentWidth) {
+      lines = wrapLines(ctx, view.text, contentWidth, 2);
+    }
+  }
+  drawHeader(ctx, view, x, rightX, hasProgress || lines ? 18 : 23);
 
-  if (view.text) {
+  if (lines) {
+    ctx.font = TEXT_FONT;
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    lines.forEach((line, i) => ctx.fillText(line, x, 36 + i * 16));
+  } else if (view.text) {
     ctx.font = TEXT_FONT;
     ctx.fillStyle = textColor;
     ctx.textAlign = 'left';
@@ -424,7 +450,7 @@ function drawEmptyList(
 export async function renderSessionList(
   width: number,
   list: ListView,
-  options: { bgColor?: string }
+  options: { bgColor?: string; markColor?: string }
 ): Promise<string> {
   const keyWidth = pixelWidth(width);
   const canvas = createCanvas(keyWidth, KEY_HEIGHT);
@@ -432,6 +458,8 @@ export async function renderSessionList(
 
   ctx.fillStyle = options.bgColor || COLORS.background;
   ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
+  // whose sessions these are: the brand edge (none for Claude)
+  if (options.markColor) drawBrandEdge(ctx, keyWidth, options.markColor);
 
   const pad = keyWidth < 140 ? 7 : 10;
   const left = pad;

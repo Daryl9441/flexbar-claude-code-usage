@@ -108,7 +108,7 @@ function ineligibleError(tiers: IneligibleTier[]): GeminiUsageError {
       'Google asks to verify this account first: run gemini and follow its link',
     region: 'Gemini Code Assist is not available in this region',
     'personal-unsupported':
-      'Google ended Gemini CLI quota for personal Google accounts (Code Assist for individuals, Google AI Pro/Ultra) on 2026-06-18; only Code Assist Standard and Enterprise report quota',
+      'Google reports no Gemini CLI quota for this personal Google account (Code Assist for individuals, Google AI Pro/Ultra); only Gemini Code Assist Standard and Enterprise report quota',
     'not-eligible':
       'This Google account is not eligible for Gemini Code Assist',
   };

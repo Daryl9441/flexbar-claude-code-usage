@@ -138,7 +138,9 @@ export default {
                     filter: this.modelValue.data.projectFilter || "",
                     settings: this.modelValue.data,
                 });
-                const lang = this.modelValue.data.lang === "zh" ? "zh" : "en";
+                // this page's language, not the key's
+                const locale = String(this.$i18n.locale || "");
+                const lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
                 if (response && response.success) {
                     this.statusText = this.$t("KimiSession.UI.found", {
                         project: response.project || "?",

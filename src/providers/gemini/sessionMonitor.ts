@@ -27,6 +27,7 @@ import {
   sortRunning,
 } from '../../session';
 import { langOf } from '../../sessionView';
+import { unavailableNotice } from '../kit';
 import {
   KeyData,
   Localized,
@@ -36,6 +37,7 @@ import {
   SessionSource,
 } from '../types';
 
+import { GEMINI_BRAND } from './brand';
 import {
   GeminiFacts,
   GeminiTranscript,
@@ -85,10 +87,11 @@ const WATCHED_ENTRIES = new Set(['chats', '.project_root']);
 
 const NEW_SESSION: Localized = { en: 'New session', zh: '新会话' };
 
-const CLI_NOT_FOUND: SessionNotice = {
-  label: { en: 'No sessions', zh: '无会话' },
-  text: { en: 'Gemini CLI not found', zh: '未找到 Gemini CLI' },
-};
+/** "Not installed · Install Gemini CLI", like the Kimi and usage keys */
+const CLI_NOT_FOUND: SessionNotice = unavailableNotice(
+  'not-installed',
+  GEMINI_BRAND
+);
 
 /**
  * A project filter or folder in one comparable spelling: lower case, runs

@@ -730,6 +730,27 @@ describe('refreshing the Kimi Code login', () => {
     assert.equal(fetch.posts().length, 1);
   });
 
+  test('a login the server keeps refusing is refreshed once, not on every poll', async () => {
+    const t = tree();
+    const old = login(t.code);
+    const fetch = stubFetch({
+      '/api/oauth/token': () => json(grant()),
+      '/usages': () => json({}, 401),
+    });
+    for (let i = 0; i < 3; i++) {
+      const e = await U.fetchKimiUsage(t.config, deps(fetch)).catch(x => x);
+      expectError('unauthorized', [old.access, old.refresh])(e);
+      assert.deepEqual(keyText(e), { title: 'Login expired', message: 'Run kimi login' });
+    }
+    assert.equal(fetch.posts().length, 1, 'one refresh-token rotation');
+    assert.equal(fetch.gets().length, 4, 'two for the first poll, one each after');
+    // a new login (another token in the file) gets its forced refresh again
+    const next = login(t.code);
+    const e = await U.fetchKimiUsage(t.config, deps(fetch)).catch(x => x);
+    expectError('unauthorized', [next.access, next.refresh])(e);
+    assert.equal(fetch.posts().length, 2);
+  });
+
   test('a 401 with refreshing turned off asks to run kimi', async () => {
     const t = tree();
     login(t.code);

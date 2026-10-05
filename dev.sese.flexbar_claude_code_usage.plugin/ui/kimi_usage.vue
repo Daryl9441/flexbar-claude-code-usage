@@ -80,6 +80,8 @@ const ERROR_KEYS = {
     unsupported: "errorUnsupported",
     "rate-limited": "errorRateLimited",
     network: "errorNetwork",
+    http: "errorHttp",
+    parse: "errorParse",
 };
 
 export default {

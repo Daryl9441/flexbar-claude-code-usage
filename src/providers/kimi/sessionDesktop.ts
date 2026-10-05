@@ -36,7 +36,7 @@ import {
   timeOf,
 } from './sessionFs';
 import { WireFile } from './sessionTail';
-import { decay, deriveWireStatus } from './sessionWire';
+import { decay, deriveWireStatus, turnEndAt } from './sessionWire';
 
 /** The daemon writes its heartbeat every 60 s */
 const HEARTBEAT_FRESH_MS = 3 * 60_000;
@@ -557,13 +557,14 @@ export class DesktopSessions {
       const kernel = this.kernelByKey.get(key);
       const wire = this.wires.get(key);
       const status = this.statuses.value.get(key);
+      // not the journal's mtime: reopening a task appends configuration
+      // records, which says nothing about when it last worked
       const times = [
         row?.updatedAt,
         kernel?.updatedAt,
         this.context.value.get(key),
         this.statusChangedAt.get(key),
         wire?.acc.lastActivity,
-        wire?.mtimeMs,
         runner?.activeTurns.get(key),
       ].filter((t): t is number => typeof t === 'number' && t > 0);
       const project = projectName(this.projects.value.get(key));
@@ -665,8 +666,11 @@ export class DesktopSessions {
         });
       }
     } else if (c.status === 'completed') {
+      // finished when its turn ended, however recently the task was touched
+      const ended = wire ? turnEndAt(wire.acc) : null;
       status = makeStatus({
         ...base,
+        ...(ended ? { lastActivity: ended, since: ended } : {}),
         state: 'done',
         hasQuestion: journal?.state === 'done' && journal.hasQuestion,
         question: journal?.state === 'done' ? journal.question : null,

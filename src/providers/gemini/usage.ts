@@ -9,9 +9,9 @@
  * reads the quota (retrieveUserQuota, ./usageApi.ts). Buckets become
  * metrics in ./usageMetrics.ts.
  *
- * Only Code Assist Standard/Enterprise licences report quota: Google ended
- * Gemini CLI for personal accounts on 2026-06-18, and API-key or Vertex AI
- * logins have no quota endpoint. Those get a clear short key text
+ * Only Code Assist Standard/Enterprise licences report quota: Google
+ * answers personal accounts as ineligible (UNSUPPORTED_CLIENT and the like),
+ * and API-key or Vertex AI logins have no quota endpoint. Those get a clear short key text
  * (./usageText.ts) without repeated requests.
  */
 import os from 'node:os';
@@ -326,6 +326,9 @@ export function createGeminiUsageSource(
     minFetchGapMs: MIN_FETCH_GAP_MS,
     fetch: fetchOnce,
     logText: error => geminiErrorText(error),
+    // model names stay as Google writes them; the pooled limit is "Auto"
+    metricLabel: (metric, lang) =>
+      lang === 'zh' && metric.id === 'pooled' ? '自动' : metric.label,
     keepLastOnError(error) {
       if (!(error instanceof ProviderError)) return false;
       const transient =
@@ -350,6 +353,7 @@ export function createGeminiUsageSource(
           success: false,
           error: geminiErrorText(error),
           problem: error instanceof GeminiUsageError ? error.problem : null,
+          code: error instanceof ProviderError ? error.code : null,
         };
       }
     },

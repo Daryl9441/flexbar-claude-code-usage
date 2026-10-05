@@ -45,8 +45,13 @@ export type CliCandidate = {
   id: string;
   /** wd_<slug>_<hash> */
   wd: string;
-  /** Newest write to state.json or the main journal */
+  /**
+   * Newest write to state.json or the main journal. Reopening a session
+   * moves it too, so it only decides what is followed, never the order.
+   */
   mtimeMs: number;
+  /** state.json's mtime (for sessions without an updatedAt field) */
+  stateMtimeMs: number | null;
   meta: JsonFile<CliMeta | null>;
 };
 
@@ -148,6 +153,7 @@ export class CliSessions {
       id: id ?? path.basename(dir),
       wd: wd ?? path.basename(path.dirname(dir)),
       mtimeMs: 0,
+      stateMtimeMs: null,
       meta: new JsonFile<CliMeta | null>(
         path.join(dir, 'state.json'),
         null,
@@ -155,6 +161,7 @@ export class CliSessions {
       ),
     };
     c.mtimeMs = Math.max(state ?? 0, wire ?? 0);
+    c.stateMtimeMs = state;
     this.candidates.set(dir, c);
     if (!prev) await c.meta.sync();
   }
@@ -251,6 +258,18 @@ export class CliSessions {
   /** Whether the journal of this session is followed. */
   isHot(c: CliCandidate): boolean {
     return this.wires.has(c.dir);
+  }
+
+  /**
+   * When a session last did something, for ordering: state.json's updatedAt
+   * (its mtime without one) and, while its journal is followed, the newest
+   * turn record. Not the journal's mtime: reopening a session appends
+   * configuration records without any turn.
+   */
+  activityAt(c: CliCandidate): number {
+    const stored = c.meta.value?.updatedAt ?? c.stateMtimeMs ?? 0;
+    const turn = this.wires.get(c.dir)?.acc.lastActivity ?? 0;
+    return Math.max(stored, turn) || c.mtimeMs;
   }
 
   /** The status of one session at `now`. */

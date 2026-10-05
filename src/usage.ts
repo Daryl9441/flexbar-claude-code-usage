@@ -68,18 +68,41 @@ export function getMetricSnapshot(
   return null;
 }
 
-/** Formats the remaining time until a reset as a compact "3h 12m" string. */
-export function formatTimeUntilReset(resetsAt: string | null): string {
+/**
+ * Formats the remaining time until a reset as a compact "3h 12m" string
+ * ("3小时12分" in Chinese); '' without a time, "now" ("现在") once past.
+ */
+export function formatTimeUntilReset(
+  resetsAt: string | null,
+  lang: 'en' | 'zh' = 'en'
+): string {
   if (!resetsAt) return '';
   const remaining = new Date(resetsAt).getTime() - Date.now();
-  if (Number.isNaN(remaining) || remaining <= 0) return 'now';
+  if (Number.isNaN(remaining) || remaining <= 0) {
+    return lang === 'zh' ? RESET_NOW_ZH : 'now';
+  }
 
   const minutes = Math.ceil(remaining / 60_000);
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const mins = minutes % 60;
 
+  if (lang === 'zh') {
+    if (days > 0) return `${days}天${hours}小时`;
+    if (hours > 0) return `${hours}小时${mins}分`;
+    return `${mins}分钟`;
+  }
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
+}
+
+/** formatTimeUntilReset's Chinese "now" */
+export const RESET_NOW_ZH = '现在';
+
+/** "Resets 2h 15m" / "2小时15分钟后重置" from a formatTimeUntilReset text. */
+export function resetsText(time: string, lang: 'en' | 'zh' = 'en'): string {
+  if (!time) return '';
+  if (lang !== 'zh') return `Resets ${time}`;
+  return time === RESET_NOW_ZH ? '即将重置' : `${time}后重置`;
 }

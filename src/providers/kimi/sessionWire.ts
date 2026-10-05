@@ -45,18 +45,25 @@ export type WireAcc = {
   durable: boolean;
   /** Saw a prompt or a loop step: the tail holds part of a turn */
   sawTurn: boolean;
+  /** Saw where the newest turn starts or ends (turn.prompt, turn.ended) */
+  sawPrompt: boolean;
   turnStartedAt: number | null;
   ended: { reason: string; error: string | null; at: number | null } | null;
   cancelledAt: number | null;
   /** finishReason of the newest step.end of the turn */
   lastFinish: string | null;
+  /** Time of the newest step.end of the turn */
+  lastStepEndAt: number | null;
   tools: Map<string, OpenTool>;
   interactions: Map<string, OpenInteraction>;
   /** Text of the newest step (the final answer once the turn ends) */
   responseText: string;
   permissionMode: string | null;
   planMode: boolean;
+  /** Newest turn record (prompt, loop event, interaction, usage, end) */
   lastActivity: number | null;
+  /** Newest record of any kind, configuration included */
+  lastRecordAt: number | null;
 };
 
 export function createWireAcc(): WireAcc {
@@ -64,16 +71,19 @@ export function createWireAcc(): WireAcc {
     protocol: null,
     durable: false,
     sawTurn: false,
+    sawPrompt: false,
     turnStartedAt: null,
     ended: null,
     cancelledAt: null,
     lastFinish: null,
+    lastStepEndAt: null,
     tools: new Map(),
     interactions: new Map(),
     responseText: '',
     permissionMode: null,
     planMode: false,
     lastActivity: null,
+    lastRecordAt: null,
   };
 }
 
@@ -150,12 +160,57 @@ export function protocolOf(value: unknown): number | null {
 /** Wire 1.5 (Kimi Code 2.x) records approvals and turn ends. */
 const DURABLE_PROTOCOL = 1005;
 
+/** An older journal (no approval or turn-end records): states are guessed. */
+export function isLegacyWire(acc: WireAcc): boolean {
+  return (
+    !acc.durable && (acc.protocol === null || acc.protocol < DURABLE_PROTOCOL)
+  );
+}
+
+/**
+ * Whether a record is part of a turn. Reopening a session appends
+ * configuration and tool lists (config.update, mcp.tools_discovered,
+ * tools.*, llm.tools_snapshot, permission.set_mode) without any turn; those
+ * must not make a long-finished task look recent.
+ */
+function isTurnRecord(type: unknown): boolean {
+  if (typeof type !== 'string') return false;
+  return (
+    type === 'context.append_loop_event' ||
+    type === 'usage.record' ||
+    type.startsWith('turn.') ||
+    type.startsWith('interaction.') ||
+    type.startsWith('subagent.')
+  );
+}
+
+/**
+ * When the newest turn ended (its turn.ended, else the step.end that closed
+ * it in an older journal), or null while it runs or when the tail has none.
+ */
+export function turnEndAt(acc: WireAcc): number | null {
+  if (acc.ended) return acc.ended.at;
+  const finish = acc.lastFinish;
+  if (
+    acc.cancelledAt === null &&
+    acc.tools.size === 0 &&
+    finish !== null &&
+    finish !== 'tool_use' &&
+    finish !== 'unknown'
+  ) {
+    return acc.lastStepEndAt;
+  }
+  return acc.cancelledAt || null;
+}
+
 function startTurn(acc: WireAcc, at: number | null) {
   acc.sawTurn = true;
+  acc.sawPrompt = true;
   acc.turnStartedAt = at ?? acc.turnStartedAt;
   acc.ended = null;
   acc.cancelledAt = null;
   acc.lastFinish = null;
+  acc.lastStepEndAt = null;
   acc.tools.clear();
   acc.interactions.clear();
   acc.responseText = '';
@@ -192,6 +247,7 @@ function observeLoopEvent(acc: WireAcc, event: Obj, at: number | null) {
     }
     case 'step.end':
       acc.lastFinish = str(event.finishReason) ?? 'unknown';
+      acc.lastStepEndAt = at ?? acc.lastStepEndAt;
       break;
   }
 }
@@ -201,7 +257,14 @@ export function observeWireRecord(acc: WireAcc, record: unknown): void {
   if (!isObj(record)) return;
   const event = isObj(record.event) ? record.event : null;
   const at = timeOf(record.time) ?? (event ? timeOf(event.time) : null);
-  if (at !== null && (acc.lastActivity === null || at > acc.lastActivity)) {
+  if (at !== null && (acc.lastRecordAt === null || at > acc.lastRecordAt)) {
+    acc.lastRecordAt = at;
+  }
+  if (
+    at !== null &&
+    isTurnRecord(record.type) &&
+    (acc.lastActivity === null || at > acc.lastActivity)
+  ) {
     acc.lastActivity = at;
   }
   switch (record.type) {
@@ -220,6 +283,7 @@ export function observeWireRecord(acc: WireAcc, record: unknown): void {
     case 'turn.ended': {
       acc.durable = true;
       acc.sawTurn = true;
+      acc.sawPrompt = true;
       const error = isObj(record.error) ? str(record.error.message) : null;
       acc.ended = {
         reason: str(record.reason) ?? 'completed',
@@ -303,7 +367,7 @@ export type WireDeriveOptions = {
   now: number;
   /** done / stopped / error turn into idle after this long */
   idleMs: number;
-  /** Fallback activity time (the journal's mtime) */
+  /** Fallback activity time for a journal without record times (its mtime) */
   mtimeMs?: number | null;
   permissionDelayMs?: number;
 };
@@ -314,7 +378,11 @@ export function deriveWireStatus(
   options: WireDeriveOptions
 ): SessionStatus {
   const { now, idleMs } = options;
-  const lastActivity = acc.lastActivity ?? options.mtimeMs ?? null;
+  // the mtime also moves when a session is merely reopened: only for
+  // journals whose records carry no time at all
+  const lastActivity =
+    acc.lastActivity ??
+    (acc.lastRecordAt === null ? (options.mtimeMs ?? null) : null);
   const tools = [...acc.tools.values()];
   const newestTool = tools[tools.length - 1];
   const status = makeStatus({
@@ -394,9 +462,7 @@ export function deriveWireStatus(
     const stalled = tools
       .filter(t => !NEVER_ASKS.has(t.name) && t.at !== null)
       .sort((a, b) => (a.at as number) - (b.at as number))[0];
-    const legacy =
-      !acc.durable &&
-      (acc.protocol === null || acc.protocol < DURABLE_PROTOCOL);
+    const legacy = isLegacyWire(acc);
     if (
       legacy &&
       acc.permissionMode === 'manual' &&

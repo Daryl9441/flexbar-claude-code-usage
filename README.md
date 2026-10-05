@@ -1,10 +1,12 @@
-# Claude Code Usage for Flexbar
+# AI Coding Usage for Flexbar
 
 Display your [Claude Code](https://claude.com/claude-code) usage limits live on your [Flexbar](https://eniacelec.com/products/flexbar) — like a [clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter), but on the macro bar you already own.
 
 Each key shows one usage limit as a meter: the current percentage, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
 
-The same three key types (usage meter, Session Status, New Session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work) and [Gemini](#gemini-keys) (Gemini CLI). They appear in FlexDesigner's key library under "AI Coding Usage", nine keys in all.
+The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work) and [Gemini](#gemini-keys) (Gemini CLI). They appear in FlexDesigner's key library under "AI Coding Usage", nine keys in all.
+
+The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
 
 ![Session meter](docs/media/render-v4-session.png)
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
@@ -20,9 +22,9 @@ The same three key types (usage meter, Session Status, New Session) also exist f
 - Respects a custom key background color set in FlexDesigner
 - Optional Clawd mascot, using the official pixel-art artwork
 
-## Session Status key
+## Claude Sessions key (Session Status)
 
-A second key shows what your latest Claude Code session is doing, so you can see at a glance whether Claude is still working, has finished, or is waiting for you:
+A second key, **Claude Sessions**, shows what your latest Claude Code session is doing, so you can see at a glance whether Claude is still working, has finished, or is waiting for you:
 
 | Status | Meaning |
 | --- | --- |
@@ -62,9 +64,9 @@ The key reads the session transcripts Claude Code writes to `~/.claude/projects`
 
 If your Claude Code data is not in `~/.claude`, set the folder in the plugin settings.
 
-## New Session key
+## Claude New Session key
 
-A third key opens a new Claude Code session in the Claude desktop app with one tap — the same page as the app's own "New Claude Code Session" Dock menu item. It uses the app's `claude://code/new` link, so the [Claude desktop app](https://claude.com/download) must be installed.
+A third key, **Claude New Session**, opens a new Claude Code session in the Claude desktop app with one tap — the same page as the app's own "New Claude Code Session" Dock menu item. It uses the app's `claude://code/new` link, so the [Claude desktop app](https://claude.com/download) must be installed.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -90,7 +92,7 @@ The **Kimi Work context** limit needs no login: it is how full the context windo
 
 When the Kimi Code login has expired, the key refreshes it with the CLI's own protocol: it takes the CLI's refresh lock, refreshes once and writes the new token pair back to the CLI's credential file. Turn off **Refresh an expired Kimi Code login** in the plugin settings to keep the key read-only; it then asks you to run `kimi` instead.
 
-**Kimi Sessions** works like the Claude Session Status key (same states, `+N`, press for the running list). It merges Kimi Code CLI sessions (`~/.kimi-code/sessions`) with the desktop app's Kimi Work tasks. Questions and approvals from Kimi Code 1.5 journals are known, not guessed; a sub-agent waiting for you shows on its parent session. Unread Kimi Work results stay "Done" for up to 12 hours; archived tasks are hidden.
+**Kimi Sessions** works like the Claude Sessions key (same states, `+N`, press for the running list). It merges Kimi Code CLI sessions (`~/.kimi-code/sessions`) with the desktop app's Kimi Work tasks. Questions and approvals from Kimi Code 1.5 journals are known, not guessed; a sub-agent waiting for you shows on its parent session. Unread Kimi Work results stay "Done" for up to 12 hours; archived tasks are hidden.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -100,7 +102,7 @@ When the Kimi Code login has expired, the key refreshes it with the CLI's own pr
 | Idle after | 15 min | When a finished session counts as idle |
 | Key text language, Show project name, Show Kimi mark | | As on the Claude key |
 
-**Kimi New Session** opens Kimi Code in a terminal window, or Kimi Work in the Kimi app (`kimi-work://open`, which takes no folder).
+**Kimi New Session** opens Kimi Code in a terminal window, or Kimi Work in the Kimi app (`kimi-work://open`, which takes no folder; the key then shows "Kimi Work" instead of a folder name).
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -108,6 +110,8 @@ When the Kimi Code login has expired, the key refreshes it with the CLI's own pr
 | Kimi Code mode | New session | New session, continue the last session (`--continue`), or plan mode (`--plan`) |
 | Project folder | empty | Where Kimi Code starts (empty: your home folder) |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
+
+A failed tap says why on the key: "Folder not found", "Kimi app not found" or "Kimi not found" ("Cannot open Kimi" when Kimi was found but would not open). With **Open in** set to Kimi Code, a `kimi` the key cannot find in the usual install folders is still started from the terminal's `PATH` (e.g. under nvm); the terminal says so if it is not there.
 
 Requirements: the Kimi Code CLI logged in (`kimi login`) with a Kimi Code plan for plan limits, and/or the Kimi desktop app for Kimi Work. The legacy Python `kimi-cli` (`~/.kimi`) is not read.
 
@@ -124,20 +128,20 @@ Three keys show Google's [Gemini CLI](https://github.com/google-gemini/gemini-cl
 | Show time until reset | on | Show the countdown until the quota resets |
 | Show Gemini mark | on | Show the Gemini mark next to the meter |
 
-Only Gemini CLI's "Login with Google" on a **Gemini Code Assist Standard or Enterprise** subscription reports quota. Google reports none for personal Google accounts (Code Assist for individuals, Google AI Pro and Ultra), API-key logins or Vertex AI; the key then says so ("Not supported", "No quota") instead of a meter. If your organization's account needs a Google Cloud project, enter it as **Gemini Cloud project** in the plugin settings (or set `GOOGLE_CLOUD_PROJECT`). A short network or server error keeps the last meter for up to 30 minutes.
+Only Gemini CLI's "Login with Google" on a **Gemini Code Assist Standard or Enterprise** subscription reports quota. For personal Google accounts (Code Assist for individuals, Google AI Pro and Ultra) Google answers that the account is not eligible, and API-key logins or Vertex AI have no quota endpoint; the key then says so ("Not supported", "No quota") instead of a meter. If your organization's account needs a Google Cloud project, enter it as **Gemini Cloud project** in the plugin settings (or set `GOOGLE_CLOUD_PROJECT`). A short network or server error keeps the last meter for up to 30 minutes.
 
-**Gemini Sessions** works like the Claude Session Status key. It reads the session files Gemini CLI writes to `~/.gemini/tmp/<project>/chats/` (both the JSON and the newer JSONL format) and names projects by their folder. With **Follow running Gemini CLIs** on (the default), it also reads the process list every 10 seconds (`ps` and `lsof` on macOS, `/proc` on Linux; not on Windows) to tell running sessions from stopped ones, to see tools running, and to show a freshly started CLI as "New session". Gemini CLI does not record pending approvals, so **Approval?** is a guess (a reply with no text and no tool running for 10 seconds).
+**Gemini Sessions** works like the Claude Sessions key. It reads the session files Gemini CLI writes to `~/.gemini/tmp/<project>/chats/` (both the JSON and the newer JSONL format) and names projects by their folder. With **Follow running Gemini CLIs** on (the default), it also reads the process list every 10 seconds (`ps` and `lsof` on macOS, `/proc` on Linux; not on Windows) to tell running sessions from stopped ones, to see tools running, and to show a freshly started CLI as "New session". Gemini CLI does not record pending approvals, so **Approval?** is a guess (a reply with no text and no tool running for 10 seconds). It rarely fires: Gemini CLI writes a reply, and its tool calls, only once the tools have finished, and such replies nearly always have text. So while a tool waits for your approval, or an `ask_user` question waits for your answer, the key usually still shows the previous reply as **Done** until the tool finishes.
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Follow running Gemini CLIs | on | Read the process list; off judges from the session files only |
 | Project filter, Idle after, Key text language, Show project name, Show Gemini mark | | As on the Claude key |
 
-**Gemini New Session** opens a terminal window running the Gemini CLI in the key's folder: on macOS a temporary `.command` script (it deletes itself) opened in Terminal, on Windows a `cmd` window, on Linux `x-terminal-emulator`. Every argument is passed as-is, never through a shell string.
+**Gemini New Session** opens a terminal window running the Gemini CLI in the key's folder: on macOS a temporary `.command` script (it deletes itself; one Terminal never ran is removed a minute later) opened in Terminal, on Windows a `cmd` window, on Linux `x-terminal-emulator`. Every argument is passed as-is, never through a shell string. On Windows a program path with a character `cmd.exe` would act on (`& | < > ^ % ! ( ) "`) is refused rather than run. Kimi New Session opens Kimi Code the same way.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Open in | Terminal (Gemini CLI) | Or a new chat in the Gemini app (`googlegemini://newchat`; no folder, not a CLI session) |
+| Open in | Terminal (Gemini CLI) | Or a new chat in the Gemini app (`googlegemini://newchat`; no folder, not a CLI session; the key shows "Gemini app" instead of a folder name) |
 | Approval mode | Ask (default) | Ask, auto-approve edits, approve everything (YOLO), or plan (read-only) |
 | Resume latest session | off | Start with `--resume latest` |
 | Project folder | empty | Where the CLI starts (empty: your home folder) |
@@ -164,9 +168,9 @@ Requirements:
 
 - The plugin reads your Claude Code credentials locally (`~/.claude/.credentials.json`, `CLAUDE_CODE_OAUTH_TOKEN`, or the macOS Keychain) and sends them only to Anthropic's own endpoints: the usage endpoint on `api.anthropic.com`, and the OAuth token endpoint (`platform.claude.com`, falling back to `console.anthropic.com`) when it refreshes an expired token.
 - Tokens are never logged or shown on a key; error messages are redacted before they reach the FlexDesigner log or the settings page. A refreshed token pair is written back only to the credential store it came from.
-- The Session Status key reads transcripts and session status locally and sends nothing anywhere.
-- The New Session key only hands a `claude://` link to your system's opener and sends nothing anywhere; its log messages leave out the project folder.
-- Kimi Usage sends the Kimi Code login only to Kimi's own endpoints (the quota endpoint and, when refreshing, `auth.kimi.com` / `auth.kimi.ai`). With login refresh on, it rewrites the Kimi Code CLI's credential file under the CLI's own lock; with it off, it writes nothing. The Kimi desktop app's credentials are never read.
+- The Claude Sessions key reads transcripts and session status locally and sends nothing anywhere.
+- The Claude New Session key only hands a `claude://` link to your system's opener and sends nothing anywhere; its log messages leave out the project folder.
+- Kimi Usage sends the Kimi Code login only to the endpoints the Kimi Code CLI itself uses (by default `api.kimi.com` / `auth.kimi.com`, or `api.kimi.ai` / `auth.kimi.ai`; overridden, like the CLI, by its `config.toml` or `KIMI_CODE_BASE_URL` / `KIMI_CODE_OAUTH_HOST`), and only over https. When the quota endpoint keeps refusing a freshly refreshed login, it does not refresh again until another login is stored. With login refresh on, it rewrites the Kimi Code CLI's credential file under the CLI's own lock; with it off, it writes nothing. The Kimi desktop app's credentials are never read.
 - Gemini Usage sends the Gemini CLI login only to Google (`oauth2.googleapis.com` to refresh the access token in memory, `cloudcode-pa.googleapis.com` for the quota) and never writes to `~/.gemini`.
 - The Kimi and Gemini Sessions keys only read local files (and, for Gemini, the process list); they write nothing and send nothing anywhere. Session titles and prompts never reach the log.
 - No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
@@ -177,13 +181,13 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 
 ## Configuration
 
-**Global settings** (plugin config page):
+**Global settings** (plugin config page; the refresh interval applies to every provider, the rest is grouped by provider):
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Credentials file | auto-detect | Override path to `.credentials.json` (useful with `CLAUDE_CONFIG_DIR`) |
 | Refresh interval | 180 s | How often usage is polled, for every provider (minimum 60 s) |
-| Claude Code folder | auto-detect | Override `~/.claude` for Session Status keys |
+| Credentials file | auto-detect | Override path to `.credentials.json` (useful with `CLAUDE_CONFIG_DIR`) |
+| Claude Code folder | auto-detect | Override `~/.claude` for Claude Sessions keys |
 | Kimi Code folder | auto-detect | Override `$KIMI_CODE_HOME` or `~/.kimi-code` (login, sessions, `bin/kimi`) |
 | Kimi desktop app data folder | auto-detect | Override the Kimi app's data folder (`~/Library/Application Support/kimi-desktop` on macOS) |
 | Refresh an expired Kimi Code login | on | Let Kimi Usage refresh and write back an expired Kimi Code login; off keeps it read-only |

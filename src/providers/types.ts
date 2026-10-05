@@ -137,6 +137,8 @@ export interface UsageSource {
   missingText?(metricId: string, lang: Lang): KeyText | null;
   /** Error text for the log and the settings UI (default: safeErrorMessage) */
   logText?(error: unknown): string;
+  /** Chip text of a metric in a key language (default: metric.label) */
+  metricLabel?(metric: UsageMetric, lang: Lang): string;
   /**
    * Seconds to stop fetching after this error (a rate limit), or null to
    * retry at the next poll (default: ProviderError 'rate-limited' → its
@@ -166,8 +168,15 @@ export type SessionPick = {
   others: number;
 };
 
-/** Shown on the key instead of "No sessions" when the provider is unavailable. */
-export type SessionNotice = { label: Localized; text: Localized };
+/**
+ * Shown on the key instead of "No sessions" when the provider is unavailable.
+ * `tone` colours the label and edge (default 'idle', grey).
+ */
+export type SessionNotice = {
+  label: Localized;
+  text: Localized;
+  tone?: 'idle' | 'error';
+};
 
 export type SessionSourceOptions = {
   /** provider.location(config), resolved once per source */
@@ -222,6 +231,11 @@ export interface SessionSource {
    * `data` is the settings of the key asking (key.data).
    */
   notice?(data?: KeyData): SessionNotice | null;
+  /**
+   * The product a key with these settings follows, named on its "Loading…"
+   * and "No sessions · Start …" faces (default: the brand's productName).
+   */
+  productName?(data?: KeyData): string;
 }
 
 /** Reply to the settings UI ('session-status'). */
@@ -244,6 +258,8 @@ export interface SessionProvider {
   location(config: PluginConfig): string;
   /** A new source; nothing may run before start(). */
   create(options: SessionSourceOptions): SessionSource;
+  /** What the log names as watched for a location (default: the location) */
+  watched?(location: string): string;
   /**
    * What a key with this filter would show now (one-off scan). `data` is
    * the key's settings when its page sends them (`settings` in the message).
@@ -292,6 +308,22 @@ export interface NewSessionLauncher {
    * "Opening…" and "<name> not available".
    */
   strings?: Partial<Record<NewSessionState, Localized>>;
+  /**
+   * True when target() reads request.config: a press then loads the global
+   * settings first (briefly; {} when they do not come). Claude's launcher
+   * needs none, so its press never waits for them.
+   */
+  needsConfig?: boolean;
+  /**
+   * The line under the title (ready and opening faces) for a key with these
+   * settings; default: the folder setting's last segment. Return null for
+   * none, e.g. for a target that takes no folder.
+   */
+  subtitle?(
+    data: Record<string, unknown>,
+    folderName: string | null,
+    lang: Lang
+  ): string | null;
   /**
    * The target for a press; throw when it cannot open. A ProviderError with
    * `extra.keyText` shows that title on the error face instead of the

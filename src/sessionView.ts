@@ -37,6 +37,11 @@ export type SessionView = {
   progress: { completed: number; total: number } | null;
   /** Other sessions working or needing the user */
   others: number;
+  /**
+   * A notice or "No sessions" face: text too long for one line wraps onto
+   * the second (there is no progress bar to make room for)
+   */
+  wrap?: boolean;
 };
 
 const STRINGS = {
@@ -148,6 +153,7 @@ export function buildSessionView(
       project: null,
       progress: null,
       others: 0,
+      wrap: true,
     };
   }
 
@@ -221,17 +227,18 @@ export function buildSessionView(
 
 /** A provider notice ("Not installed", …) in the session view's shape. */
 export function buildNoticeView(
-  notice: { label: Localized; text: Localized },
+  notice: { label: Localized; text: Localized; tone?: 'idle' | 'error' },
   lang: Lang
 ): SessionView {
   return {
-    tone: 'idle',
+    tone: notice.tone === 'error' ? 'error' : 'idle',
     label: notice.label[lang],
     text: notice.text[lang],
     time: '',
     project: null,
     progress: null,
     others: 0,
+    wrap: true,
   };
 }
 

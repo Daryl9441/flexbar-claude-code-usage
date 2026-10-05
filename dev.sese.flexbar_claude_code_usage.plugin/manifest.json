@@ -121,7 +121,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-gauge",
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAARzSURBVGiB7ZldbFNlGMd/zzkbzK496IbtxumAbH4RN41bghMVBjdKQgKXqCiGgBBCApMxvSKEO4NmLEYTrhC8QPmICahoYtQsDKaQsYHLRNELxrauYVPZujVbT18vYLVlH+3a03Ym/JIm533f57z//9P3POcjrzAFpsezBo1nBSq58yuaKjYtCL1Aq0JasdTP3X19X04edg8L3e7SsC6fAssyYjRxzmuWev2G3/9ndKcW3fAWezaHdWmfheYBloV1aS9Z4NkU3amPH5jF7m2CHALmZMVeYswB1rpc+X2DQ4FLjF9CJW53mbrzz+dn22GCBMRST3f5/X9ogKZ0Ofo/Mg+Qjy5HAE1Mj6daNC5k21EyqDDPaWhUZ1pYip9HW/MV+qsdaC8enOxmmBga1ZpAjd0G4yFP7UDcVZBXiDy6HnFXJjeRolpTZGYFDMOIHMvDVTFjsnB1UnOKUK3PczkPpGquvKKC0tIyTK+X/lu3CIVCMeOmafLF6TMYhsFPLS3InHmIZ+ndUUX4+y0QCiQj/WBOquZX1NRw+MjRSPvUyZPs2f12jPnPTpzENE127qoFoLHxPaS3GYxFqK7vYMSftH7KCdxLOGxFjr1eL8eOn8A0zUjfzl21XLp4keZzP0B36npaAjFJYZrmBPMAjQcbaD53zjadtCQQfdlE03iwgcaGBlu1bE/A4cjPmHnSUQMrV63E4Yh9K0mXedK1AvcyNjZmt0yEtBVxNHV76tm3fz8iSb4yTEPaEvD19sa039j4Jlu3bbNdx/YErl//nX1797KqZgUXLpyPGavdXccTS5bYqmd7ApdbWzl65BOCwSAbN2zg22/ORsZyc3P58KOPyc3NtU0vrTUQCoXYsX07v3Z2RvrKysqoq6+3TSPtRWxZFu++E2t485a3qKyqmvKcmZByArf/uR3THhkZmRBzpb2dE8c/j7RFhLXr1qUqfWcub7FHpTpJeUUFznwnCkV7WxvBYHBCjGEYNDWfp+3yZT54/wBXr1xJVRbsSiBRHioo4K+BAVvnzMiDbBy7zZPpBNLB/QSyzf0Ess39BLJN3E/KQmMum17yssQ7F1fezD9IhoKK33wWZ9vHGAwm9sy0LIvhkRH6+wewLGva2LgrsGV1CUsfyUvKPIAzT6hcnMOaZxLfN9F1HZfTyfzCwrixcRN4ssSeDZvHi2d+tTocD8SN0RT0Jekp6yjo0wRpmy6oo2vUFrFrveEZnzM8PPHVPBpB2nTD6ShH5IWpgjq7ArgLHBgOnbk5yRXxLzctvm4bYzSUwAl3izgwPEx//wBKTVP4Sp2SkgWe9UpxbMbOZgEivKKNWpwBrmbbTBJ0WOinBcDr8VSgcWmW7xFHM6opqbzh83XoALcDAb/L5RwSeDnbzhJBQd1NX98ZonfqB4cCLS5Xvk+Qmlm8En8rpbZ2+/yHxjsm3FYWFxUtDok6TBZ2L+Pwo+RYr3V13eqJ7pzyvmia8x+TsL4cZDmo5cCijNj8jxtAE9AUFr2pp6fn2mRB/wJfMVN0u5GGngAAAABJRU5ErkJggg==",
                     "width": 240
                 },
                 "data": {
@@ -144,7 +144,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-progress-question",
+                    "icon": "data:image/png;base64,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",
                     "width": 240
                 },
                 "data": {
@@ -170,7 +170,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-plus-circle-outline",
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAV1SURBVGiB1ZlrbFRFFMd/c3cLLdtuKZa9lAItFFBT0YAJFjCIoGl5GJEYg8FHShEwIZQNRo2RFvwExEjFgEiCQA0JxloISvCDQVIjEiwV0ApNsAqlj91SXvtwd9u91w9rH7d3tw/27hZ/yaZzz5w58z+dmTuTO4IIZMryEiSeEDCD0G9MJN+YIGgGalREDUH1bKPD8W14t15MsNkmKSbxBTA7LkIHzmkpqL56zems72mUej6My5BXKSZx4T4UDzBbMYkL48fKK3saTZ2FzAzbWoH4DBg2JPIGxjDg+ZQUi8Pl9lTTOYXG22w5aug/bxlqhQPEI4LqYw1O558SIKkmUf4/Eg9gwSQOApLIlOU8IfHzUCu6F1SFWRISeUMt5J6RyDMLmBfbXgQiZxliQgF4m1Hrj6C2/mpMaJU8kZkhtwiQjYmoR9geR1pyvNtwt55gxRxANSL8VSmW4gHExKVag3USwjbDqPBZ0gCcBk2x3U6x3Q6A+tdRbaXrKqqzxrC+zINxfmP1GuYvWACA1+uldNP7XL9+XeNTbLdTvMHe9fzxjjKUM+8h5a5GvVOPenGnUdMHBpvAS8uXk5OT0/X8zbGZmgR6iy/eYMfv97Nn926Cf3xulGYNhk2h3uI78Xq8RnURFkMSiCR+c0kJ5QcPGNFFRKJOYCjFM9g10Jv8ggLyCwp09niJJ9oRCCd+S2lp3MRj5CLuJG9WHmZzVAM7KAxPIL9gIeWHDjHCEp/TuSEJKIqiec7Lm8WXX1WQlpZmRPg+iSqBmzdvsrmkhMLXXyMQCGjqcnNz+WTX7mj19UtUCXy4fTvlBw/wY1UVK15ejsfj1tTPnjOHhYsWRauxT6JKwOfzdZXPVVezft06nU/plg9ISkqKpps+MXQR/3DyJEcqKzU2m82GfeNGI7vRYPhbaHPJJtra2jS2wpVFmkNgNwKzdRxJWfOwTi/COr2IpKynMKdkhvvmFpZBvbBrzlV3CfF6PNRdvqzzcblcvP3WRvbtD21mXq+X/fv24XA4NH4JI7MZvXgvw+VHw/bld1yk9fhq2m//3acmMS5DNu5w3oOt27fj9/vZWVamG5Hkh1/kgWe2ISX0vVco7R7avn8H96WKiD4xSyASlgeXYlu8R2dPTw79veHWt3EeX4un7qi+IhZroC9MFpn0Bdt09mFmOLwKDhVBgknfLn3BVkzJ4T+OxzWB0fllSImpOrs1MZREUkKo3BspcSSjn/0obMy4JWC2jicp++l7bp80cT5m63idPW4JJIyaEnUMc6o+gbidexNGTe4qZ6TC3lcgNcwGfeTN7vKdf2BlObS6/ouRNgVfw2mNf9xGQO3wd5cH+N5TVJD62c/iNgKB1t+7yi134bld3XXpyVC5NlR+4VNo8/Qfo5O4jUDgxiVQlQF4RkBVCLTW6sySCo6wDQxGbff2uaP2h/tSBWqHT2NTwSEJxHkD9A2ItlOlKL5bOrvLB4EOaA+C269vF3Q303aqVGcXiPMma/KIRxDiyViJ7ona4aPjbiOWqUu0AhU4UQuHfwmfQOt36wk4fwsTUP1aElL8RgDAU3cUx7FCgh7tzG11wa1eXyGDHgeOY4V4r5wIG0tI4ryQZdmSELojmxZL4b2RhltJm/MuyQ8tQ0ocqalTfLdxX67k1k9bUfx3I4WoVYRppgAYJ8vTkKgeqjvihFGTSRw7EwBf01nab17pr0lAUsWMay0ttV3bRGaGvEHAjhhrNQQV7I3NjjJ63tS73J4zKSmWFoGYdx/f1t9WVXVNY4vzs06DbqPOHjMmu0Oo+4n57eWgOSXMwRUNDTeaehojnjQyM9OnCsU0F8RcUOcCWXGR2c01oAqoUoSpqqmpqS6c078nM7wtatV1XQAAAABJRU5ErkJggg==",
                     "width": 120
                 },
                 "data": {
@@ -193,7 +193,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-gauge",
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAATBSURBVGiB7Znfb1RFFMc/c++2W7a7i7Zk77a7CwVtQUWKpVREU3kSMdCSwoNGeQHFH9E3ffdF/Q/EJgQCmPiiQCgRfMI2hpi2NEuwNhQp6e/uprs2pbv9sb07PjSthe62+2OW1sRvcpM7c8+c7zn3zDkz944gCTyGcRCNlwVUMXe5k8nmBIJhoEMiOjBl62AgcDWx2GPY6HJtieviArD3iRiaOm5qpjzWFwz2LO7UFje8Jcb7cV3cXoPGA+yN6+K2r9Q4vrhTn7/xlLg+EohGIH9VzEsN+UC9w1EYeDgRaWd+Cvlcrmfk3JsvVMkmxNz7kdJUqRYgIkxZ2R8M3tcATerivGrjAcrL91Ne/oZqtQCF6OIcoFk8hlGTqzm/a9cJpIzT3X1NuW4Jr3oMo8aCxh7l2gG3ewelpVUAuFzPEwz+qZ5EY48mYJ96zVBdfTLhvVJI9mgS9RHwemvYuvWthfa2bYfw+dQHWoi5CBgqldrtBvX1jY+skUJoHDr0LTbbBpVUAJu0FIRShhA6hw+fpqDgqSXP1q17mvr6RjRNTzg2UyhzwGp1cvToeQxje1KZ0tIqGhrOkZ9vV0WL8JYYMlslRUVbOHLkPE6nJyX5sbFeLl06QTh8P1vq7B0oK6ulru4UeXm2tMbFYlGamj7lwYMb2dBn7oDP9wq7d59k8+bXE21qU4Skp+cGbW3fMTDQlpGGtBwQQqOi4gDV1Sdxu3dkRJgMw8N+2toauXfvl7l1NkWkncSx2CSTkyGkjKc7NCmkjDM19TemOYMQ6UUz4ym0fr2Pysr32LnzGHl56zJRQSwWxe+/gN//PePjAxnpyDqJi4sraGg4k3IFmsf4+CAXLx4nFOrOhl5NGbVandTVnWLjxtQ2tX19N7ly5WOmp8ezpUZ3OuxfZqvENKfp6rqMxVKAx1O9rGxr6ymuX/+C2dmpbGlBlQNzkPT2/obNVozbXZlQoqPjLM3NX6dVZVaC0r0QQHPzV4yN9S7pD4d7aGn5RjWdegdmZ6e5evWzR8psPG7S1PQJphlTTafeAYBA4A5dXZcX2p2dPzI6ejcXVLlxAODWrTML9+3tp3NFgyVXioPBTgYH25HSJBz+K1c0uXOAhSioqziJoGQhSwZN05FSKt03PY6cRiAeV/5HbglylsRPCv87sNr4zzuwYhIXO60c3+/lOa8VR0H6374TU5LuEZNrt2M8nEqt4JmmSXRyklAojGkuXwhWjMAHB3zUPFuQkfEA9gJBVZmFgy+lfm6i6zoOu50NxcUryq7owAs+NQc2W0vSn60228qfqpqEQIY2rTokBDSB8C8n1Nk/o4Ts7nD6q3E0Ornsc4Hw6067bTtCvJZMqKs/gqvIhtOmY7VklsR/DJj87I8xM5vaGNM0iUSjhEJhpFwm8aX8SfhKjbel5Ie0LVsDEIJ3tBmTJuDOahuTATpN9CsCwGsYL6LRvsbPiBdjRpOiqm9kpFMHGI9Egg6HfULAm6ttWSqQ8PnASKCJxSf1DycivzschSMCsW8NR2JMSvnh4Eiwcb5jSVkpc7vLZoU8S45OL7PAr8JivtvfPzq0uDNpXfR4NlSIuF4LohZkLbDpiZj5L/qAFqAlLvSWoaGhhL81/gFkg4LJE2dflAAAAABJRU5ErkJggg==",
                     "width": 240
                 },
                 "data": {
@@ -216,7 +216,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-progress-question",
+                    "icon": "data:image/png;base64,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",
                     "width": 240
                 },
                 "data": {
@@ -241,7 +241,7 @@
                     ]
                 },
                 "style": {
-                    "icon": "mdi mdi-plus-circle-outline",
+                    "icon": "data:image/png;base64,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",
                     "width": 120
                 },
                 "data": {
@@ -269,7 +269,7 @@
                 }
             },
             "Config": {
-                "Description": "Reads your Claude Code login from this computer and shows your usage limits. Log in with Claude Code once and it works — no API key needed.",
+                "Description": "Shows usage limits and session status for Claude Code, Kimi and Gemini from the logins and session files already on this computer, with no API key. Every setting below is optional: leave it empty for the default. The refresh interval applies to all three.",
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
@@ -346,7 +346,9 @@
                     "errorUnauthorized": "The Kimi Code login has expired. Run kimi login (or kimi, to refresh it) in a terminal.",
                     "errorUnsupported": "This login reports no Kimi Code plan usage.",
                     "errorRateLimited": "Rate limited by Kimi. The key retries later.",
-                    "errorNetwork": "Kimi could not be reached. Check your connection."
+                    "errorNetwork": "Kimi could not be reached. Check your connection.",
+                    "errorHttp": "Kimi's quota service returned an error. The key retries at the next refresh.",
+                    "errorParse": "Kimi sent an answer the plugin could not read. Try again later, or update the plugin."
                 }
             },
             "KimiSession": {
@@ -397,6 +399,24 @@
                     "checking": "Checking…",
                     "connected": "Connected",
                     "notAvailable": "Not available: {error}",
+                    "problemCliMissing": "Gemini CLI was not found on this computer.",
+                    "problemLoggedOut": "Gemini CLI is not logged in.",
+                    "problemCredsUnreadable": "The Gemini CLI login file could not be read.",
+                    "problemLoginExpired": "The Gemini CLI login has expired.",
+                    "problemPersonal": "Google reports no quota for this personal Google account.",
+                    "problemNotEligible": "This Google account is not eligible for Gemini Code Assist.",
+                    "problemRegion": "Gemini Code Assist is not available in your region.",
+                    "problemVerify": "Google asks you to verify this account first: run gemini and follow its link.",
+                    "problemApiKey": "API key logins have no quota information.",
+                    "problemVertex": "Vertex AI logins have no quota information.",
+                    "problemOtherAuth": "This login type has no quota information.",
+                    "problemNeedsProject": "This licence needs a Google Cloud project.",
+                    "problemProjectDenied": "Google refused the Google Cloud project.",
+                    "problemNeedsSetup": "Run gemini once to set up this login.",
+                    "problemNoQuota": "Google has reported no quota yet.",
+                    "errorNetwork": "Google could not be reached. Check your connection.",
+                    "errorHttp": "Google's quota service returned an error. The key retries at the next refresh.",
+                    "errorRateLimited": "Rate limited by Google. The key retries later.",
                     "metricPro": "Pro (most used Pro model)",
                     "metricFlash": "Flash (most used Flash model)",
                     "metricPooled": "Auto (Pro and Flash together)",
@@ -404,7 +424,7 @@
                     "connectedTier": "Connected — {tier}",
                     "hintCli": "Install Gemini CLI, or set its program and folder in the plugin settings.",
                     "hintRelogin": "Run gemini in a terminal and choose “Login with Google”.",
-                    "hintPersonal": "Since 18 June 2026 Google no longer serves Gemini CLI quota to personal Google accounts (Code Assist for individuals, Google AI Pro and Ultra). Only Gemini Code Assist Standard and Enterprise report quota.",
+                    "hintPersonal": "Google returned no Gemini CLI quota for this personal Google account (it reports the account as not eligible). Only Gemini Code Assist Standard and Enterprise report quota.",
                     "hintLogin": "Only Gemini CLI's “Login with Google” reports quota. API key and Vertex AI logins have none.",
                     "hintProject": "Enter your Google Cloud project ID under “Gemini Cloud project” in the plugin settings.",
                     "lang": "Key text language"
@@ -424,7 +444,8 @@
                     "found": "Now showing: {project} — {state}",
                     "notFound": "No Gemini CLI session found in {dir}",
                     "liveDetection": "Follow running Gemini CLIs",
-                    "liveDetectionHint": "Reads the process list (ps, lsof) every 10 s to tell running sessions from stopped ones; off: judge from the session files only"
+                    "liveDetectionHint": "Reads the process list (ps, lsof) every 10 s to tell running sessions from stopped ones; off: judge from the session files only",
+                    "approvalHint": "Gemini CLI records a reply and its tool calls only once the tools have finished, so while a tool waits for your approval, or a question (ask_user) waits for your answer, the key usually still shows the previous reply as “Done”."
                 }
             },
             "GeminiNewSession": {
@@ -463,7 +484,7 @@
                 }
             },
             "Config": {
-                "Description": "读取本机的 Claude Code 登录信息并显示用量限制。只需用 Claude Code 登录一次即可使用，无需 API 密钥。",
+                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi 和 Gemini 的用量限制与会话状态，无需 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对三者都有效。",
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
@@ -540,7 +561,9 @@
                     "errorUnauthorized": "Kimi Code 登录已过期。请在终端运行 kimi login（或运行 kimi 以刷新）。",
                     "errorUnsupported": "此账号没有 Kimi Code 套餐用量。",
                     "errorRateLimited": "Kimi 请求受限，按键稍后自动重试。",
-                    "errorNetwork": "无法连接 Kimi，请检查网络连接。"
+                    "errorNetwork": "无法连接 Kimi，请检查网络连接。",
+                    "errorHttp": "Kimi 配额服务返回错误，按键会在下次刷新时重试。",
+                    "errorParse": "无法读取 Kimi 返回的数据，请稍后重试或更新插件。"
                 }
             },
             "KimiSession": {
@@ -591,6 +614,24 @@
                     "checking": "正在检查…",
                     "connected": "已连接",
                     "notAvailable": "不可用：{error}",
+                    "problemCliMissing": "本机未找到 Gemini CLI。",
+                    "problemLoggedOut": "Gemini CLI 未登录。",
+                    "problemCredsUnreadable": "无法读取 Gemini CLI 的登录文件。",
+                    "problemLoginExpired": "Gemini CLI 登录已过期。",
+                    "problemPersonal": "Google 没有为这个个人 Google 账号返回配额。",
+                    "problemNotEligible": "此 Google 账号不符合 Gemini Code Assist 的条件。",
+                    "problemRegion": "你所在的地区不支持 Gemini Code Assist。",
+                    "problemVerify": "Google 要求先验证此账号：请运行 gemini 并打开它给出的链接。",
+                    "problemApiKey": "API Key 登录没有配额信息。",
+                    "problemVertex": "Vertex AI 登录没有配额信息。",
+                    "problemOtherAuth": "此登录方式没有配额信息。",
+                    "problemNeedsProject": "此许可需要 Google Cloud 项目。",
+                    "problemProjectDenied": "Google 拒绝了该 Google Cloud 项目。",
+                    "problemNeedsSetup": "请先运行一次 gemini 以完成此登录的设置。",
+                    "problemNoQuota": "Google 暂未返回配额。",
+                    "errorNetwork": "无法连接 Google，请检查网络连接。",
+                    "errorHttp": "Google 配额服务返回错误，按键会在下次刷新时重试。",
+                    "errorRateLimited": "Google 请求受限，按键稍后自动重试。",
                     "metricPro": "Pro（用量最高的 Pro 模型）",
                     "metricFlash": "Flash（用量最高的 Flash 模型）",
                     "metricPooled": "自动（Pro 与 Flash 合计）",
@@ -598,7 +639,7 @@
                     "connectedTier": "已连接 — {tier}",
                     "hintCli": "请安装 Gemini CLI，或在插件设置中填写它的程序和目录。",
                     "hintRelogin": "请在终端运行 gemini，并选择 “Login with Google” 登录。",
-                    "hintPersonal": "自 2026 年 6 月 18 日起，Google 不再为个人 Google 账号（Code Assist 个人版、Google AI Pro 和 Ultra）提供 Gemini CLI 配额。只有 Gemini Code Assist 标准版和企业版会返回配额。",
+                    "hintPersonal": "Google 没有为这个个人 Google 账号返回 Gemini CLI 配额（返回结果为不符合条件）。只有 Gemini Code Assist 标准版和企业版会返回配额。",
                     "hintLogin": "只有 Gemini CLI 的 “Login with Google” 登录会返回配额，API Key 和 Vertex AI 登录没有配额信息。",
                     "hintProject": "请在插件设置的 “Gemini Cloud 项目” 中填写 Google Cloud 项目 ID。",
                     "lang": "按键文字语言"
@@ -618,7 +659,8 @@
                     "found": "当前显示：{project} — {state}",
                     "notFound": "在 {dir} 中没有找到 Gemini CLI 会话",
                     "liveDetection": "跟踪运行中的 Gemini CLI",
-                    "liveDetectionHint": "每 10 秒读取进程列表（ps、lsof），以区分运行中和已停止的会话；关闭后仅根据会话文件判断"
+                    "liveDetectionHint": "每 10 秒读取进程列表（ps、lsof），以区分运行中和已停止的会话；关闭后仅根据会话文件判断",
+                    "approvalHint": "Gemini CLI 只在工具运行结束后才记录回复和工具调用，因此工具等待你授权、或提问（ask_user）等待你回答时，按键通常仍把上一条回复显示为“已完成”。"
                 }
             },
             "GeminiNewSession": {

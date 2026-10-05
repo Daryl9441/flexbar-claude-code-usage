@@ -5,7 +5,12 @@
  */
 import { promises as fsp } from 'node:fs';
 
-import { WireAcc, createWireAcc, observeWireLines } from './sessionWire';
+import {
+  WireAcc,
+  createWireAcc,
+  isLegacyWire,
+  observeWireLines,
+} from './sessionWire';
 
 const INITIAL_TAIL_BYTES = 256 * 1024;
 const MAX_TAIL_BYTES = 8 * 1024 * 1024;
@@ -63,8 +68,12 @@ export class WireFile {
   }
 
   /**
-   * Parses the end of the file, widening the window until it holds a turn
-   * (configuration records alone say nothing about the state).
+   * Parses the end of the file, widening the window until it holds the
+   * newest turn's start or end: configuration records alone say nothing
+   * about the state, and steps without their prompt lose the turn's start
+   * time (Kimi Work writes 200+ KB tool lists right after a prompt). An
+   * older journal with a call still open also needs its permission mode,
+   * for the approval guess.
    */
   private async readTail(size: number) {
     for (let window = INITIAL_TAIL_BYTES; ; window *= 4) {
@@ -74,7 +83,14 @@ export class WireFile {
       this.acc.protocol = protocol;
       this.offset = start;
       await this.readRange(start, size, start > 0);
-      if (this.acc.sawTurn || start === 0 || window >= MAX_TAIL_BYTES) return;
+      if (start === 0 || window >= MAX_TAIL_BYTES) return;
+      const acc = this.acc;
+      const needsMode =
+        isLegacyWire(acc) &&
+        acc.permissionMode === null &&
+        acc.ended === null &&
+        acc.tools.size > 0;
+      if (acc.sawPrompt && !needsMode) return;
     }
   }
 

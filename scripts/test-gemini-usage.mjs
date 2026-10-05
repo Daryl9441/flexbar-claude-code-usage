@@ -760,7 +760,8 @@ describe('Gemini usage source', () => {
     const bad = await source({ net: stubNetwork({ load: { body: PERSONAL_LOAD } }) }).src.describe({ geminiDir: home });
     assert.equal(bad.success, false);
     assert.equal(bad.problem, 'personal-unsupported');
-    assert.match(bad.error, /2026-06-18/);
+    assert.match(bad.error, /no Gemini CLI quota for this personal Google account/);
+    assert.doesNotMatch(bad.error, /2026/, 'no unverified date');
   });
 });
 

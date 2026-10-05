@@ -3,7 +3,7 @@ import { Image, SKRSContext2D, createCanvas, loadImage } from '@napi-rs/canvas';
 import { CLAWD_PNG_BASE64 } from './clawd';
 import { FONT } from './fonts';
 import type { KeyMark } from './providers/types';
-import { MetricSnapshot, formatTimeUntilReset } from './usage';
+import { MetricSnapshot, formatTimeUntilReset, resetsText } from './usage';
 
 export const KEY_HEIGHT = 60;
 const DEFAULT_KEY_WIDTH = 240;
@@ -180,8 +180,9 @@ const CHIP_FONT = `bold 12px ${FONT}`;
 
 /**
  * The limit label as it fits maxWidth in the current font: in full, without
- * a leading "Claude " (model names), or ellipsized while at least 4
- * characters remain. Null when none of these fit.
+ * a leading "Claude " or version ("2.5 Flash Lite" → "Flash Lite", for
+ * model names), or ellipsized while at least 4 characters remain. Null when
+ * none of these fit.
  */
 function fitLabel(
   ctx: SKRSContext2D,
@@ -189,7 +190,10 @@ function fitLabel(
   maxWidth: number
 ): string | null {
   if (!label.trim()) return null;
-  const short = label.replace(/^Claude\s+/i, '') || label;
+  const short =
+    label
+      .replace(/^Claude\s+/i, '')
+      .replace(/^(?:Gemini\s+)?\d+(?:\.\d+)*\s+(?=\S)/i, '') || label;
   for (const candidate of [label, short]) {
     if (textWidth(ctx, candidate) <= maxWidth) return candidate;
   }
@@ -245,7 +249,31 @@ export type RenderOptions = {
   bgColor?: string;
   /** Provider mark drawn where Clawd goes (ignored while showClawd is on) */
   mark?: KeyMark;
+  /**
+   * The mark's brand colour: a thin edge on the right names the provider
+   * on keys too narrow for the mark
+   */
+  markColor?: string;
+  /** Language of the reset countdown (default English) */
+  lang?: 'en' | 'zh';
 };
+
+// Brand edge: a strip this wide in the provider's colour on the right edge
+const BRAND_EDGE = 3;
+
+/**
+ * Names the provider on a face without room for its mark: a thin strip in
+ * the brand colour along the right edge (the left edge of a session key
+ * shows its status colour).
+ */
+export function drawBrandEdge(
+  ctx: SKRSContext2D,
+  keyWidth: number,
+  color: string
+) {
+  ctx.fillStyle = color;
+  ctx.fillRect(keyWidth - BRAND_EDGE, 0, BRAND_EDGE, KEY_HEIGHT);
+}
 
 // Provider marks sit in a square this tall, left of the meter
 const MARK_SIZE = 30;
@@ -307,6 +335,8 @@ export async function renderUsageKey(
         MARK_SIZE
       );
       contentX = meterX;
+    } else if (options.markColor) {
+      drawBrandEdge(ctx, keyWidth, options.markColor);
     }
   }
   const contentWidth = rightX - contentX;
@@ -316,9 +346,9 @@ export async function renderUsageKey(
   const percentWidth = textWidth(ctx, percentText);
 
   const reset = options.showResetTime
-    ? formatTimeUntilReset(snapshot.resetsAt)
+    ? formatTimeUntilReset(snapshot.resetsAt, options.lang)
     : '';
-  const resetText = reset ? `Resets ${reset}` : '';
+  const resetText = resetsText(reset, options.lang);
   ctx.font = `12px ${FONT}`;
   const resetWidth = resetText ? textWidth(ctx, resetText) : 0;
   ctx.font = CHIP_FONT;
@@ -421,6 +451,8 @@ export type MessageOptions = {
   accent?: string;
   /** Provider mark left of the title, on keys at least 100px wide */
   mark?: KeyMark;
+  /** Brand colour: a thin right edge on keys too narrow for the mark */
+  markColor?: string;
 };
 
 // Message-face mark: a square this big, then this much room to the title
@@ -458,6 +490,8 @@ export function renderMessageKey(
   if (options.mark && keyWidth >= 100) {
     drawMark(ctx, options.mark, padX, titleY - 0.5, MESSAGE_MARK_SIZE);
     titleX += MESSAGE_MARK_SIZE + MESSAGE_MARK_GAP;
+  } else if (options.mark && options.markColor) {
+    drawBrandEdge(ctx, keyWidth, options.markColor);
   }
   const titleWidth = padX + maxWidth - titleX;
   ctx.fillStyle = options.accent || COLORS.claude;

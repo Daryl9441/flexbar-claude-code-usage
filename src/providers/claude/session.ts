@@ -2,6 +2,8 @@
  * Claude Code sessions: transcripts in `<claudeDir>/projects` and the live
  * registry in `<claudeDir>/sessions`, followed by SessionMonitor.
  */
+import path from 'node:path';
+
 import { SessionMonitor, resolveClaudeDir } from '../../sessionSource';
 import { SessionDescription, SessionProvider } from '../types';
 
@@ -13,6 +15,9 @@ export const claudeSessionProvider: SessionProvider = {
 
   create: ({ location, onChange, logger }) =>
     new SessionMonitor({ claudeDir: location, onChange, logger }),
+
+  // the transcripts folder, as SessionMonitor.projectsDir names it
+  watched: location => path.join(location, 'projects'),
 
   async describe(filter, config): Promise<SessionDescription> {
     const monitor = new SessionMonitor({

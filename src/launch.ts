@@ -95,9 +95,18 @@ export function commandScript(command: string[], cwd: string | null): string {
 }
 
 /**
+ * Characters cmd.exe acts on in a command line: the Windows console runs
+ * the program through `cmd /k`, which would split or expand a word holding
+ * one (e.g. a home folder named `A&B`), quoted or not.
+ */
+const CMD_SPECIAL = /[&|<>^%!()"\r\n]/;
+
+/**
  * The command that opens a terminal window: macOS opens the `.command`
  * script at `script`; Windows starts a new console (`start`); Linux uses
  * x-terminal-emulator. Windows and Linux are best effort (unverified).
+ * On Windows a word with a cmd.exe special character is refused (the
+ * error names no path).
  */
 export function terminalCommand(
   command: string[],
@@ -111,6 +120,11 @@ export function terminalCommand(
       if (!script) throw new Error('terminalCommand: no script on macOS');
       return { file: '/usr/bin/open', args: ['-a', 'Terminal', script] };
     case 'win32':
+      if (command.some(word => CMD_SPECIAL.test(word))) {
+        throw new Error(
+          'The program path holds a character cmd.exe would act on (& | < > ^ % ! ( ) "): cannot start it in a console'
+        );
+      }
       return {
         file: 'cmd.exe',
         // '' becomes the empty window title "" (libuv quotes empty args)
@@ -139,7 +153,49 @@ export type TerminalOpenerOptions = {
   tmpDir?: string;
   writeFile?: (file: string, data: string, mode: number) => Promise<void>;
   unlink?: (file: string) => Promise<void>;
+  /**
+   * The script deletes itself when Terminal runs it; if Terminal never
+   * does, it is removed this long after `open` accepted it (default 60 s)
+   */
+  cleanupMs?: number;
 };
+
+/** Script names the terminal opener writes (flexbar-<16 hex>.command) */
+const SCRIPT_RE = /^flexbar-[0-9a-f]{16}\.command$/;
+/** Leftover scripts older than this are removed by sweepTerminalScripts */
+const SCRIPT_MAX_AGE_MS = 60_000;
+
+/**
+ * Removes terminal scripts this plugin left in `dir` (Terminal never ran
+ * them) that are older than `maxAgeMs`. Never throws; resolves to how many
+ * were removed. Only files named like the opener's scripts are touched.
+ */
+export async function sweepTerminalScripts(
+  dir: string = os.tmpdir(),
+  maxAgeMs: number = SCRIPT_MAX_AGE_MS,
+  now: number = Date.now()
+): Promise<number> {
+  let removed = 0;
+  let names: string[];
+  try {
+    names = await fsp.readdir(dir);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    if (!SCRIPT_RE.test(name)) continue;
+    const file = path.join(dir, name);
+    try {
+      const st = await fsp.lstat(file);
+      if (!st.isFile() || now - st.mtimeMs < maxAgeMs) continue;
+      await fsp.unlink(file);
+      removed++;
+    } catch {
+      // gone meanwhile, or not ours to remove
+    }
+  }
+  return removed;
+}
 
 /** Creates a terminal opener; options exist so tests never open anything. */
 export function createTerminalOpener(
@@ -152,6 +208,7 @@ export function createTerminalOpener(
     ((file: string, data: string, mode: number) =>
       fsp.writeFile(file, data, { mode, flag: 'wx' }));
   const unlink = options.unlink ?? ((file: string) => fsp.unlink(file));
+  const cleanupMs = options.cleanupMs ?? SCRIPT_MAX_AGE_MS;
   return async (command, cwd) => {
     if (platform !== 'darwin') {
       await run(terminalCommand(command, cwd, platform));
@@ -166,5 +223,11 @@ export function createTerminalOpener(
       await unlink(script).catch(() => undefined);
       throw error;
     }
+    // normally gone already (the script removes itself first thing)
+    const timer = setTimeout(
+      () => void unlink(script).catch(() => undefined),
+      cleanupMs
+    );
+    timer.unref?.();
   };
 }

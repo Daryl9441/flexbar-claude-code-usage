@@ -74,6 +74,9 @@
         <v-row>
             <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
+                <p class="text-caption text-medium-emphasis mx-2">
+                    {{ $t("GeminiSession.UI.approvalHint") }}
+                </p>
             </v-col>
         </v-row>
     </v-container>
@@ -119,7 +122,9 @@ export default {
                     filter: this.modelValue.data.projectFilter || "",
                     settings: this.modelValue.data,
                 });
-                const lang = this.modelValue.data.lang === "zh" ? "zh" : "en";
+                // this page's language, not the key's
+                const locale = String(this.$i18n.locale || "");
+                const lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
                 if (response && response.success) {
                     this.statusText = this.$t("GeminiSession.UI.found", {
                         project: response.project || "?",

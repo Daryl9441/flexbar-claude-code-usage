@@ -207,11 +207,11 @@ export function lockoutSeconds(error: unknown): number | null {
 export function markOptions(
   brand: Brand,
   data: Record<string, unknown> | null | undefined
-): { showClawd: boolean; mark?: KeyMark } {
+): { showClawd: boolean; mark?: KeyMark; markColor?: string } {
   if (brand.mark === 'clawd') return { showClawd: data?.showClawd === true };
   return data?.showMark === false
     ? { showClawd: false }
-    : { showClawd: false, mark: brand.mark };
+    : { showClawd: false, mark: brand.mark, markColor: brand.accent };
 }
 
 /** The mark on message faces: none for Claude (keeps its look). */

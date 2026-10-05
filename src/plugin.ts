@@ -1,5 +1,6 @@
 import { logger, plugin } from '@eniac/flexdesigner';
 
+import { sweepTerminalScripts } from './launch';
 import { createKeyGroups, messageCid } from './providers/registry';
 import { Key, KeyGroup, PluginConfig } from './providers/types';
 
@@ -201,6 +202,9 @@ plugin.on(
     await eachGroup('plugin.config.updated', group => group.configure(next));
   }
 );
+
+// Terminal scripts an earlier run left behind (Terminal never ran them)
+void sweepTerminalScripts();
 
 // Connect to flexdesigner and start the plugin
 plugin.start();

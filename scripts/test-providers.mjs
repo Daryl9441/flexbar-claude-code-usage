@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,7 @@ const SK = req('sessionKey.js');
 const NK = req('newSessionKey.js');
 const L = req('launch.js');
 const R = req('render.js');
+const U = req('usage.js');
 const SR = req('sessionRender.js');
 const V = req('sessionView.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
@@ -355,11 +357,15 @@ describe('UsageKeys', () => {
       ...Kit.markOptions(KIMI_BRAND, data),
       bgColor: undefined,
     });
-  const message = (title, text, width = 240) =>
+  const message = (title, text, width = 240, accent = KIMI_BRAND.accent) =>
     R.renderMessageKey(width, title, text, {
-      accent: KIMI_BRAND.accent,
+      accent,
       mark: KIMI_BRAND.mark,
+      markColor: KIMI_BRAND.accent,
     });
+  // error faces word the problem in the status colours, not the accent
+  const amber = (title, text) => message(title, text, 240, V.TONE_COLORS.attention);
+  const red = (title, text) => message(title, text, 240, V.TONE_COLORS.error);
 
   test('draws the chosen metric, the first one by default', async () => {
     await withClock(NOW, async () => {
@@ -451,8 +457,8 @@ describe('UsageKeys', () => {
       await t.settle();
       const firstDraws = t.sent.filter(s => s.uid === 1).map(s => s.image);
       assert.equal(firstDraws[0], message('Kimi Code', 'Loading…'));
-      assert.equal(t.last(1), message('Not installed', 'Install Kimi Code'));
-      assert.equal(t.last(2), message('未安装', '请先安装 Kimi Code'));
+      assert.equal(t.last(1), amber('Not installed', 'Install Kimi Code'));
+      assert.equal(t.last(2), amber('未安装', '请先安装 Kimi Code'));
       assert.match(t.warnings.join('\n'), /Failed to fetch Kimi usage: ProviderError: no Kimi Code home/);
       // a custom errorText wins
       fail = new Error('anything');
@@ -462,7 +468,7 @@ describe('UsageKeys', () => {
       });
       await t.keys.press(SERIAL, t.key(1));
       await t.settle();
-      assert.equal(t.last(1), message('Custom', 'Text'));
+      assert.equal(t.last(1), red('Custom', 'Text'));
     } finally {
       t.keys.stop();
     }
@@ -489,7 +495,7 @@ describe('UsageKeys', () => {
         await t.keys.alive(SERIAL, [t.key(1)]);
         await t.settle();
         assert.equal(fetches, 1);
-        assert.equal(t.last(1), message('Rate limited', 'Resumes in 10m'));
+        assert.equal(t.last(1), amber('Rate limited', 'Resumes in 10m'));
         // presses during the lockout do not fetch
         await t.keys.press(SERIAL, t.key(1));
         await t.settle();
@@ -510,6 +516,42 @@ describe('UsageKeys', () => {
     } finally {
       t.keys.stop();
     }
+  });
+
+  test('Chinese keys: chip texts and countdowns in Chinese', async () => {
+    const t = usageKeys({
+      defaultMetric: '',
+      minFetchGapMs: 0,
+      fetch: async () => metrics,
+      metricLabel: (metric, lang) => (lang === 'zh' && metric.id === '5h' ? '5小时' : metric.label),
+    });
+    try {
+      await withClock(NOW, async () => {
+        await t.keys.alive(SERIAL, [t.key(1, { lang: 'zh' }), t.key(2)]);
+        await t.settle();
+        const zh = await R.renderUsageKey(240, { ...metrics[0], label: '5小时' }, {
+          showResetTime: true,
+          ...Kit.markOptions(KIMI_BRAND, {}),
+          bgColor: undefined,
+          lang: 'zh',
+        });
+        assert.equal(t.last(1), zh);
+        assert.equal(t.last(2), await meter(metrics[0]));
+      });
+    } finally {
+      t.keys.stop();
+    }
+    await withClock(NOW, async () => {
+      const at = new Date(NOW + (2 * 60 + 15) * 60_000).toISOString();
+      assert.equal(U.formatTimeUntilReset(at, 'zh'), '2小时15分');
+      assert.equal(U.resetsText(U.formatTimeUntilReset(at, 'zh'), 'zh'), '2小时15分后重置');
+      const soon = new Date(NOW + 15 * 60_000).toISOString();
+      assert.equal(U.formatTimeUntilReset(soon, 'zh'), '15分钟');
+      assert.equal(U.resetsText(U.formatTimeUntilReset(at), 'en'), 'Resets 2h 15m');
+      const days = new Date(NOW + (4 * 24 + 3) * 3_600_000).toISOString();
+      assert.equal(U.formatTimeUntilReset(days, 'zh'), '4天3小时');
+      assert.equal(U.resetsText(U.formatTimeUntilReset(new Date(NOW - 1).toISOString(), 'zh'), 'zh'), '即将重置');
+    });
   });
 
   test('keepLastOnError keeps the meter; the default clears it', async () => {
@@ -535,7 +577,7 @@ describe('UsageKeys', () => {
             t.last(1),
             keep
               ? await meter(metrics[0])
-              : message('Network error', 'Check your connection')
+              : red('Network error', 'Check your connection')
           );
         });
       } finally {
@@ -696,7 +738,7 @@ describe('SessionKeys with another provider', () => {
         )
       );
 
-      // a press opens the running list
+      // a press opens the running list, with the brand edge
       await keys.press(SERIAL, key);
       await h.settle();
       assert.equal(
@@ -704,7 +746,7 @@ describe('SessionKeys with another provider', () => {
         await SR.renderSessionList(
           240,
           V.buildListView(running, { lang: 'en', width: 240, page: 0 }),
-          {}
+          { markColor: GEMINI_BRAND.accent }
         )
       );
       // the key's settings reach the source and the settings page reply
@@ -758,16 +800,148 @@ describe('SessionKeys with another provider', () => {
       await h.settle();
       assert.equal(h.sent.length >= 1, true);
       assert.match(h.warnings.join('\n'), /Kimi session keys: could not start/);
+      // drawn red, like a session in the error state
+      const broken = V.buildNoticeView(
+        {
+          label: { en: 'Error', zh: '出错' },
+          text: { en: 'Could not read sessions', zh: '无法读取会话' },
+          tone: 'error',
+        },
+        'en'
+      );
+      assert.equal(broken.tone, 'error');
+      assert.equal(
+        h.last(1),
+        await SR.renderSessionKey(120, broken, Kit.markOptions(KIMI_BRAND, {}))
+      );
     } finally {
       await keys.dead(SERIAL, []);
     }
   });
 });
 
+// --- Claude's log lines ----------------------------------------------------------
+
+describe('Claude keys keep their log wording', () => {
+  test('usage: "Usage keys alive", "Usage endpoint rate limited"', async () => {
+    const info = [];
+    const warn = [];
+    const h = host({
+      logger: { info: (...a) => info.push(a.join(' ')), warn: (...a) => warn.push(a.join(' ')), error: () => undefined },
+    });
+    const cid = Kit.keyCid('claude', 'usage');
+    const keys = new UsageKeys({
+      ...h.deps,
+      provider: {
+        cid,
+        brand: CLAUDE_BRAND,
+        source: {
+          defaultMetric: 'session',
+          minFetchGapMs: 0,
+          fetch: async () => {
+            throw new Kit.ProviderError('rate-limited', 'slow down', { retryAfterSeconds: 60 });
+          },
+        },
+      },
+    });
+    try {
+      await keys.alive(SERIAL, [{ uid: 1, cid, width: 240, data: {} }]);
+      await h.settle();
+      assert.ok(info.includes(`Usage keys alive on ${SERIAL}: uid=1 width=240`), info.join('\n'));
+      assert.ok(warn.includes('Usage endpoint rate limited, backing off for 60s'), warn.join('\n'));
+    } finally {
+      keys.stop();
+    }
+  });
+
+  test('sessions: "Session keys: watching <claudeDir>/projects"', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-log-test-'));
+    const info = [];
+    const h = host({
+      loadConfig: async () => ({ claudeDir: dir }),
+      logger: { info: (...a) => info.push(a.join(' ')), warn: () => undefined, error: () => undefined },
+    });
+    const keys = new SK.SessionKeys({ ...h.deps });
+    try {
+      await keys.alive(SERIAL, [{ uid: 1, cid: SK.SESSION_CID, width: 240, data: {} }]);
+      assert.ok(info.includes(`Session keys: watching ${path.join(dir, 'projects')}`), info.join('\n'));
+    } finally {
+      await keys.dead(SERIAL, []);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// --- provider identity at every width --------------------------------------------
+
+describe('narrow keys still name their provider', () => {
+  const snapshot = { label: 'Weekly', percent: 64, resetsAt: null };
+  const usage = (brand, width) =>
+    R.renderUsageKey(width, snapshot, {
+      showResetTime: true,
+      ...Kit.markOptions(brand, {}),
+    });
+  const session = (brand, width) =>
+    SR.renderSessionKey(
+      width,
+      V.buildSessionView(Kit.makeStatus({ state: 'working', title: 'Write tests' }), {
+        lang: 'en',
+        showProject: false,
+        now: 0,
+      }),
+      Kit.markOptions(brand, {})
+    );
+  const list = (brand, width) =>
+    SR.renderSessionList(
+      width,
+      V.buildListView([Kit.runningItem({ title: 'Write tests', tone: 'working' })], {
+        lang: 'en',
+        width,
+        page: 0,
+      }),
+      { markColor: Kit.markOptions(brand, {}).markColor }
+    );
+
+  test('usage, session and list faces differ per provider at 120 px', async () => {
+    for (const render of [usage, session, list]) {
+      const faces = await Promise.all([CLAUDE_BRAND, KIMI_BRAND, GEMINI_BRAND].map(b => render(b, 120)));
+      assert.equal(new Set(faces).size, 3, render.name);
+    }
+    // Claude's faces keep their look (no mark, no edge)
+    assert.equal(
+      await usage(CLAUDE_BRAND, 120),
+      await R.renderUsageKey(120, snapshot, { showResetTime: true, showClawd: false })
+    );
+  });
+
+  test('message faces too narrow for the mark get the brand edge', () => {
+    const face = brand =>
+      R.renderMessageKey(80, 'Not installed', 'Install it', {
+        accent: V.TONE_COLORS.attention,
+        mark: Kit.brandMark(brand),
+        markColor: brand.accent,
+      });
+    assert.notEqual(face(KIMI_BRAND), face(GEMINI_BRAND));
+  });
+
+  test('model chips drop the version before they are cut', async () => {
+    const chip = (label, width) =>
+      R.renderUsageKey(width, { label, percent: 40, resetsAt: null }, {
+        showResetTime: false,
+        ...Kit.markOptions(GEMINI_BRAND, {}),
+      });
+    for (const width of [120, 180]) {
+      assert.equal(await chip('2.5 Flash Lite', width), await chip('Flash Lite', width), `${width}`);
+    }
+    // in full where it fits
+    assert.notEqual(await chip('2.5 Flash Lite', 460), await chip('Flash Lite', 460));
+  });
+});
+
 // --- new session keys ----------------------------------------------------------
 
 describe('NewSessionKeys with another provider', () => {
-  function newSessionKeys(target, strings, hostOverrides = {}) {
+  function newSessionKeys(target, strings, hostOverrides = {}, extra = {}) {
     const cid = Kit.keyCid('kimi', 'newsession');
     const calls = [];
     const views = [];
@@ -777,7 +951,7 @@ describe('NewSessionKeys with another provider', () => {
       provider: {
         cid,
         brand: KIMI_BRAND,
-        launcher: { appName: 'Kimi', strings, target },
+        launcher: { appName: 'Kimi', strings, target, ...extra },
       },
       launch: async url => calls.push(['url', url]),
       run: async command => calls.push(['run', command]),
@@ -876,15 +1050,18 @@ describe('NewSessionKeys with another provider', () => {
     assert.deepEqual(t.views.slice(-2).map(v => v.title).sort(), ['New Session', '新建会话']);
   });
 
-  test('the launcher gets the global settings with each press', async () => {
+  test('a launcher that needs them gets the global settings with each press', async () => {
     const requests = [];
+    const target = request => {
+      requests.push(request);
+      return { kind: 'url', url: 'kimi-work://open' };
+    };
+    const needs = { needsConfig: true };
     const t = newSessionKeys(
-      request => {
-        requests.push(request);
-        return { kind: 'url', url: 'kimi-work://open' };
-      },
+      target,
       undefined,
-      { loadConfig: async () => ({ kimiDir: '~/kimi-home', geminiPath: '/opt/gemini' }) }
+      { loadConfig: async () => ({ kimiDir: '~/kimi-home', geminiPath: '/opt/gemini' }) },
+      needs
     );
     await t.keys.alive(SERIAL, [t.key(1)]);
     assert.equal(await t.keys.press(SERIAL, t.key(1)), true);
@@ -894,16 +1071,91 @@ describe('NewSessionKeys with another provider', () => {
     });
     // a config that cannot be loaded is an empty one, not a failed press
     const failing = newSessionKeys(
-      request => {
-        requests.push(request);
-        return { kind: 'url', url: 'kimi-work://open' };
-      },
+      target,
       undefined,
-      { loadConfig: async () => { throw new Error('no config'); } }
+      { loadConfig: async () => { throw new Error('no config'); } },
+      needs
     );
     await failing.keys.alive(SERIAL, [failing.key(1)]);
     assert.equal(await failing.keys.press(SERIAL, failing.key(1)), true);
     assert.deepEqual(requests[1].config, {});
+    // nor does a config that never comes hold the press up for long
+    const hanging = newSessionKeys(
+      target,
+      undefined,
+      { loadConfig: () => new Promise(() => undefined), configWaitMs: 20 },
+      needs
+    );
+    await hanging.keys.alive(SERIAL, [hanging.key(1)]);
+    assert.equal(await hanging.keys.press(SERIAL, hanging.key(1)), true);
+    assert.deepEqual(requests[2].config, {});
+    assert.deepEqual(hanging.calls, [['url', 'kimi-work://open']]);
+  });
+
+  test('a launcher that needs no settings never waits for them (Claude)', async () => {
+    let loads = 0;
+    const t = newSessionKeys(
+      () => ({ kind: 'url', url: 'claude://code/new?source=url_external' }),
+      undefined,
+      {
+        loadConfig: () => {
+          loads++;
+          return new Promise(() => undefined);
+        },
+      }
+    );
+    await t.keys.alive(SERIAL, [t.key(1)]);
+    assert.equal(await t.keys.press(SERIAL, t.key(1)), true);
+    assert.equal(loads, 0);
+    assert.deepEqual(t.calls, [['url', 'claude://code/new?source=url_external']]);
+  });
+
+  test('the launcher can name what a folderless target opens', async () => {
+    const t = newSessionKeys(
+      () => ({ kind: 'url', url: 'kimi-work://open' }),
+      undefined,
+      {},
+      {
+        subtitle: (data, folder, lang) =>
+          data.target === 'desktop' ? (lang === 'zh' ? '应用' : 'App') : folder,
+      }
+    );
+    await t.keys.alive(SERIAL, [
+      t.key(1, { folder: '~/work/demo', target: 'desktop' }),
+      t.key(2, { folder: '~/work/demo', target: 'desktop', lang: 'zh' }),
+      t.key(3, { folder: '~/work/demo' }),
+    ]);
+    await t.h.settle();
+    assert.deepEqual(
+      t.views.map(v => v.subtitle),
+      ['App', '应用', 'demo']
+    );
+  });
+
+  test('without a home folder in the deps, launchers get the user\'s', async () => {
+    const requests = [];
+    const h = host();
+    const keys = new NK.NewSessionKeys({
+      ...h.deps,
+      provider: {
+        cid: Kit.keyCid('kimi', 'newsession'),
+        brand: KIMI_BRAND,
+        launcher: {
+          appName: 'Kimi',
+          target: request => {
+            requests.push(request);
+            return { kind: 'url', url: 'kimi-work://open' };
+          },
+        },
+      },
+      launch: async () => undefined,
+      render: () => 'data:image/png;base64,0',
+      timings: { openingMs: 5, errorMs: 5, debounceMs: 0 },
+    });
+    const key = { uid: 1, cid: Kit.keyCid('kimi', 'newsession'), width: 120, data: {} };
+    await keys.alive(SERIAL, [key]);
+    assert.equal(await keys.press(SERIAL, key), true);
+    assert.equal(requests[0].home, os.homedir());
   });
 
   test('default texts name the provider', () => {
@@ -964,6 +1216,30 @@ describe('command and terminal launchers', () => {
     assert.throws(() => L.terminalCommand([], null, 'linux'));
   });
 
+  test('Windows: a word cmd.exe would act on is refused, its path never quoted', () => {
+    for (const program of [
+      'C:\\tools\\A&B\\npm\\gemini.cmd',
+      'C:\\Users\\you\\%TEMP%\\kimi.exe',
+      'C:\\Program Files (x86)\\Gemini\\gemini.cmd',
+      'C:\\tools\\a|b\\kimi.exe',
+      'C:\\tools\\a^b\\kimi.exe',
+    ]) {
+      assert.throws(
+        () => L.terminalCommand([program, '-y'], 'C:\\w', 'win32'),
+        error => {
+          assert.match(error.message, /cmd\.exe/);
+          assert.ok(!error.message.includes('C:\\'), error.message);
+          return true;
+        }
+      );
+    }
+    // a space alone is fine: libuv quotes the word
+    assert.equal(
+      L.terminalCommand(['C:\\Program Files\\nodejs\\gemini.cmd'], null, 'win32').args.at(-1),
+      'C:\\Program Files\\nodejs\\gemini.cmd'
+    );
+  });
+
   test('the macOS opener writes a private script and opens it in Terminal', async () => {
     const writes = [];
     const runs = [];
@@ -990,6 +1266,52 @@ describe('command and terminal launchers', () => {
     fail = true;
     await assert.rejects(open(['kimi'], null), /open failed/);
     assert.deepEqual(unlinks, [writes[1].file]);
+  });
+
+  test('a script Terminal never ran is removed later', async () => {
+    const unlinks = [];
+    const open = L.createTerminalOpener({
+      platform: 'darwin',
+      tmpDir: '/tmp/fake',
+      writeFile: async () => undefined,
+      unlink: async file => {
+        unlinks.push(file);
+        throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      },
+      run: async () => undefined,
+      cleanupMs: 10,
+    });
+    await open(['kimi'], null);
+    assert.deepEqual(unlinks, []);
+    await sleep(40);
+    assert.equal(unlinks.length, 1);
+    assert.match(unlinks[0], /^\/tmp\/fake\/flexbar-[0-9a-f]{16}\.command$/);
+  });
+
+  test('leftover scripts are swept, nothing else', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexbar-sweep-test-'));
+    try {
+      const now = Date.now();
+      const put = (name, ageMs) => {
+        const file = path.join(dir, name);
+        fs.writeFileSync(file, '#!/bin/sh\n');
+        const t = (now - ageMs) / 1000;
+        fs.utimesSync(file, t, t);
+      };
+      put('flexbar-0123456789abcdef.command', 5 * 60_000);
+      put('flexbar-fedcba9876543210.command', 1_000);
+      put('flexbar-notours.command', 5 * 60_000);
+      put('other.command', 5 * 60_000);
+      assert.equal(await L.sweepTerminalScripts(dir, 60_000, now), 1);
+      assert.deepEqual(fs.readdirSync(dir).sort(), [
+        'flexbar-fedcba9876543210.command',
+        'flexbar-notours.command',
+        'other.command',
+      ]);
+      assert.equal(await L.sweepTerminalScripts(path.join(dir, 'missing')), 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('other platforms run the terminal command directly', async () => {

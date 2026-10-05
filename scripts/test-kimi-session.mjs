@@ -32,6 +32,7 @@ const req = p => require(path.join(build, p));
 const S = req('providers/kimi/session.js');
 const Src = req('providers/kimi/sessionSource.js');
 const W = req('providers/kimi/sessionWire.js');
+const Tail = req('providers/kimi/sessionTail.js');
 const D = req('providers/kimi/sessionDesktop.js');
 const F = req('providers/kimi/sessionFs.js');
 const NS = req('providers/kimi/newSession.js');
@@ -41,6 +42,11 @@ const Launch = req('launch.js');
 const { SessionKeys } = req('sessionKey.js');
 const { NewSessionKeys } = req('newSessionKey.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
+// the registry reaches Claude's usage client, which loads the FlexDesigner
+// SDK; the real one connects to the app on load, so a stand-in is cached
+const sdk = require.resolve('@eniac/flexdesigner', { paths: [build] });
+require.cache[sdk] = { id: sdk, filename: sdk, loaded: true, exports: { logger: undefined, plugin: undefined } };
+const Registry = req('providers/registry.js');
 
 const SERIAL = 'FAKE-DEVICE-1';
 const MIN = 60_000;
@@ -119,6 +125,13 @@ const R = {
   }),
   resolved: (id, t) => ({ type: 'interaction.resolved', agentId: 'main', id, response: {}, time: t }),
   mode: (mode, t) => ({ type: 'permission.set_mode', mode, time: t }),
+  // what reopening a session appends: configuration, no turn
+  reopen: t => [
+    { type: 'config.update', config: { model: 'k3' }, time: t },
+    { type: 'mcp.tools_discovered', tools: [], time: t },
+    { type: 'llm.tools_snapshot', tools: [], time: t },
+    { type: 'permission.set_mode', mode: 'auto', time: t },
+  ],
 };
 
 function derive(records, now, idleMs = IDLE) {
@@ -325,6 +338,72 @@ describe('journal (wire 1.5)', () => {
   test('no turn at all is idle', () => {
     assert.equal(derive([R.meta()], now).state, 'idle');
   });
+
+  test('records written when a session is reopened are not activity', () => {
+    const hours = h => now - h * 60 * MIN;
+    for (const ending of [
+      [R.meta('1.5'), R.prompt(hours(6)), R.text('Done.', hours(6)), R.ended('completed', hours(6))],
+      [R.meta('1.4'), R.prompt(hours(6)), R.step(hours(6)), R.text('Done.', hours(6)), R.stepEnd('end_turn', hours(6))],
+    ]) {
+      const records = [...ending, ...R.reopen(now - MIN)];
+      const acc = W.createWireAcc();
+      for (const r of records) W.observeWireRecord(acc, r);
+      assert.equal(acc.lastActivity, hours(6));
+      assert.equal(W.turnEndAt(acc), hours(6));
+      // a mtime moved by the reopening is no fallback either
+      const s = W.deriveWireStatus(acc, { now, idleMs: IDLE, mtimeMs: now - MIN });
+      assert.equal(s.state, 'idle');
+      assert.equal(s.lastActivity, hours(6));
+      const day = W.deriveWireStatus(acc, { now, idleMs: 24 * 60 * MIN, mtimeMs: now - MIN });
+      assert.deepEqual([day.state, day.since], ['done', hours(6)]);
+    }
+    // a journal without record times still falls back to its mtime
+    const untimed = W.createWireAcc();
+    W.observeWireRecord(untimed, { type: 'turn.prompt' });
+    assert.equal(W.deriveWireStatus(untimed, { now, idleMs: IDLE, mtimeMs: now - MIN }).lastActivity, now - MIN);
+  });
+});
+
+describe('journal tail', () => {
+  const now = Date.now();
+  const t = m => now - m * MIN;
+  // Kimi Work writes tool lists of 200+ KB right after a prompt
+  const bulky = time => ({ type: 'mcp.tools_discovered', tools: ['x'.repeat(300 * 1024)], time });
+
+  test('the window widens until it holds the prompt, not just a step', async () => {
+    const file = path.join(tmp('tail'), 'wire.jsonl');
+    writeLines(file, [
+      R.meta('1.4'),
+      R.mode('auto', t(5)),
+      R.prompt(t(4)),
+      bulky(t(4)),
+      R.step(t(1)),
+      R.call('a', 'Bash', { command: 'make' }, t(1)),
+    ]);
+    const wire = new Tail.WireFile(file);
+    await wire.sync();
+    assert.equal(wire.acc.turnStartedAt, t(4));
+    assert.equal(wire.acc.permissionMode, 'auto');
+    const s = W.deriveWireStatus(wire.acc, { now, idleMs: IDLE });
+    assert.deepEqual([s.state, s.since], ['working', t(4)]);
+  });
+
+  test('an older journal with an open call also finds its permission mode', async () => {
+    const file = path.join(tmp('tail'), 'wire.jsonl');
+    writeLines(file, [
+      R.meta('1.4'),
+      R.mode('manual', t(9)),
+      bulky(t(9)),
+      R.prompt(t(4)),
+      R.step(t(4)),
+      R.call('a', 'Bash', { command: 'make' }, t(3)),
+    ]);
+    const wire = new Tail.WireFile(file);
+    await wire.sync();
+    assert.equal(wire.acc.permissionMode, 'manual');
+    const s = W.deriveWireStatus(wire.acc, { now, idleMs: IDLE });
+    assert.deepEqual([s.state, s.confident], ['permission', false]);
+  });
 });
 
 describe('journal (older wire 1.x, desktop kernel)', () => {
@@ -471,6 +550,30 @@ describe('Kimi Code CLI sessions', () => {
     assert.equal(F.matchesFilter('项目', ['/Users/you/项目/a']), true);
   });
 
+  test('a reopened session keeps the time its turn ended', async () => {
+    const home = tmp('cli');
+    const now = Date.now();
+    const hours = h => now - h * 60 * MIN;
+    // finished 6 h ago, opened again a minute ago: both files just written
+    const reopened = cliSession(home, 1, {
+      state: { updatedAt: hours(6), lastTurnReason: 'completed' },
+      wire: [R.meta('1.5'), R.prompt(hours(6)), R.text('Done.', hours(6)), R.ended('completed', hours(6)), ...R.reopen(now - MIN)],
+      mtime: now - MIN,
+    });
+    cliSession(home, 2, {
+      state: { updatedAt: now - 30 * MIN, lastTurnReason: 'completed' },
+      wire: [R.meta('1.5'), R.prompt(now - 31 * MIN), R.text('Done.', now - 30 * MIN), R.ended('completed', now - 30 * MIN)],
+      mtime: now - 30 * MIN,
+    });
+    const source = await scan({ codeHome: home, window: 60 * MIN });
+    const pick = source.getStatus('', now, 60 * MIN);
+    assert.equal(pick.status.sessionId, `session_${uuid(2)}`, 'the session that worked last');
+    assert.equal(face(pick.status, 'en', now).time, '30m');
+    const old = source.cli.candidates.get(reopened);
+    const status = source.cli.status(old, now, 60 * MIN);
+    assert.deepEqual([status.state, status.lastActivity], ['idle', hours(6)]);
+  });
+
   test('a session without a journal falls back to state.json', async () => {
     const home = tmp('cli');
     const now = Date.now();
@@ -599,6 +702,31 @@ describe('Kimi desktop (Kimi Work) tasks', () => {
     assert.equal(face(list[1].status).label, 'Asked you');
   });
 
+  test('a task reopened long after it finished is not "Done" again', async () => {
+    const root = tmp('desktop');
+    const now = Date.now();
+    const hours = h => now - h * 60 * MIN;
+    desktopFixture(root, {
+      statuses: { [convKey(1)]: 'completed' },
+      times: { [convKey(1)]: hours(6) },
+      kernel: {
+        // the journal file is written now: its mtime is a minute old at most
+        1: {
+          updatedAt: hours(6),
+          wire: [R.meta('1.4'), R.prompt(hours(6)), R.step(hours(6)), R.text('Finished.', hours(6)), R.stepEnd('end_turn', hours(6)), ...R.reopen(now - MIN)],
+        },
+      },
+    });
+    const source = await scan({ desktopDir: root });
+    const { status } = source.getStatus('', now, IDLE);
+    assert.equal(status.state, 'idle');
+    assert.equal(status.lastActivity, hours(6));
+    assert.deepEqual(source.listRunning('', now, IDLE), []);
+    // inside the idle window it is done since the turn ended
+    const day = source.getStatus('', now, 24 * 60 * MIN).status;
+    assert.deepEqual([day.state, face(day, 'en', now).time], ['done', '6h']);
+  });
+
   test('unread results stay done; archived and automation tasks are left out', async () => {
     const root = tmp('desktop');
     const now = Date.now();
@@ -659,6 +787,26 @@ describe('merged sources and key settings', () => {
     assert.equal(source.notice({ source: 'desktop' }).text.zh, '请先安装 Kimi App');
     assert.equal(source.notice({ source: 'cli' }), null);
     assert.equal(source.notice({}), null);
+  });
+
+  test('"Loading…" and "No sessions" name the product the key follows', async () => {
+    const fresh = new Src.KimiSessionSource({
+      codeHome: path.join(empty, 'no-cli'),
+      desktopDir: path.join(empty, 'no-desktop'),
+      onChange: () => undefined,
+    });
+    assert.equal(fresh.productName({}), 'Kimi', 'before the first scan');
+    assert.equal(fresh.productName({ source: 'desktop' }), 'Kimi Work');
+    assert.equal(fresh.productName({ source: 'cli' }), 'Kimi Code');
+    // only the Kimi app: automatic keys follow Kimi Work
+    const desktopOnly = await scan({ desktopDir: tmp('desktop-only') });
+    assert.equal(desktopOnly.productName({}), 'Kimi Work');
+    assert.equal(desktopOnly.productName({ source: 'cli' }), 'Kimi Code');
+    const cliOnly = await scan({ codeHome: tmp('cli-only') });
+    assert.equal(cliOnly.productName({}), 'Kimi Code');
+    assert.equal(cliOnly.productName({ source: 'desktop' }), 'Kimi Work');
+    const none = View.buildSessionView(null, { lang: 'zh', showProject: true, now: 0, productName: desktopOnly.productName({ source: 'desktop' }) });
+    assert.deepEqual([none.label, none.text], ['无会话', '启动 Kimi Work']);
   });
 
   test('describe answers the settings page', async () => {
@@ -804,7 +952,13 @@ describe('Kimi New Session launcher', () => {
     platform: 'darwin',
     ...extra,
   });
-  const launcher = (files, env = {}) => NS.createKimiLauncher({ exists: file => files.includes(file), env });
+  const launcher = (files, env = {}) =>
+    NS.createKimiLauncher({
+      exists: file => files.includes(file),
+      // every synthetic folder exists except the ones named "missing"
+      isDirectory: dir => !/missing/.test(dir),
+      env,
+    });
   const CLI = '/Users/you/.kimi-code/bin/kimi';
   const APP = '/Applications/Kimi.app';
 
@@ -906,8 +1060,87 @@ describe('Kimi New Session launcher', () => {
     assert.equal(await keys.press(SERIAL, key), false);
     assert.equal(opened.length, 0);
     await keys.dead(SERIAL, []);
-    assert.equal(NS.newSessionLauncher.strings.error.en, 'Kimi not found');
-    assert.equal(NS.newSessionLauncher.strings.error.zh, '未找到 Kimi');
+    assert.equal(NS.newSessionLauncher.strings.error.en, 'Cannot open Kimi');
+    assert.equal(NS.newSessionLauncher.strings.error.zh, '无法打开 Kimi');
+    assert.equal(NS.newSessionLauncher.needsConfig, true);
+  });
+
+  test('failures name their cause on the key', () => {
+    const titleOf = fn => {
+      try {
+        fn();
+      } catch (error) {
+        assert.ok(error instanceof Kit.ProviderError, `${error}`);
+        const text = error.extra.keyText;
+        return [text.en.title, text.zh.title];
+      }
+      assert.fail('no error');
+    };
+    assert.deepEqual(
+      titleOf(() => launcher([CLI]).target(request({ folder: '~/missing' }))),
+      ['Folder not found', '未找到文件夹']
+    );
+    assert.deepEqual(
+      titleOf(() => launcher([]).target(request({ folder: '~/missing', target: 'cli' }))),
+      ['Folder not found', '未找到文件夹'],
+      'a forced CLI checks the folder too'
+    );
+    assert.deepEqual(
+      titleOf(() => launcher([CLI]).target(request({ target: 'desktop' }))),
+      ['Kimi app not found', '未找到 Kimi App']
+    );
+    assert.deepEqual(titleOf(() => launcher([]).target(request())), ['Kimi not found', '未找到 Kimi']);
+  });
+
+  test('Kimi Work keys name the app instead of a folder', () => {
+    const subtitle = NS.newSessionLauncher.subtitle;
+    assert.equal(subtitle({ target: 'desktop', folder: '~/code/demo-app' }, 'demo-app', 'en'), 'Kimi Work');
+    assert.equal(subtitle({ target: 'auto' }, 'demo-app', 'zh'), 'demo-app');
+    assert.equal(subtitle({ target: 'cli' }, null, 'en'), null);
+  });
+
+  test('without a home folder in the request, the user\'s is searched', () => {
+    const program = path.join(empty, '.kimi-code', 'bin', 'kimi');
+    const target = launcher([program]).target(request({ target: 'cli' }, { home: undefined }));
+    assert.equal(target.command[0], program);
+    const app = path.join(empty, 'Library', 'Application Support', 'kimi-desktop');
+    assert.deepEqual(launcher([app]).target(request({ target: 'desktop' }, { home: undefined })), {
+      kind: 'url',
+      url: 'kimi-work://open',
+    });
+  });
+
+  test('keys built by the registry find Kimi under the user\'s home', async () => {
+    // HOME is the empty temp folder: give it a Kimi Code install
+    const program = path.join(empty, '.kimi-code', 'bin', 'kimi');
+    fs.mkdirSync(path.dirname(program), { recursive: true });
+    fs.writeFileSync(program, '');
+    const project = tmp('registry-project');
+    const opened = [];
+    const groups = Registry.createKeyGroups({
+      enqueue: async task => task(),
+      send: async () => undefined,
+      isOffline: () => false,
+      keyWidth: key => key.width,
+      bgColor: () => undefined,
+      loadConfig: async () => ({}),
+      pollIntervalMs: () => 3_600_000,
+      logger: null,
+      // stubs only: nothing is opened (NewSessionKeys deps)
+      launch: async url => opened.push(['url', url]),
+      run: async command => opened.push(['run', command]),
+      terminal: async (command, cwd) => opened.push(['terminal', command, cwd]),
+      platform: 'darwin',
+      timings: { openingMs: 5, errorMs: 5, debounceMs: 0 },
+    });
+    const cid = Kit.keyCid('kimi', 'newsession');
+    const group = groups.find(g => g.cid === cid);
+    const key = { uid: 1, cid, width: 120, data: { folder: project, target: 'cli' } };
+    await group.alive(SERIAL, [key]);
+    assert.equal(await group.press(SERIAL, key), true);
+    assert.deepEqual(opened, [['terminal', [program], project]]);
+    await group.dead(SERIAL, []);
+    fs.rmSync(path.join(empty, '.kimi-code'), { recursive: true, force: true });
   });
 
   test('a terminal target becomes a quoted script, never shell text', async () => {

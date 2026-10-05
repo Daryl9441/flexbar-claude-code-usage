@@ -6,8 +6,10 @@
  * (src/providers/types.ts); drawing hooks come from plugin.ts.
  */
 import {
+  ProviderError,
   brandMark,
   errorKeyText,
+  keyCid,
   lockoutSeconds,
   markOptions,
 } from './providers/kit';
@@ -26,9 +28,9 @@ import {
   UsageSource,
 } from './providers/types';
 import { safeErrorMessage } from './redact';
-import { renderMessageKey, renderUsageKey } from './render';
-import { langOf } from './sessionView';
-import { formatTimeUntilReset } from './usage';
+import { MessageOptions, renderMessageKey, renderUsageKey } from './render';
+import { TONE_COLORS, langOf } from './sessionView';
+import { RESET_NOW_ZH, formatTimeUntilReset } from './usage';
 
 // Minimum gap between any two usage requests, so key presses and page
 // switches cannot burst against a rate-limited endpoint
@@ -48,10 +50,31 @@ const TEXT = {
     loading: '加载中…',
     noData: '此项暂无数据',
     rateLimited: '请求受限',
-    resumes: (time: string) => `${time} 后恢复`,
+    resumes: (time: string) =>
+      time === RESET_NOW_ZH ? '即将恢复' : `${time}后恢复`,
     retry: (time: string) => `请求受限，${time} 后重试`,
   },
 };
+
+/** ProviderError codes the user can act on (or wait out): amber, not red */
+const ACTIONABLE = new Set([
+  'not-installed',
+  'not-configured',
+  'unsupported',
+  'no-credentials',
+  'unauthorized',
+  'rate-limited',
+]);
+
+/**
+ * Title colour of an error face: amber for what the user can act on (log
+ * in, install, wait), red for failures, like the session keys' states.
+ */
+function errorColor(error: unknown): string {
+  return error instanceof ProviderError && ACTIONABLE.has(error.code)
+    ? TONE_COLORS.attention
+    : TONE_COLORS.error;
+}
 
 export type UsageKeyProvider = {
   cid: string;
@@ -95,6 +118,11 @@ export class UsageKeys implements KeyGroup {
     return this.deps.provider.brand;
   }
 
+  /** Claude's keys keep the log wording they always had. */
+  private get isClaude(): boolean {
+    return this.cid === keyCid('claude', 'usage');
+  }
+
   /**
    * plugin.alive: keys loaded onto a device page (page switch, profile
    * upload, reconnect), with FlexDesigner's current uid and width for each.
@@ -106,8 +134,9 @@ export class UsageKeys implements KeyGroup {
       return;
     }
     this.keys.set(serialNumber, mine);
+    const name = this.isClaude ? 'Usage' : `${this.brand.name} usage`;
     this.deps.logger?.info?.(
-      `${this.brand.name} usage keys alive on ${serialNumber}: ` +
+      `${name} keys alive on ${serialNumber}: ` +
         mine
           .map(key => `uid=${key.uid} width=${this.deps.keyWidth(key)}`)
           .join(', ')
@@ -255,23 +284,42 @@ export class UsageKeys implements KeyGroup {
     }
   }
 
+  /** The chip text of a metric in a key language. */
+  private metricLabel(metric: UsageMetric, lang: Lang): string {
+    try {
+      return this.source.metricLabel?.(metric, lang) ?? metric.label;
+    } catch {
+      return metric.label;
+    }
+  }
+
   private async renderKey(key: Key): Promise<string> {
     const width = this.deps.keyWidth(key);
     const data = key?.data ?? {};
     const lang = langOf(data.lang);
     const text = TEXT[lang];
     const marks = markOptions(this.brand, data);
-    const message = { accent: this.brand.accent, mark: brandMark(this.brand) };
+    const mark = brandMark(this.brand);
+    const message: MessageOptions = {
+      accent: this.brand.accent,
+      mark,
+      ...(mark ? { markColor: this.brand.accent } : {}),
+    };
+    // Claude keeps its orange titles; other providers word errors in the
+    // status colours (their accent stays on neutral faces and the mark)
+    const alarm = (color: string): MessageOptions =>
+      mark ? { ...message, accent: color } : message;
 
     if (this.lockedUntil && Date.now() < this.lockedUntil) {
       const lift = formatTimeUntilReset(
-        new Date(this.lockedUntil).toISOString()
+        new Date(this.lockedUntil).toISOString(),
+        lang
       );
       return renderMessageKey(
         width,
         text.rateLimited,
         text.resumes(lift),
-        message
+        alarm(TONE_COLORS.attention)
       );
     }
 
@@ -280,11 +328,16 @@ export class UsageKeys implements KeyGroup {
         data.metric || this.source.defaultMetric || this.metrics[0]?.id || '';
       const snapshot = this.metrics.find(m => m.id === metric);
       if (snapshot) {
-        return renderUsageKey(width, snapshot, {
-          showResetTime: data.showResetTime !== false,
-          ...marks,
-          bgColor: this.deps.bgColor(key),
-        });
+        return renderUsageKey(
+          width,
+          { ...snapshot, label: this.metricLabel(snapshot, lang) },
+          {
+            showResetTime: data.showResetTime !== false,
+            ...marks,
+            bgColor: this.deps.bgColor(key),
+            ...(lang === 'zh' ? { lang } : {}),
+          }
+        );
       }
       const missing = this.missingText(metric, lang);
       return missing
@@ -292,10 +345,21 @@ export class UsageKeys implements KeyGroup {
         : renderMessageKey(width, this.brand.productName, text.noData, message);
     }
 
-    const { title, message: body } = this.failure
-      ? this.errorText(this.failure.error, lang)
-      : { title: this.brand.productName, message: text.loading };
-    return renderMessageKey(width, title, body, message);
+    if (this.failure) {
+      const { title, message: body } = this.errorText(this.failure.error, lang);
+      return renderMessageKey(
+        width,
+        title,
+        body,
+        alarm(errorColor(this.failure.error))
+      );
+    }
+    return renderMessageKey(
+      width,
+      this.brand.productName,
+      text.loading,
+      message
+    );
   }
 
   /** The current copy of a key, or null once it is dead or its device gone. */
@@ -352,7 +416,9 @@ export class UsageKeys implements KeyGroup {
   private setLock(seconds: number) {
     this.lockedUntil = Date.now() + seconds * 1000;
     this.deps.logger?.warn?.(
-      `${this.brand.name} usage rate limited, backing off for ${seconds}s`
+      this.isClaude
+        ? `Usage endpoint rate limited, backing off for ${seconds}s`
+        : `${this.brand.name} usage rate limited, backing off for ${seconds}s`
     );
     if (this.lockTicker) clearInterval(this.lockTicker);
     this.lockTicker = setInterval(async () => {

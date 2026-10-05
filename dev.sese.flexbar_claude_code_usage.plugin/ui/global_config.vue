@@ -10,20 +10,23 @@
                     </v-col>
                     <v-col cols="12">
                         <v-text-field
-                            v-model="modelValue.config.credentialsPath"
-                            :label="$t('Config.CredentialsPath')"
-                            placeholder="~/.claude/.credentials.json"
-                            outlined
-                            hide-details
-                        ></v-text-field>
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field
                             v-model.number="modelValue.config.pollInterval"
                             :label="$t('Config.PollInterval')"
                             placeholder="180"
                             type="number"
                             min="60"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">Claude</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.credentialsPath"
+                            :label="$t('Config.CredentialsPath')"
+                            placeholder="~/.claude/.credentials.json"
                             outlined
                             hide-details
                         ></v-text-field>
@@ -104,7 +107,7 @@
                 <v-icon :color="isConnected ? 'success' : 'error'">{{
                     isConnected ? "mdi-link" : "mdi-link-off"
                 }}</v-icon>
-                <span class="ml-2">{{
+                <span class="ml-2">Claude Code: {{
                     statusText || $t("Config.Checking")
                 }}</span>
                 <v-spacer></v-spacer>

@@ -17,7 +17,7 @@ export type GeminiProblem =
   | 'creds-unreadable'
   /** Refresh rejected (invalid_grant) or 401 after a forced refresh */
   | 'login-expired'
-  /** Personal Google account: Code Assist for individuals ended 2026-06-18 */
+  /** Personal Google account: Google reports it ineligible for quota */
   | 'personal-unsupported'
   /** Any other ineligible tier reason */
   | 'not-eligible'
@@ -52,7 +52,7 @@ const TEXTS: Record<GeminiProblem, Texts> = {
     zh: { title: '未登录', message: '请先登录 gemini' },
   },
   'creds-unreadable': {
-    en: { title: 'Login unreadable', message: 'Run gemini to log in' },
+    en: { title: 'Bad login file', message: 'Run gemini to log in' },
     zh: { title: '无法读取登录', message: '请运行 gemini 重新登录' },
   },
   'login-expired': {

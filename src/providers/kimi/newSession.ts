@@ -13,11 +13,18 @@
  * is installed, else the desktop app, else the CLI in the home folder;
  * desktop / cli force one. Detection only checks that files exist.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { ProviderError } from '../kit';
-import { LaunchTarget, NewSessionLauncher, NewSessionRequest } from '../types';
+import {
+  KeyText,
+  Lang,
+  LaunchTarget,
+  NewSessionLauncher,
+  NewSessionRequest,
+} from '../types';
 
 import { kimiCodeHome } from './paths';
 
@@ -48,9 +55,30 @@ export function launchOptions(data: Record<string, unknown> | undefined): {
 export type KimiLauncherDeps = {
   /** Whether a file or folder exists (tests pass a stub) */
   exists?: (file: string) => boolean;
+  /** Whether a path is an existing folder (tests pass a stub) */
+  isDirectory?: (dir: string) => boolean;
   /** Environment for KIMI_INSTALL_DIR / KIMI_CODE_HOME / APPDATA */
   env?: NodeJS.ProcessEnv;
 };
+
+function keyText(en: string, zh: string): Record<Lang, KeyText> {
+  return { en: { title: en, message: '' }, zh: { title: zh, message: '' } };
+}
+
+/** Key-face titles of the failures a press can run into. */
+export const LAUNCH_ERRORS = {
+  folder: keyText('Folder not found', '未找到文件夹'),
+  app: keyText('Kimi app not found', '未找到 Kimi App'),
+  none: keyText('Kimi not found', '未找到 Kimi'),
+};
+
+function defaultIsDirectory(dir: string): boolean {
+  try {
+    return statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 function joinFor(platform: NodeJS.Platform, ...parts: string[]): string {
   return platform === 'win32'
@@ -119,11 +147,16 @@ function searchEnv(
   env: NodeJS.ProcessEnv
 ): NodeJS.ProcessEnv {
   const dir = request.config?.kimiDir;
-  if (typeof dir !== 'string' || !dir.trim() || !request.home) return env;
+  if (typeof dir !== 'string' || !dir.trim()) return env;
   return {
     ...env,
-    KIMI_CODE_HOME: kimiCodeHome(request.config, env, request.home),
+    KIMI_CODE_HOME: kimiCodeHome(request.config, env, homeOf(request)),
   };
+}
+
+/** The home folder programs are looked for in (the user's by default). */
+function homeOf(request: NewSessionRequest): string {
+  return request.home || os.homedir();
 }
 
 /** A launcher; the exported one checks the real file system. */
@@ -131,52 +164,69 @@ export function createKimiLauncher(
   deps: KimiLauncherDeps = {}
 ): NewSessionLauncher {
   const exists = deps.exists ?? existsSync;
+  const isDirectory = deps.isDirectory ?? defaultIsDirectory;
   const findCli = (request: NewSessionRequest, env: NodeJS.ProcessEnv) => {
-    const home = request.home ?? '';
-    const program = home
-      ? cliCandidates(home, request.platform, env).find(file => exists(file))
-      : undefined;
+    const home = homeOf(request);
+    const program = cliCandidates(home, request.platform, env).find(file =>
+      exists(file)
+    );
     // the CLI's data folder without a known program: the terminal's PATH
     const homeDir =
       env.KIMI_CODE_HOME?.trim() ||
-      (home ? joinFor(request.platform, home, '.kimi-code') : '');
+      joinFor(request.platform, home, '.kimi-code');
     if (program) return program;
-    return homeDir && exists(homeDir) ? 'kimi' : null;
+    return exists(homeDir) ? 'kimi' : null;
   };
   const hasDesktop = (request: NewSessionRequest, env: NodeJS.ProcessEnv) =>
-    !!request.home &&
-    desktopCandidates(request.home, request.platform, env).some(file =>
+    desktopCandidates(homeOf(request), request.platform, env).some(file =>
       exists(file)
     );
 
   return {
     appName: 'Kimi',
+    needsConfig: true,
     strings: {
-      error: { en: 'Kimi not found', zh: '未找到 Kimi' },
+      error: { en: 'Cannot open Kimi', zh: '无法打开 Kimi' },
     },
+
+    /** Kimi Work takes no folder: name the app instead. */
+    subtitle: (data, folderName) =>
+      launchOptions(data).target === 'desktop' ? 'Kimi Work' : folderName,
 
     target(request: NewSessionRequest): LaunchTarget {
       const env = searchEnv(request, deps.env ?? process.env);
       const { target, cliMode } = launchOptions(request.data);
-      const terminal = (program: string): LaunchTarget => ({
-        kind: 'terminal',
-        command: [program, ...CLI_FLAGS[cliMode]],
-        cwd: request.folder,
-      });
+      const terminal = (program: string): LaunchTarget => {
+        if (request.folder && !isDirectory(request.folder)) {
+          // the message goes to the log: no folder path in it
+          throw new ProviderError('not-configured', 'Folder not found', {
+            keyText: LAUNCH_ERRORS.folder,
+          });
+        }
+        return {
+          kind: 'terminal',
+          command: [program, ...CLI_FLAGS[cliMode]],
+          cwd: request.folder,
+        };
+      };
       if (target === 'desktop') {
         if (hasDesktop(request, env))
           return { kind: 'url', url: KIMI_WORK_URL };
-        throw new ProviderError('not-installed', 'Kimi app not found');
+        throw new ProviderError('not-installed', 'Kimi app not found', {
+          keyText: LAUNCH_ERRORS.app,
+        });
       }
       const cli = findCli(request, env);
-      // forced CLI: an undetected install may still be on the shell's PATH
+      // forced CLI: an undetected install (e.g. under nvm) may still be on
+      // the terminal's PATH; the terminal says so when it is not
       if (target === 'cli') return terminal(cli ?? 'kimi');
       if (cli && request.folder) return terminal(cli);
       if (hasDesktop(request, env)) return { kind: 'url', url: KIMI_WORK_URL };
       if (cli) return terminal(cli);
       throw new ProviderError(
         'not-installed',
-        'Neither Kimi Code nor the Kimi app found'
+        'Neither Kimi Code nor the Kimi app found',
+        { keyText: LAUNCH_ERRORS.none }
       );
     },
   };

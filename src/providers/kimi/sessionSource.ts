@@ -56,6 +56,9 @@ export function keyOptions(data?: KeyData | null): {
   };
 }
 
+/** The Kimi desktop app's agent mode, which Kimi Session keys follow */
+const KIMI_WORK = 'Kimi Work';
+
 /** Not installed, Kimi Work never opened: shown when nothing is found. */
 const NOT_SET_UP: SessionNotice = {
   label: { en: 'Not set up', zh: '未设置' },
@@ -65,7 +68,7 @@ const NOT_SET_UP: SessionNotice = {
 /** A key set to Kimi Work on a computer without the Kimi app. */
 const NO_APP: SessionNotice = {
   label: { en: 'Not installed', zh: '未安装' },
-  text: { en: 'Install the Kimi app', zh: '请先安装 Kimi App' },
+  text: { en: 'Get the Kimi app', zh: '请先安装 Kimi App' },
 };
 
 type RefreshMode = 'watch' | 'poll' | 'full';
@@ -206,6 +209,22 @@ export class KimiSessionSource implements SessionSource {
     return null;
   }
 
+  /**
+   * The product a key follows, named on its "Loading…" and "No sessions ·
+   * Start …" faces: Kimi Work for desktop keys and for automatic keys on a
+   * computer with only the app, Kimi Code where the CLI is, plain Kimi
+   * before the first scan.
+   */
+  productName(data?: KeyData): string {
+    const { source } = keyOptions(data);
+    if (source === 'cli') return KIMI_BRAND.productName;
+    if (source === 'desktop') return KIMI_WORK;
+    const found = this.found;
+    if (!found) return KIMI_BRAND.name;
+    if (!found.cli && found.desktop) return KIMI_WORK;
+    return KIMI_BRAND.productName;
+  }
+
   /** Sessions a key with this filter and settings considers, newest first. */
   private entries(filter: string, now: number, data?: KeyData): Entry[] {
     const { source, automations } = keyOptions(data);
@@ -230,7 +249,7 @@ export class KimiSessionSource implements SessionSource {
   private cliEntry(c: CliCandidate): Entry {
     return {
       id: c.dir,
-      at: c.mtimeMs,
+      at: this.cli.activityAt(c),
       followed: this.cli.isHot(c),
       status: (now, idleMs) => this.cli.status(c, now, idleMs),
     };
@@ -320,7 +339,7 @@ export class KimiSessionSource implements SessionSource {
     const window = this.runningWindowMs;
     const cliAll = [...this.cli.candidates.values()]
       .filter(c => this.cli.visible(c))
-      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+      .sort((a, b) => this.cli.activityAt(b) - this.cli.activityAt(a));
     const deskAll = this.desktop
       .candidates(now)
       .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));

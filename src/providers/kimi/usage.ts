@@ -24,6 +24,8 @@
  * fixed texts; transport errors go through safeErrorMessage. Tests stub
  * `fetch` (no real requests).
  */
+import { createHash } from 'node:crypto';
+
 import { safeErrorMessage } from '../../redact';
 import { ProviderError } from '../kit';
 import {
@@ -49,6 +51,15 @@ import { isDirectory, readContextMetric } from './usageContext';
 
 /** Fetches closer together than this reuse the last result in describe() */
 const DESCRIBE_CACHE_MS = 30_000;
+
+/** Chinese chip texts of the metrics (English: their label) */
+const LABEL_ZH: Record<string, string> = {
+  '5h': '5小时',
+  weekly: '每周',
+  monthly: '每月',
+  extra: '加油包',
+  context: '上下文',
+};
 
 const TEXT = {
   notInstalled: {
@@ -88,11 +99,23 @@ let planGap: ProviderError | null = null;
 /** The last successful fetch, reused by describe() for a short while. */
 let lastResult: { at: number; key: string; metrics: UsageMetric[] } | null =
   null;
+/**
+ * A short hash of the access token a forced refresh produced and the
+ * endpoint still refused (never the token itself). Until another token is
+ * stored (`kimi login`, or the CLI refreshing), a 401 for it forces no
+ * further refresh: each one would rotate the CLI's refresh token for nothing.
+ */
+let refusedToken: string | null = null;
 
 /** Forgets the remembered results (tests). */
 export function resetUsageState(): void {
   planGap = null;
   lastResult = null;
+  refusedToken = null;
+}
+
+function fingerprint(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 16);
 }
 
 function cacheKey(config: PluginConfig, deps: KimiUsageDeps): string {
@@ -154,6 +177,8 @@ export async function fetchKimiUsage(
   );
   if (response.kind === 'unauthorized') {
     if (!allowRefresh) throw refreshOff();
+    // a token a forced refresh already gave and the server refused
+    if (refusedToken === fingerprint(token)) throw loginExpired();
     // rejected despite a plausible expiry: one forced refresh, one retry
     const fresh = await getAccessToken(
       { home, endpoint, allowRefresh, force: true },
@@ -166,8 +191,12 @@ export async function fetchKimiUsage(
       deps.fetch,
       deps.now()
     );
-    if (response.kind === 'unauthorized') throw loginExpired();
+    if (response.kind === 'unauthorized') {
+      refusedToken = fingerprint(fresh);
+      throw loginExpired();
+    }
   }
+  refusedToken = null;
 
   const metrics = parseUsagePayload(response.payload, deps.now());
   planGap =
@@ -223,6 +252,9 @@ export const usageSource: KimiUsageSource = {
   fetch: config => fetchAndRemember(config ?? {}),
 
   logText,
+
+  metricLabel: (metric, lang) =>
+    (lang === 'zh' && LABEL_ZH[metric.id]) || metric.label,
 
   missingText,
 

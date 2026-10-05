@@ -93,9 +93,11 @@ function loadingView(lang: Lang, productName: string): SessionView {
   };
 }
 
+/** The source failed: red like a session in the error state */
 const BROKEN: SessionNotice = {
   label: { en: 'Error', zh: '出错' },
   text: { en: 'Could not read sessions', zh: '无法读取会话' },
+  tone: 'error',
 };
 
 export class SessionKeys implements KeyGroup {
@@ -218,11 +220,24 @@ export class SessionKeys implements KeyGroup {
     }
   }
 
+  /** Log prefix; Claude keeps the original "Session keys" wording. */
+  private get logName(): string {
+    return this.cid === SESSION_CID
+      ? 'Session keys'
+      : `${this.brand.name} session keys`;
+  }
+
   private warn(what: string, error: unknown) {
     const text = error instanceof Error ? error.message : `${error}`;
-    this.deps.logger?.warn?.(
-      `${this.brand.name} session keys: ${what}: ${text.slice(0, 200)}`
-    );
+    this.deps.logger?.warn?.(`${this.logName}: ${what}: ${text.slice(0, 200)}`);
+  }
+
+  private watched(location: string): string {
+    try {
+      return this.provider.sessions.watched?.(location) ?? location;
+    } catch {
+      return location;
+    }
   }
 
   private locationFor(config: PluginConfig): string {
@@ -297,7 +312,7 @@ export class SessionKeys implements KeyGroup {
         }
         this.ticker = setInterval(() => this.redraw(), TICK_MS);
         this.deps.logger?.info?.(
-          `${this.brand.name} session keys: watching ${this.location}`
+          `${this.logName}: watching ${this.watched(this.location)}`
         );
       })().finally(() => {
         this.starting = null;
@@ -360,6 +375,15 @@ export class SessionKeys implements KeyGroup {
     }
   }
 
+  /** The product a key follows (Kimi: Kimi Code or Kimi Work). */
+  private productName(data: KeyData): string {
+    try {
+      return this.monitor?.productName?.(data) ?? this.brand.productName;
+    } catch {
+      return this.brand.productName;
+    }
+  }
+
   /**
    * What a key shows now: the running-sessions list while it is open, else
    * the latest session. Equal signatures give equal images.
@@ -378,14 +402,24 @@ export class SessionKeys implements KeyGroup {
       );
       return {
         id,
-        signature: JSON.stringify(['list', list, width, bgColor]),
-        render: () => renderSessionList(width, list, { bgColor }),
+        signature: JSON.stringify([
+          'list',
+          list,
+          width,
+          bgColor,
+          settings.marks.markColor,
+        ]),
+        render: () =>
+          renderSessionList(width, list, {
+            bgColor,
+            markColor: settings.marks.markColor,
+          }),
       };
     }
 
     let view: SessionView;
     if (!this.monitor || !this.ready) {
-      view = loadingView(settings.lang, this.brand.productName);
+      view = loadingView(settings.lang, this.productName(key?.data ?? {}));
     } else {
       const { status, others } = this.pick(
         settings.filter,
@@ -401,7 +435,7 @@ export class SessionKeys implements KeyGroup {
             showProject: settings.showProject,
             now,
             others,
-            productName: this.brand.productName,
+            productName: this.productName(key?.data ?? {}),
           });
     }
     const options = { ...settings.marks, bgColor };

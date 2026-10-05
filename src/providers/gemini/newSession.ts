@@ -120,9 +120,18 @@ export function createGeminiLauncher(
 
   return {
     appName: 'Gemini CLI',
+    needsConfig: true,
     strings: {
       error: { en: 'Cannot open Gemini', zh: '无法打开 Gemini' },
     },
+
+    /** The app takes no folder: name it instead of the (hidden) folder. */
+    subtitle: (data, folderName, lang) =>
+      targetOf(data) === 'gemini-app'
+        ? lang === 'zh'
+          ? 'Gemini App'
+          : 'Gemini app'
+        : folderName,
 
     target(request: NewSessionRequest): LaunchTarget {
       const home = request.home ?? os.homedir();

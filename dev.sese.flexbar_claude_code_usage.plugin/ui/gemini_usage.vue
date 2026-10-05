@@ -66,6 +66,32 @@ const FIXED = [
     ["pooled", "GeminiUsage.UI.metricPooled"],
 ];
 
+// problems (see usageText.ts) → the reason in the status line
+const PROBLEMS = {
+    "cli-missing": "problemCliMissing",
+    "logged-out": "problemLoggedOut",
+    "creds-unreadable": "problemCredsUnreadable",
+    "login-expired": "problemLoginExpired",
+    "personal-unsupported": "problemPersonal",
+    "not-eligible": "problemNotEligible",
+    region: "problemRegion",
+    "verify-account": "problemVerify",
+    "api-key": "problemApiKey",
+    vertex: "problemVertex",
+    "other-auth": "problemOtherAuth",
+    "needs-project": "problemNeedsProject",
+    "project-denied": "problemProjectDenied",
+    "needs-setup": "problemNeedsSetup",
+    "no-quota": "problemNoQuota",
+};
+
+// other failures by ProviderError code
+const CODES = {
+    network: "errorNetwork",
+    http: "errorHttp",
+    "rate-limited": "errorRateLimited",
+};
+
 // problems (see usageText.ts) → hint below the status line
 const HINTS = [
     [["cli-missing"], "GeminiUsage.UI.hintCli"],
@@ -154,8 +180,14 @@ export default {
                         : this.$t("GeminiUsage.UI.connected");
                 } else {
                     this.problem = (response && response.problem) || null;
+                    // the backend's error text is English: word it here
+                    const key =
+                        PROBLEMS[this.problem] ||
+                        CODES[response && response.code];
                     this.statusText = this.$t("GeminiUsage.UI.notAvailable", {
-                        error: (response && response.error) || "?",
+                        error: key
+                            ? this.$t(`GeminiUsage.UI.${key}`)
+                            : (response && response.error) || "?",
                     });
                 }
             } catch (error) {
