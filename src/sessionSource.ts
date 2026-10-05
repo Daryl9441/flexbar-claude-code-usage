@@ -16,11 +16,14 @@ import path from 'node:path';
 import {
   Accumulator,
   LiveInfo,
+  RunningSession,
   SessionStatus,
   createAccumulator,
   deriveStatus,
   observeLines,
   pickSession,
+  runningGroup,
+  sortRunning,
 } from './session';
 
 const INITIAL_TAIL_BYTES = 512 * 1024;
@@ -28,6 +31,8 @@ const MAX_TAIL_BYTES = 8 * 1024 * 1024;
 const READ_CHUNK_BYTES = 1024 * 1024;
 /** Most recent transcripts per filter that are parsed and considered */
 const HOT_COUNT = 6;
+/** Most sessions per filter the running-sessions list follows */
+const MAX_RUNNING = 36;
 const POLL_MS = 5_000;
 const WATCH_DEBOUNCE_MS = 300;
 const FULL_SCAN_MS = 5 * 60_000;
@@ -229,6 +234,7 @@ export class SessionMonitor {
   private subagentAt = new Map<string, number>();
   private dirty = new Set<string>();
   private filters: string[] = [''];
+  private runningWindowMs = 0;
   private watcher: FSWatcher | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -264,6 +270,18 @@ export class SessionMonitor {
     const next = [...new Set(filters.map(normalizeFilter))].sort();
     if (next.join('\n') === this.filters.join('\n')) return;
     this.filters = next.length ? next : [''];
+    void this.refresh('poll');
+  }
+
+  /**
+   * Keeps the transcripts that listRunning() may show parsed: those of live
+   * processes and those written within this window (the largest idle
+   * threshold of the alive keys).
+   */
+  setRunningWindow(ms: number) {
+    const next = Number.isFinite(ms) && ms > 0 ? ms : 0;
+    if (next === this.runningWindowMs) return;
+    this.runningWindowMs = next;
     void this.refresh('poll');
   }
 
@@ -321,6 +339,55 @@ export class SessionMonitor {
       });
     const { chosen, others } = pickSession(derived);
     return { status: chosen?.status ?? null, others };
+  }
+
+  /**
+   * The running sessions a key with this filter lists, as of `now`: those
+   * with a live Claude Code process plus those active within idleMs, minus
+   * idle ones without a process. Ordered by sortRunning().
+   */
+  listRunning(filter: string, now: number, idleMs: number): RunningSession[] {
+    const list: RunningSession[] = [];
+    const f = normalizeFilter(filter);
+    for (const c of this.runningCandidates(f, now, idleMs)) {
+      const file = this.files.get(c.path);
+      if (!file) continue;
+      const live = this.live.get(c.sessionId) ?? null;
+      const status = deriveStatus(file.acc, {
+        now,
+        idleMs,
+        live,
+        subagentActiveAt: this.subagentAt.get(c.sessionId) ?? null,
+        project: c.projectDir,
+        sessionId: c.sessionId,
+      });
+      if (!live && status.state === 'idle') continue;
+      list.push({
+        status,
+        group: runningGroup(status),
+        at: status.lastActivity ?? c.mtimeMs,
+      });
+    }
+    return sortRunning(list);
+  }
+
+  /**
+   * Candidates that may be running: a live process, or written within
+   * windowMs. Most recent first, at most MAX_RUNNING.
+   */
+  private runningCandidates(
+    filter: string,
+    now: number,
+    windowMs: number
+  ): Candidate[] {
+    return [...this.candidates.values()]
+      .filter(
+        c =>
+          (this.live.has(c.sessionId) || now - c.mtimeMs <= windowMs) &&
+          (!filter || this.matches(c, filter))
+      )
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_RUNNING);
   }
 
   /** Candidates matching a normalized filter, most recent first. */
@@ -397,9 +464,16 @@ export class SessionMonitor {
     for (const file of this.dirty) await this.statCandidate(file);
     this.dirty.clear();
 
+    // the sessions keys show, plus those their running lists may show
     const hot = new Map<string, Candidate>();
     for (const filter of this.filters) {
       for (const c of this.matching(filter)) hot.set(c.path, c);
+      const listed = this.runningCandidates(
+        filter,
+        Date.now(),
+        this.runningWindowMs
+      );
+      for (const c of listed) hot.set(c.path, c);
     }
     for (const c of hot.values()) {
       await this.statCandidate(c.path);

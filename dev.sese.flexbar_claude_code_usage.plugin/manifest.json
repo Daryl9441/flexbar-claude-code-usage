@@ -115,7 +115,7 @@
             },
             "Session": {
                 "Title": "Session Status",
-                "Tip": "Shows whether your latest Claude Code session is working, done, or waiting for you",
+                "Tip": "Shows whether your latest Claude Code session is working, done, or waiting for you; press to list running sessions",
                 "UI": {
                     "projectFilter": "Project filter",
                     "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
@@ -165,7 +165,7 @@
             },
             "Session": {
                 "Title": "会话状态",
-                "Tip": "显示最新的 Claude Code 会话是在进行中、已完成，还是在等你",
+                "Tip": "显示最新的 Claude Code 会话是在进行中、已完成，还是在等你；按下可列出运行中的会话",
                 "UI": {
                     "projectFilter": "项目筛选",
                     "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",

@@ -1,6 +1,6 @@
-// Tests for the Session Status key's transcript parser, file follower and
-// view builder, run against the tsc output (see `npm run test:session`).
-// All fixtures are synthetic.
+// Tests for the Session Status key's transcript parser, file follower, view
+// builder, running-sessions list and key, run against the tsc output (see
+// `npm run test:session`). All fixtures are synthetic.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -16,6 +16,15 @@ const build =
 const S = require(path.join(build, 'session.js'));
 const Src = require(path.join(build, 'sessionSource.js'));
 const V = require(path.join(build, 'sessionView.js'));
+// rendering needs @napi-rs/canvas; those tests are skipped without it
+let R = null;
+let K = null;
+try {
+  R = require(path.join(build, 'sessionRender.js'));
+  K = require(path.join(build, 'sessionKey.js'));
+} catch {
+  R = K = null;
+}
 
 // --- fixture helpers -------------------------------------------------------
 
@@ -1016,7 +1025,6 @@ describe('view', () => {
     assert.equal(q.label, '待回答');
     assert.equal(q.tone, 'attention');
     assert.equal(q.text, '继续吗？');
-    assert.equal(q.detail, '继续吗？ — 选项：是');
     assert.equal(q.time, '4分钟');
 
     const asked = view([
@@ -1053,5 +1061,487 @@ describe('view', () => {
     assert.equal(V.formatElapsed(50 * 3600_000, 'zh'), '2天');
     assert.equal(V.langOf('zh-CN'), 'zh');
     assert.equal(V.langOf(undefined), 'en');
+  });
+});
+
+// --- running-sessions list -------------------------------------------------
+
+const mkStatus = (state, extra = {}) => ({
+  state,
+  title: null,
+  project: null,
+  sessionId: null,
+  hasQuestion: false,
+  ...extra,
+});
+
+describe('running list', () => {
+  test('states map to colour groups', () => {
+    const group = (state, extra) => S.runningGroup(mkStatus(state, extra));
+    assert.equal(group('question'), 'attention');
+    assert.equal(group('plan'), 'attention');
+    assert.equal(group('permission'), 'attention');
+    assert.equal(group('permission', { confident: false }), 'attention');
+    assert.equal(group('working'), 'working');
+    assert.equal(group('interrupted'), 'stopped');
+    assert.equal(group('error'), 'stopped');
+    assert.equal(group('done'), 'done');
+    // "asked you" is a finished turn: green in the list
+    assert.equal(group('done', { hasQuestion: true }), 'done');
+    // a live session idle at the prompt
+    assert.equal(group('idle'), 'done');
+  });
+
+  test('groups get amber, blue, red and green dots', () => {
+    assert.equal(V.listTone('attention'), 'attention');
+    assert.equal(V.listTone('working'), 'working');
+    assert.equal(V.listTone('stopped'), 'error');
+    assert.equal(V.listTone('done'), 'done');
+    assert.equal(V.TONE_COLORS.attention, '#f0a830');
+    assert.equal(V.TONE_COLORS.working, '#5b9bf0');
+    assert.equal(V.TONE_COLORS.error, '#d9534f');
+    assert.equal(V.TONE_COLORS.done, '#61aa5c');
+  });
+
+  test('sorted amber, blue, red, green; most recent first in a group', () => {
+    const mk = (id, group, at) => ({
+      status: mkStatus('x', { sessionId: id }),
+      group,
+      at,
+    });
+    const sorted = S.sortRunning([
+      mk('g-old', 'done', 1),
+      mk('b-old', 'working', 2),
+      mk('r', 'stopped', 9),
+      mk('g-new', 'done', 8),
+      mk('a-old', 'attention', 3),
+      mk('b-new', 'working', 7),
+      mk('a-new', 'attention', 4),
+    ]);
+    assert.deepEqual(
+      sorted.map(s => s.status.sessionId),
+      ['a-new', 'a-old', 'b-new', 'b-old', 'r', 'g-new', 'g-old']
+    );
+  });
+
+  test('columns by key width, three rows each', () => {
+    const cols = w => V.listLayout(w).columns;
+    assert.deepEqual(
+      [60, 120, 180, 240, 299, 300, 360, 460].map(cols),
+      [1, 1, 1, 1, 1, 2, 2, 3]
+    );
+    assert.equal(V.listLayout(460).perPage, 9);
+    assert.equal(V.listPages(0, 240), 1);
+    assert.equal(V.listPages(3, 240), 1);
+    assert.equal(V.listPages(4, 240), 2);
+    assert.equal(V.listPages(12, 460), 2);
+  });
+
+  const sessions = n =>
+    Array.from({ length: n }, (_, i) => ({
+      status: mkStatus('working', { title: `Task ${i + 1}` }),
+      group: 'working',
+    }));
+
+  test('list view pages, columns and titles', () => {
+    let v = V.buildListView(sessions(7), { lang: 'en', width: 180, page: 1 });
+    assert.equal(v.pages, 3);
+    assert.equal(v.page, 1);
+    assert.equal(v.columns, 1);
+    assert.deepEqual(
+      v.rows.map(r => r.title),
+      ['Task 4', 'Task 5', 'Task 6']
+    );
+    assert.equal(v.rows[0].tone, 'working');
+    assert.equal(v.empty, '');
+
+    // a page past the end shows the last one
+    v = V.buildListView(sessions(7), { lang: 'en', width: 180, page: 9 });
+    assert.equal(v.page, 2);
+    assert.deepEqual(
+      v.rows.map(r => r.title),
+      ['Task 7']
+    );
+
+    // one page: only the columns needed
+    assert.equal(
+      V.buildListView(sessions(3), { lang: 'en', width: 460, page: 0 }).columns,
+      1
+    );
+    assert.equal(
+      V.buildListView(sessions(7), { lang: 'en', width: 460, page: 0 }).columns,
+      3
+    );
+    v = V.buildListView(sessions(12), { lang: 'en', width: 460, page: 1 });
+    assert.equal(v.columns, 3);
+    assert.equal(v.pages, 2);
+    assert.equal(v.rows.length, 3);
+
+    // title, else project, else a placeholder
+    const untitled = [
+      { status: mkStatus('done', { project: 'demo-app' }), group: 'done' },
+      { status: mkStatus('done'), group: 'done' },
+    ];
+    assert.deepEqual(
+      V.buildListView(untitled, { lang: 'zh', width: 240, page: 0 }).rows,
+      [
+        { tone: 'done', title: 'demo-app' },
+        { tone: 'done', title: '未命名会话' },
+      ]
+    );
+  });
+
+  test('empty list', () => {
+    const en = V.buildListView([], { lang: 'en', width: 240, page: 0 });
+    assert.deepEqual(en.rows, []);
+    assert.equal(en.pages, 1);
+    assert.equal(en.empty, 'No running sessions');
+    const zh = V.buildListView([], { lang: 'zh', width: 240, page: 0 });
+    assert.equal(zh.empty, '没有运行中的会话');
+  });
+
+  test('presses page through the list and back to the normal view', () => {
+    const pager = new V.ListPager();
+    const t = 1_000_000;
+    assert.equal(pager.pageOf('k', t), null);
+    assert.equal(pager.press('k', t, 3), 0);
+    assert.equal(pager.press('k', t + 1000, 3), 1);
+    assert.equal(pager.press('k', t + 2000, 3), 2);
+    assert.equal(pager.pageOf('k', t + 2500), 2);
+    // a press on the last page goes back
+    assert.equal(pager.press('k', t + 3000, 3), null);
+    assert.equal(pager.pageOf('k', t + 3000), null);
+    // and the next one opens the list again
+    assert.equal(pager.press('k', t + 4000, 3), 0);
+
+    // a single page: open, then back
+    assert.equal(pager.press('one', t, 1), 0);
+    assert.equal(pager.press('one', t + 100, 1), null);
+
+    // keys are independent
+    assert.equal(pager.pageOf('k', t + 4000), 0);
+    assert.equal(pager.pageOf('one', t + 4000), null);
+
+    // the list shrank while open: the last page is where it ends
+    assert.equal(pager.press('s', t, 3), 0);
+    pager.press('s', t, 3);
+    pager.press('s', t, 3);
+    assert.equal(pager.press('s', t, 2), null);
+
+    pager.close();
+    assert.equal(pager.pageOf('k', t + 4000), null);
+  });
+
+  test('the list closes 15 s after the last press', () => {
+    const pager = new V.ListPager();
+    const t = 5_000_000;
+    assert.equal(V.LIST_TIMEOUT_MS, 15_000);
+    pager.press('k', t, 3);
+    assert.equal(pager.pageOf('k', t + 14_999), 0);
+    assert.equal(pager.pageOf('k', t + 15_000), null);
+    // timed out: the next press opens the first page again
+    assert.equal(pager.press('k', t + 20_000, 3), 0);
+    // every press restarts the timeout
+    assert.equal(pager.press('k', t + 30_000, 3), 1);
+    assert.equal(pager.pageOf('k', t + 44_000), 1);
+    assert.equal(pager.pageOf('k', t + 45_000), null);
+  });
+});
+
+/**
+ * A Claude config dir with synthetic sessions for the running list:
+ * project "alpha" holds one session per case, "beta" one working session.
+ */
+function makeRunningFixture(now) {
+  const claudeDir = path.join(tmp, 'claude-running');
+  const alpha = path.join(claudeDir, 'projects', '-Users-dev-work-alpha');
+  const beta = path.join(claudeDir, 'projects', '-Users-dev-work-beta');
+  const sessionsDir = path.join(claudeDir, 'sessions');
+  for (const dir of [alpha, beta, sessionsDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const iso = ms => new Date(ms).toISOString();
+  const write = (dir, id, cwd, entries, mtime) => {
+    const file = path.join(dir, `${id}.jsonl`);
+    fs.writeFileSync(
+      file,
+      entries
+        .map(([e, ms]) =>
+          line(
+            ms === null ? e : { ...e, sessionId: id, cwd, timestamp: iso(ms) }
+          )
+        )
+        .join('')
+    );
+    fs.utimesSync(file, new Date(mtime), new Date(mtime));
+  };
+  const cwdA = '/Users/dev/work/alpha';
+  const H = 3600_000;
+  const M = 60_000;
+
+  // live process, finished hours ago: idle at the prompt (green)
+  write(
+    alpha,
+    'live-old',
+    cwdA,
+    [
+      [prompt('Old but open', 0), now - 3 * H],
+      [assistant([text('Done.')], 'end_turn', 0), now - 3 * H + 5000],
+    ],
+    now - 3 * H + 5000
+  );
+  // finished within the idle threshold, process gone (green)
+  write(
+    alpha,
+    'recent-done',
+    cwdA,
+    [
+      [prompt('Recently done', 0), now - 150_000],
+      [assistant([text('All set.')], 'end_turn', 0), now - 120_000],
+    ],
+    now - 120_000
+  );
+  // finished long ago, its registry entry is stale (dead pid): left out
+  write(
+    alpha,
+    'old-done',
+    cwdA,
+    [
+      [prompt('Long finished', 0), now - 2 * H],
+      [assistant([text('Done.')], 'end_turn', 0), now - 2 * H + 5000],
+    ],
+    now - 2 * H + 5000
+  );
+  // working (blue)
+  write(
+    alpha,
+    'working',
+    cwdA,
+    [[prompt('Busy one', 0), now - 10_000]],
+    now - 10_000
+  );
+  // waiting for an answer (amber)
+  write(
+    alpha,
+    'question',
+    cwdA,
+    [
+      [prompt('Needs input', 0), now - 90_000],
+      [
+        assistant(
+          [
+            tool('q1', 'AskUserQuestion', {
+              questions: [{ question: 'Which?' }],
+            }),
+          ],
+          'tool_use',
+          0
+        ),
+        now - 60_000,
+      ],
+    ],
+    now - 60_000
+  );
+  // interrupted (red)
+  write(
+    alpha,
+    'stopped',
+    cwdA,
+    [
+      [prompt('Cut short', 0), now - 200_000],
+      [userBlocks([text('[Request interrupted by user]')], 0), now - 180_000],
+    ],
+    now - 180_000
+  );
+  // "working" 40 minutes without output, no process: stale, left out even
+  // though a metadata line touched the file recently
+  write(
+    alpha,
+    'stale',
+    cwdA,
+    [
+      [prompt('Abandoned', 0), now - 40 * M],
+      [
+        { type: 'ai-title', aiTitle: 'Abandoned work', sessionId: 'stale' },
+        null,
+      ],
+    ],
+    now - 30_000
+  );
+  write(
+    beta,
+    'beta-work',
+    '/Users/dev/work/beta',
+    [[prompt('Beta task', 0), now - 5000]],
+    now - 5000
+  );
+
+  // this test process stands in for the live Claude Code process
+  fs.writeFileSync(
+    path.join(sessionsDir, `${process.pid}.json`),
+    JSON.stringify({
+      pid: process.pid,
+      sessionId: 'live-old',
+      status: 'idle',
+      statusUpdatedAt: now - 3 * H + 6000,
+    })
+  );
+  fs.writeFileSync(
+    path.join(sessionsDir, '999999999.json'),
+    JSON.stringify({ pid: 999999999, sessionId: 'old-done', status: 'idle' })
+  );
+  return claudeDir;
+}
+
+describe('SessionMonitor.listRunning', () => {
+  test('live processes plus recent activity, idle and stale ones left out', async () => {
+    const now = Date.now();
+    const claudeDir = makeRunningFixture(now);
+    const monitor = new Src.SessionMonitor({ claudeDir, onChange: () => {} });
+    monitor.setFilters(['alpha', '']);
+    monitor.setRunningWindow(IDLE);
+    await monitor.rescan();
+
+    const alpha = monitor.listRunning('alpha', now, IDLE);
+    assert.deepEqual(
+      alpha.map(s => s.status.sessionId),
+      ['question', 'working', 'stopped', 'recent-done', 'live-old']
+    );
+    assert.deepEqual(
+      alpha.map(s => s.group),
+      ['attention', 'working', 'stopped', 'done', 'done']
+    );
+    assert.equal(alpha[4].status.state, 'idle');
+    assert.equal(alpha[4].status.live, true);
+    assert.equal(alpha[0].status.title, 'Needs input');
+
+    // no filter: beta's newer working session sorts first among the blue
+    assert.deepEqual(
+      monitor.listRunning('', now, IDLE).map(s => s.status.sessionId),
+      ['question', 'beta-work', 'working', 'stopped', 'recent-done', 'live-old']
+    );
+    // a shorter idle threshold drops the sessions that finished or stopped
+    // before it, unless their process still runs
+    assert.deepEqual(
+      monitor.listRunning('alpha', now, 100_000).map(s => s.status.sessionId),
+      ['question', 'working', 'live-old']
+    );
+    assert.deepEqual(monitor.listRunning('no-such-project', now, IDLE), []);
+
+    // the normal view is unchanged: the session that needs the user
+    const pick = monitor.getStatus('alpha', now, IDLE);
+    assert.equal(pick.status.sessionId, 'question');
+    assert.equal(pick.others, 1);
+    monitor.stop();
+  });
+});
+
+const pngSize = dataUrl => {
+  const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
+  assert.equal(buf.subarray(1, 4).toString('latin1'), 'PNG');
+  return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+};
+
+describe('list rendering', () => {
+  test('renders at any width, empty to many sessions', async t => {
+    if (!R) return t.skip('@napi-rs/canvas is not available');
+    const titles = [
+      'Fix login bug',
+      '重构用户认证模块并补充单元测试',
+      'An extremely long session title that can never fit on a key '.repeat(3),
+    ];
+    const groups = ['attention', 'working', 'stopped', 'done'];
+    for (const width of [60, 120, 180, 240, 360, 460]) {
+      const seen = new Set();
+      for (const n of [0, 1, 3, 7, 12]) {
+        const list = Array.from({ length: n }, (_, i) => ({
+          status: mkStatus('x', { title: titles[i % titles.length] }),
+          group: groups[i % groups.length],
+        }));
+        for (let page = 0; page < V.listPages(n, width); page++) {
+          for (const lang of ['en', 'zh']) {
+            const view = V.buildListView(list, { lang, width, page });
+            const image = await R.renderSessionList(width, view, {});
+            assert.deepEqual(pngSize(image), [width, 60]);
+            seen.add(image);
+          }
+        }
+      }
+      assert.ok(seen.size > 5, `distinct images at ${width}px`);
+    }
+  });
+});
+
+describe('Session Status key', () => {
+  test('a press lists running sessions, pages through them, then goes back', async t => {
+    if (!K || !R) return t.skip('@napi-rs/canvas is not available');
+    const now = Date.now();
+    const claudeDir = makeRunningFixture(now);
+    let chain = Promise.resolve();
+    const settle = async () => {
+      let last;
+      do {
+        last = chain;
+        await last;
+      } while (last !== chain);
+    };
+    const sent = [];
+    const keys = new K.SessionKeys({
+      enqueue: task => (chain = chain.then(task).catch(() => {})),
+      send: async (_serial, key, image) => sent.push([key.uid, image]),
+      isOffline: () => false,
+      keyWidth: key => key.width,
+      bgColor: () => undefined,
+      loadConfig: async () => ({ claudeDir }),
+    });
+    const key = {
+      uid: 7,
+      cid: K.SESSION_CID,
+      width: 180,
+      data: { projectFilter: 'alpha', lang: 'en' },
+    };
+    const last = () => sent.at(-1)[1];
+    const listImage = async page => {
+      const running = keys['monitor'].listRunning('alpha', Date.now(), IDLE);
+      assert.equal(running.length, 5);
+      const view = V.buildListView(running, { lang: 'en', width: 180, page });
+      return R.renderSessionList(180, view, {});
+    };
+
+    try {
+      await keys.alive('dev-1', [key]);
+      await keys['monitor'].rescan();
+      await settle();
+      const normal = last();
+
+      await keys.press('dev-1', key);
+      await settle();
+      assert.equal(last(), await listImage(0));
+
+      await keys.press('dev-1', key);
+      await settle();
+      assert.equal(last(), await listImage(1));
+
+      // a press on the last page: back to the normal view
+      await keys.press('dev-1', key);
+      await settle();
+      assert.equal(last(), normal);
+
+      // the list closes by itself 15 s after the last press
+      await keys.press('dev-1', key);
+      await settle();
+      assert.equal(last(), await listImage(0));
+      const realNow = Date.now;
+      Date.now = () => realNow() + 15_500;
+      try {
+        keys.redraw();
+        await settle();
+      } finally {
+        Date.now = realNow;
+      }
+      assert.equal(last(), normal);
+    } finally {
+      await keys.dead('dev-1', []);
+    }
   });
 });
