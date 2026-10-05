@@ -35,13 +35,37 @@
         <v-row>
             <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
+                <p v-if="hintText" class="text-caption mx-2">{{ hintText }}</p>
             </v-col>
         </v-row>
     </v-container>
 </template>
 
 <script>
-// Gemini Usage key settings. OWNER: the gemini-usage implementer.
+// Gemini Usage key settings: which limit the meter shows. The backend
+// (src/providers/gemini/usage.ts) answers 'usage-status' with the metrics
+// it found, the tier, or an error and the problem behind it.
+const CID = "dev.sese.flexbar_claude_code_usage.gemini_usage";
+
+// metrics that exist whenever the account reports quota
+const FIXED = [
+    ["pro", "GeminiUsage.UI.metricPro"],
+    ["flash", "GeminiUsage.UI.metricFlash"],
+    ["pooled", "GeminiUsage.UI.metricPooled"],
+];
+
+// problems (see usageText.ts) → hint below the status line
+const HINTS = [
+    [["cli-missing"], "GeminiUsage.UI.hintCli"],
+    [
+        ["logged-out", "login-expired", "creds-unreadable", "needs-setup"],
+        "GeminiUsage.UI.hintRelogin",
+    ],
+    [["personal-unsupported"], "GeminiUsage.UI.hintPersonal"],
+    [["api-key", "vertex", "other-auth"], "GeminiUsage.UI.hintLogin"],
+    [["needs-project", "project-denied"], "GeminiUsage.UI.hintProject"],
+];
+
 export default {
     props: {
         modelValue: {
@@ -54,6 +78,7 @@ export default {
         return {
             metrics: [],
             statusText: "",
+            problem: null,
         };
     },
     computed: {
@@ -61,31 +86,56 @@ export default {
             const options = [
                 { title: this.$t("GeminiUsage.UI.metricDefault"), value: "" },
             ];
+            for (const [value, key] of FIXED) {
+                options.push({ title: this.$t(key), value });
+            }
             for (const metric of this.metrics) {
-                options.push({ title: metric.label, value: metric.id });
+                if (!String(metric.id).startsWith("model:")) continue;
+                options.push({
+                    title: this.$t("GeminiUsage.UI.metricModel", {
+                        name: metric.label,
+                    }),
+                    value: metric.id,
+                });
             }
             const current = this.modelValue.data.metric;
-            if (current && !this.metrics.some(m => m.id === current)) {
-                options.push({ title: current, value: current });
+            if (current && !options.some(o => o.value === current)) {
+                const name = String(current).replace(/^model:/, "");
+                options.push({
+                    title: this.$t("GeminiUsage.UI.metricModel", { name }),
+                    value: current,
+                });
             }
             return options;
+        },
+        hintText() {
+            const hint = HINTS.find(([problems]) =>
+                problems.includes(this.problem)
+            );
+            return hint ? this.$t(hint[1]) : "";
         },
     },
     methods: {
         async check() {
             this.statusText = this.$t("GeminiUsage.UI.checking");
+            this.problem = null;
             try {
                 const response = await this.$fd.sendToBackend({
                     data: "usage-status",
                     settings: this.modelValue.data,
-                    cid: "dev.sese.flexbar_claude_code_usage.gemini_usage",
+                    cid: CID,
                 });
                 if (response && response.success) {
                     this.metrics = Array.isArray(response.metrics)
                         ? response.metrics
                         : [];
-                    this.statusText = this.$t("GeminiUsage.UI.connected");
+                    this.statusText = response.tier
+                        ? this.$t("GeminiUsage.UI.connectedTier", {
+                              tier: response.tier,
+                          })
+                        : this.$t("GeminiUsage.UI.connected");
                 } else {
+                    this.problem = (response && response.problem) || null;
                     this.statusText = this.$t("GeminiUsage.UI.notAvailable", {
                         error: (response && response.error) || "?",
                     });
