@@ -1,13 +1,28 @@
 /**
  * What a Session Status key shows, as plain data: label, colors and text
- * lines for a SessionStatus. Pure (no canvas), so it is testable and doubles
- * as the redraw signature — a key is only redrawn when its view changes.
+ * lines for a SessionStatus, or the page of the running-sessions list shown
+ * after a press. Pure (no canvas), so it is testable and doubles as the
+ * redraw signature — a key is only redrawn when its view changes.
  */
-import { SessionState, SessionStatus } from './session';
+import {
+  RunningGroup,
+  RunningSession,
+  SessionState,
+  SessionStatus,
+} from './session';
 
 export type Lang = 'en' | 'zh';
 
 export type ViewTone = 'working' | 'attention' | 'done' | 'error' | 'idle';
+
+/** Status colours: blue, amber, green, red and grey. */
+export const TONE_COLORS: Record<ViewTone, string> = {
+  working: '#5b9bf0',
+  attention: '#f0a830',
+  done: '#61aa5c',
+  error: '#d9534f',
+  idle: '#8a8580',
+};
 
 export type SessionView = {
   tone: ViewTone;
@@ -15,8 +30,6 @@ export type SessionView = {
   label: string;
   /** Main text line: question, current task, title… */
   text: string;
-  /** Longer text for the detail view (key press) */
-  detail: string;
   /** Compact time, e.g. "3m", "刚刚" */
   time: string;
   project: string | null;
@@ -47,7 +60,8 @@ const STRINGS = {
     minutes: (n: number) => `${n}m`,
     hours: (n: number) => `${n}h`,
     days: (n: number) => `${n}d`,
-    options: (list: string) => `Options: ${list}`,
+    noRunning: 'No running sessions',
+    untitled: 'Untitled session',
   },
   zh: {
     working: '进行中',
@@ -70,7 +84,8 @@ const STRINGS = {
     minutes: (n: number) => `${n}分钟`,
     hours: (n: number) => `${n}小时`,
     days: (n: number) => `${n}天`,
-    options: (list: string) => `选项：${list}`,
+    noRunning: '没有运行中的会话',
+    untitled: '未命名会话',
   },
 };
 
@@ -123,7 +138,6 @@ export function buildSessionView(
       tone: 'idle',
       label: s.none,
       text: s.noneText,
-      detail: s.noneText,
       time: '',
       project: null,
       progress: null,
@@ -139,7 +153,6 @@ export function buildSessionView(
   let tone = TONES[status.state];
   let label: string;
   let text: string;
-  let detail: string;
 
   switch (status.state) {
     case 'working':
@@ -147,23 +160,14 @@ export function buildSessionView(
       text = status.background
         ? first(active, s.background)
         : first(active, status.detail, title, status.tool);
-      detail = [first(active, status.tool, status.detail), title]
-        .filter(Boolean)
-        .join(' · ');
       break;
-    case 'question': {
+    case 'question':
       label = s.question;
       text = first(status.question, status.detail, title);
-      const opts = status.options.length
-        ? s.options(status.options.join(' / '))
-        : '';
-      detail = [text, opts].filter(Boolean).join(' — ');
       break;
-    }
     case 'plan':
       label = s.plan;
       text = first(status.detail, s.planText);
-      detail = first(status.detail, title, s.planText);
       break;
     case 'permission':
       label = status.confident ? s.permission : s.permissionGuess;
@@ -172,12 +176,6 @@ export function buildSessionView(
         status.detail,
         status.confident ? s.permissionText : s.permissionGuessText
       );
-      detail = [
-        status.confident ? s.permissionText : s.permissionGuessText,
-        first(status.tool, status.detail),
-      ]
-        .filter(Boolean)
-        .join(': ');
       break;
     case 'done':
       if (status.hasQuestion) {
@@ -188,22 +186,18 @@ export function buildSessionView(
         label = s.done;
         text = first(title);
       }
-      detail = first(status.question, title);
       break;
     case 'interrupted':
       label = s.interrupted;
       text = first(title);
-      detail = text;
       break;
     case 'error':
       label = s.error;
       text = first(status.detail, title);
-      detail = [status.detail, title].filter(Boolean).join(' · ');
       break;
     default:
       label = s.idle;
       text = first(title);
-      detail = text;
   }
 
   const since = status.since ?? status.lastActivity;
@@ -211,11 +205,134 @@ export function buildSessionView(
     tone,
     label,
     text,
-    detail: detail || text,
     time:
       since === null ? '' : formatElapsed(options.now - since, options.lang),
     project: options.showProject ? status.project : null,
     progress,
     others: options.others ?? 0,
   };
+}
+
+// --- running-sessions list (key press) ---------------------------------------
+
+/** Rows per column on the 60px-tall key */
+export const LIST_ROWS = 3;
+/** Narrowest column; wider keys show more columns side by side */
+export const LIST_MIN_COLUMN = 150;
+/** The list closes this long after the last press */
+export const LIST_TIMEOUT_MS = 15_000;
+
+/** Dot colour of each list group: amber, blue, red, green. */
+const GROUP_TONES: Record<RunningGroup, ViewTone> = {
+  attention: 'attention',
+  working: 'working',
+  stopped: 'error',
+  done: 'done',
+};
+
+export function listTone(group: RunningGroup): ViewTone {
+  return GROUP_TONES[group];
+}
+
+export type ListRow = { tone: ViewTone; title: string };
+
+export type ListView = {
+  /** The rows of the page shown, filled column by column */
+  rows: ListRow[];
+  /** Zero-based page shown */
+  page: number;
+  pages: number;
+  /** Columns the rows are laid out in */
+  columns: number;
+  /** Text shown instead of rows when no session is running */
+  empty: string;
+};
+
+/** Columns and rows per page of the list on a key this wide. */
+export function listLayout(width: number): {
+  columns: number;
+  perPage: number;
+} {
+  const w = Number.isFinite(width) ? width : 0;
+  const columns = Math.max(1, Math.floor(w / LIST_MIN_COLUMN));
+  return { columns, perPage: columns * LIST_ROWS };
+}
+
+/** Pages the list of `count` sessions takes on a key this wide (at least 1). */
+export function listPages(count: number, width: number): number {
+  return Math.max(1, Math.ceil(count / listLayout(width).perPage));
+}
+
+export function buildListView(
+  sessions: Pick<RunningSession, 'status' | 'group'>[],
+  options: { lang: Lang; width: number; page: number }
+): ListView {
+  const s = STRINGS[options.lang];
+  const layout = listLayout(options.width);
+  const { perPage } = layout;
+  const pages = Math.max(1, Math.ceil(sessions.length / perPage));
+  // a list that fits on one page takes only the columns it needs, so its
+  // titles get the room of the unused ones
+  const columns =
+    pages > 1
+      ? layout.columns
+      : Math.min(
+          layout.columns,
+          Math.max(1, Math.ceil(sessions.length / LIST_ROWS))
+        );
+  const page = Math.min(Math.max(0, Math.floor(options.page) || 0), pages - 1);
+  const rows = sessions
+    .slice(page * perPage, (page + 1) * perPage)
+    .map(({ status, group }) => ({
+      tone: listTone(group),
+      title: first(status.title, status.project, s.untitled),
+    }));
+  return {
+    rows,
+    page,
+    pages,
+    columns,
+    empty: sessions.length ? '' : s.noRunning,
+  };
+}
+
+/**
+ * Which keys show the running-sessions list, and which page. A press opens
+ * the list, the next press shows the next page, and a press on the last page
+ * goes back to the normal view; so does LIST_TIMEOUT_MS without a press.
+ * Pure: the caller supplies the clock.
+ */
+export class ListPager {
+  private open = new Map<string, { page: number; until: number }>();
+
+  constructor(private readonly timeoutMs = LIST_TIMEOUT_MS) {}
+
+  /** Key press; returns the page now shown, or null for the normal view. */
+  press(id: string, now: number, pages: number): number | null {
+    const page = this.pageOf(id, now);
+    const count = Math.max(1, Math.floor(pages) || 1);
+    const next = page === null ? 0 : Math.min(page, count - 1) + 1;
+    if (page !== null && next >= count) {
+      this.open.delete(id);
+      return null;
+    }
+    this.open.set(id, { page: next, until: now + this.timeoutMs });
+    return next;
+  }
+
+  /** The page a key shows at `now`, or null for the normal view. */
+  pageOf(id: string, now: number): number | null {
+    const entry = this.open.get(id);
+    if (!entry) return null;
+    if (now >= entry.until) {
+      this.open.delete(id);
+      return null;
+    }
+    return entry.page;
+  }
+
+  /** Back to the normal view for the keys whose id passes the test. */
+  close(test: (id: string) => boolean = () => true) {
+    for (const id of [...this.open.keys()]) if (test(id)) this.open.delete(id);
+  }
 }

@@ -973,3 +973,55 @@ export function pickSession<T extends { status: SessionStatus }>(
   ).length;
   return { chosen, others };
 }
+
+/** Colour group of a session in the running-sessions list. */
+export type RunningGroup =
+  /** Waiting for the user: question, plan, permission (amber) */
+  | 'attention'
+  /** Claude is working (blue) */
+  | 'working'
+  /** Interrupted or ended with an error (red) */
+  | 'stopped'
+  /** The turn finished, also with a question in the reply, or the session
+   * sits idle at the prompt (green) */
+  | 'done';
+
+const RUNNING_ORDER: Record<RunningGroup, number> = {
+  attention: 0,
+  working: 1,
+  stopped: 2,
+  done: 3,
+};
+
+export function runningGroup(status: SessionStatus): RunningGroup {
+  if (ATTENTION_STATES.has(status.state)) return 'attention';
+  switch (status.state) {
+    case 'working':
+      return 'working';
+    case 'interrupted':
+    case 'error':
+      return 'stopped';
+    default:
+      return 'done';
+  }
+}
+
+export type RunningSession = {
+  status: SessionStatus;
+  group: RunningGroup;
+  /** Most recent activity, for ordering */
+  at: number;
+};
+
+/**
+ * Orders running sessions for the list: those waiting for the user first,
+ * then working, stopped and finished ones; most recent first in each group.
+ */
+export function sortRunning<T extends RunningSession>(sessions: T[]): T[] {
+  return [...sessions].sort(
+    (a, b) =>
+      RUNNING_ORDER[a.group] - RUNNING_ORDER[b.group] ||
+      b.at - a.at ||
+      (a.status.sessionId ?? '').localeCompare(b.status.sessionId ?? '')
+  );
+}

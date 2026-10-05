@@ -33,7 +33,18 @@ A second key shows what your latest Claude Code session is doing, so you can see
 | **Stopped** / **Error** (red) | You interrupted the turn, or it ended with an API error |
 | **Idle** (grey) | Nothing happened for a while |
 
-Below the status it shows the question, the current todo item or the session title, and a progress bar when Claude keeps a todo list (e.g. 3/5). The top right shows how long the current state has lasted, plus `+N` when other sessions are also working or waiting. Tap the key to rescan and show the full question or details for a few seconds.
+Below the status it shows the question, the current todo item or the session title, and a progress bar when Claude keeps a todo list (e.g. 3/5). The top right shows how long the current state has lasted, plus `+N` when other sessions are also working or waiting.
+
+**Press the key to list all running sessions.** Each row is just a colored dot and the session title, so you can check every session at a glance:
+
+| Dot | Meaning |
+| --- | --- |
+| Amber | Waiting for you: a question, a plan to approve, or a permission prompt |
+| Blue | Working |
+| Red | Stopped or ended with an error |
+| Green | Completed: the turn finished and the session waits at the prompt |
+
+Sessions waiting for you come first, then working, stopped and completed ones, the most recent first in each group. A session counts as running while its Claude Code process is open, or for the key's idle time (15 minutes by default) after its last activity. The list follows the key's project filter, uses three rows per column and more columns on wider keys, and updates live while it is shown. When it does not fit, a page indicator (e.g. `1/3`) appears bottom right and each further press shows the next page; a press on the last page, or 15 seconds without a press, returns to the normal view.
 
 The key reads the session transcripts Claude Code writes to `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`), plus the live status Claude Code keeps in `~/.claude/sessions`. Everything stays on your computer; nothing is sent anywhere. Sessions from the Claude desktop app's Code tab are included. When several sessions are active, one that is waiting for you is shown first.
 
@@ -42,7 +53,7 @@ The key reads the session transcripts Claude Code writes to `~/.claude/projects`
 | Setting | Default | Description |
 | --- | --- | --- |
 | Project filter | empty | Part of the project path; empty shows the latest session of any project |
-| Idle after | 15 min | When a finished session counts as idle |
+| Idle after | 15 min | When a finished session counts as idle and leaves the running list |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
 | Show project name | on | Show the project folder name next to the status |
 | Show Clawd | off | Show Clawd on wide keys |

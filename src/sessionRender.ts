@@ -9,15 +9,13 @@ import {
   pixelWidth,
   textWidth,
 } from './render';
-import { SessionView, ViewTone } from './sessionView';
-
-const TONE_COLORS: Record<ViewTone, string> = {
-  working: '#5b9bf0',
-  attention: '#f0a830',
-  done: '#61aa5c',
-  error: '#d9534f',
-  idle: '#8a8580',
-};
+import {
+  LIST_ROWS,
+  ListView,
+  SessionView,
+  TONE_COLORS,
+  ViewTone,
+} from './sessionView';
 
 // Warm dark tint so a key that needs the user stands out at a glance
 const ATTENTION_BG = '#2c2215';
@@ -27,12 +25,11 @@ const IDLE_TEXT = '#c4bfba';
 const LABEL_FONT = `bold 13px ${FONT}`;
 const TEXT_FONT = `13px ${FONT}`;
 const SMALL_FONT = `11px ${FONT}`;
-const DETAIL_FONT = `12px ${FONT}`;
+const LIST_FONT = `12px ${FONT}`;
+const PAGE_FONT = `10px ${FONT}`;
 
 export type SessionRenderOptions = {
   showClawd: boolean;
-  /** Show the longer detail text over two lines instead of the progress */
-  detail: boolean;
   bgColor?: string;
 };
 
@@ -197,8 +194,8 @@ const CJK_RE = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
 
 /**
  * Wraps text into at most maxLines lines. Breaks at spaces and around CJK
- * characters (which need no spaces), and only mid-word when a line would
- * otherwise stay mostly empty; the last line is ellipsized.
+ * characters (which need no spaces), and only mid-word when a word is wider
+ * than the line; the last line is ellipsized.
  */
 function wrapLines(
   ctx: SKRSContext2D,
@@ -228,7 +225,7 @@ function wrapLines(
       !CLOSING_RE.test(rest[i]) &&
       (rest[i] === ' ' || CJK_RE.test(rest[i]) || CJK_RE.test(rest[i - 1]));
     if (!breakable(cut)) {
-      for (let i = cut - 1; i >= Math.ceil(lo * 0.3); i--) {
+      for (let i = cut - 1; i > 0; i--) {
         if (breakable(i)) {
           cut = i;
           break;
@@ -292,8 +289,7 @@ function drawCompact(
  * Renders a Session Status key face (60px tall, any width from ~60px):
  * status mark + label, elapsed time and project in the header, the
  * question / current task / title below, and a thin todo progress bar when
- * the session has a todo list. The detail view replaces the bottom rows
- * with the longer text wrapped over two lines.
+ * the session has a todo list.
  */
 export async function renderSessionKey(
   width: number,
@@ -342,18 +338,6 @@ export async function renderSessionKey(
     return canvas.toDataURL('image/png');
   }
 
-  if (options.detail) {
-    drawHeader(ctx, view, x, rightX, 16);
-    ctx.font = DETAIL_FONT;
-    const lines = wrapLines(ctx, view.detail || view.text, contentWidth, 2);
-    ctx.fillStyle = textColor;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    const top = lines.length > 1 ? 34 : 40;
-    lines.forEach((line, i) => ctx.fillText(line, x, top + i * 16));
-    return canvas.toDataURL('image/png');
-  }
-
   const hasProgress = !!view.progress;
   drawHeader(ctx, view, x, rightX, hasProgress ? 18 : 23);
 
@@ -370,6 +354,131 @@ export async function renderSessionKey(
   }
 
   if (hasProgress) drawProgress(ctx, view, x, rightX, 45);
+
+  return canvas.toDataURL('image/png');
+}
+
+// List geometry: three 19px rows centred on the 60px key
+const LIST_ROW_HEIGHT = 19;
+const LIST_COLUMN_GAP = 12;
+const DOT_RADIUS = 4;
+// Title starts this far right of the column edge (dot plus gap)
+const LIST_TEXT_INSET = 14;
+
+/**
+ * The empty-list message, centred over up to three lines, at the largest
+ * size (12px down to 9px) at which no word has to be split.
+ */
+function drawEmptyList(
+  ctx: SKRSContext2D,
+  text: string,
+  x: number,
+  rightX: number
+) {
+  const width = rightX - x;
+  const words = text.split(new RegExp(`\\s+|${CJK_RE.source}`)).filter(Boolean);
+  let size = 12;
+  for (; size > 9; size--) {
+    ctx.font = `${size}px ${FONT}`;
+    if (words.every(word => textWidth(ctx, word) <= width)) break;
+  }
+  ctx.font = `${size}px ${FONT}`;
+  const lineHeight = size + 4;
+  const lines = wrapLines(ctx, text, width, 3);
+  // first baseline, so the block of lines sits centred (cap height ~0.75em)
+  const block = (lines.length - 1) * lineHeight + size * 0.75;
+  const top = (KEY_HEIGHT - block) / 2 + size * 0.75;
+  ctx.fillStyle = COLORS.label;
+  ctx.textAlign = 'center';
+  lines.forEach((line, i) =>
+    ctx.fillText(line, (x + rightX) / 2, top + i * lineHeight)
+  );
+}
+
+/**
+ * Renders the running-sessions list: one row per session, a dot in the
+ * status colour and the session title, in as many columns as the key is
+ * wide (see listLayout), with a page indicator ("1/3") bottom right when
+ * the list has more pages.
+ */
+export async function renderSessionList(
+  width: number,
+  list: ListView,
+  options: { bgColor?: string }
+): Promise<string> {
+  const keyWidth = pixelWidth(width);
+  const canvas = createCanvas(keyWidth, KEY_HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = options.bgColor || COLORS.background;
+  ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
+
+  const pad = keyWidth < 140 ? 7 : 10;
+  const left = pad;
+  const rightX = keyWidth - pad;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  if (list.rows.length === 0) {
+    drawEmptyList(ctx, list.empty, left, rightX);
+    return canvas.toDataURL('image/png');
+  }
+
+  const rows = LIST_ROWS;
+  const columns = Math.max(1, list.columns);
+  const columnWidth =
+    (rightX - left - (columns - 1) * LIST_COLUMN_GAP) / columns;
+  const top = (KEY_HEIGHT - rows * LIST_ROW_HEIGHT) / 2;
+
+  // page indicator, bottom right; the last column's bottom row makes room
+  let pageText = '';
+  let pageWidth = 0;
+  if (list.pages > 1) {
+    pageText = `${list.page + 1}/${list.pages}`;
+    ctx.font = PAGE_FONT;
+    pageWidth = textWidth(ctx, pageText);
+  }
+
+  // faint rules between the columns that have rows
+  const used = Math.min(columns, Math.ceil(list.rows.length / rows));
+  ctx.fillStyle = COLORS.barTrack;
+  for (let col = 1; col < used; col++) {
+    const x =
+      left + col * (columnWidth + LIST_COLUMN_GAP) - LIST_COLUMN_GAP / 2;
+    ctx.fillRect(Math.round(x), top + 3, 1, rows * LIST_ROW_HEIGHT - 6);
+  }
+
+  ctx.font = LIST_FONT;
+  list.rows.forEach((row, i) => {
+    const col = Math.floor(i / rows);
+    if (col >= columns) return;
+    const x = left + col * (columnWidth + LIST_COLUMN_GAP);
+    const cy = top + (i % rows) * LIST_ROW_HEIGHT + LIST_ROW_HEIGHT / 2;
+
+    ctx.fillStyle = TONE_COLORS[row.tone];
+    ctx.beginPath();
+    ctx.arc(x + DOT_RADIUS, cy, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    const textX = x + LIST_TEXT_INSET;
+    let maxWidth = x + columnWidth - textX;
+    if (pageText && col === columns - 1 && i % rows === rows - 1) {
+      maxWidth -= pageWidth + 6;
+    }
+    const title = ellipsize(ctx, row.title, Math.max(0, maxWidth));
+    // a lone ellipsis says nothing: the dot alone is clearer
+    if (!title || title === '…') return;
+    ctx.fillStyle = COLORS.text;
+    ctx.fillText(title, textX, cy + 4);
+  });
+
+  if (pageText) {
+    ctx.font = PAGE_FONT;
+    ctx.fillStyle = COLORS.label;
+    ctx.textAlign = 'right';
+    const cy = top + (rows - 1) * LIST_ROW_HEIGHT + LIST_ROW_HEIGHT / 2;
+    ctx.fillText(pageText, rightX, cy + 3.5);
+  }
 
   return canvas.toDataURL('image/png');
 }

@@ -1,18 +1,25 @@
 /**
  * The Session Status key: shows whether the latest Claude Code session is
  * working, done, or waiting for the user, kept live from the transcripts on
- * disk. Self-contained apart from a few drawing hooks supplied by plugin.ts,
- * and never touches the usage API.
+ * disk; a press lists all running sessions. Self-contained apart from a few
+ * drawing hooks supplied by plugin.ts, and never touches the usage API.
  */
-import { renderSessionKey } from './sessionRender';
+import { renderSessionKey, renderSessionList } from './sessionRender';
 import { SessionMonitor, resolveClaudeDir } from './sessionSource';
-import { Lang, SessionView, buildSessionView, langOf } from './sessionView';
+import {
+  LIST_TIMEOUT_MS,
+  Lang,
+  ListPager,
+  SessionView,
+  buildListView,
+  buildSessionView,
+  langOf,
+  listPages,
+} from './sessionView';
 
 export const SESSION_CID = 'dev.sese.flexbar_claude_code_usage.session';
 
 const DEFAULT_IDLE_MINUTES = 15;
-/** How long a key press shows the detail view */
-const DETAIL_MS = 6_000;
 /** Re-evaluates time-based transitions (permission guess, idle, clock) */
 const TICK_MS = 5_000;
 
@@ -63,7 +70,6 @@ function loadingView(lang: Lang): SessionView {
     tone: 'idle',
     label: 'Claude Code',
     text: lang === 'zh' ? '加载中…' : 'Loading…',
-    detail: '',
     time: '',
     project: null,
     progress: null,
@@ -77,7 +83,9 @@ export class SessionKeys {
   private drawn = new Map<string, string>();
   /** Keys with a draw waiting in the queue (it renders the latest view) */
   private queued = new Set<string>();
-  private detailUntil = new Map<string, number>();
+  /** Keys showing the running-sessions list, by `${serialNumber}#${uid}` */
+  private pager = new ListPager();
+  private listTimers = new Map<string, NodeJS.Timeout>();
   private monitor: SessionMonitor | null = null;
   private ready = false;
   private claudeDir: string | null = null;
@@ -110,16 +118,29 @@ export class SessionKeys {
     await this.sync();
   }
 
-  /** Key press: rescan now and show the detail view for a few seconds. */
+  /**
+   * Key press: show the running-sessions list, then its next page; a press
+   * on the last page goes back to the normal view. Also rescans now.
+   */
   async press(serialNumber: string, pressed: Key) {
     const keys = this.keys.get(serialNumber);
     const index = keys?.findIndex(key => key.uid === pressed.uid) ?? -1;
     if (keys && index >= 0) keys[index] = pressed;
-    this.detailUntil.set(
-      `${serialNumber}#${pressed.uid}`,
-      Date.now() + DETAIL_MS
-    );
-    setTimeout(() => this.redraw(), DETAIL_MS + 50);
+    const id = `${serialNumber}#${pressed.uid}`;
+    const now = Date.now();
+    const page = this.pager.press(id, now, this.listPagesFor(pressed, now));
+    // back to the normal view once the list times out
+    clearTimeout(this.listTimers.get(id));
+    this.listTimers.delete(id);
+    if (page !== null) {
+      this.listTimers.set(
+        id,
+        setTimeout(() => {
+          this.listTimers.delete(id);
+          this.redraw();
+        }, LIST_TIMEOUT_MS + 50)
+      );
+    }
     this.redraw();
     await this.monitor?.rescan();
   }
@@ -166,14 +187,17 @@ export class SessionKeys {
     if (!this.hasKeys()) {
       this.stopMonitor();
       this.drawn.clear();
-      this.detailUntil.clear();
+      this.pager.close();
+      for (const timer of this.listTimers.values()) clearTimeout(timer);
+      this.listTimers.clear();
       return;
     }
     await this.ensureMonitor();
-    const filters = [...this.keys.values()].flatMap(keys =>
-      keys.map(key => settingsOf(key).filter)
+    const settings = [...this.keys.values()].flatMap(keys =>
+      keys.map(settingsOf)
     );
-    this.monitor?.setFilters(filters);
+    this.monitor?.setFilters(settings.map(s => s.filter));
+    this.monitor?.setRunningWindow(Math.max(...settings.map(s => s.idleMs)));
     this.redraw();
   }
 
@@ -215,12 +239,37 @@ export class SessionKeys {
     this.ticker = null;
   }
 
-  /** The image inputs for a key now; equal views give equal images. */
+  /** Pages of the running-sessions list on this key now (at least 1). */
+  private listPagesFor(key: Key, now: number): number {
+    if (!this.monitor || !this.ready) return 1;
+    const { filter, idleMs } = settingsOf(key);
+    const count = this.monitor.listRunning(filter, now, idleMs).length;
+    return listPages(count, this.deps.keyWidth(key));
+  }
+
+  /**
+   * What a key shows now: the running-sessions list while it is open, else
+   * the latest session. Equal signatures give equal images.
+   */
   private viewFor(serialNumber: string, key: Key, now: number) {
     const settings = settingsOf(key);
     const id = `${serialNumber}#${key.uid}`;
-    const detail = (this.detailUntil.get(id) ?? 0) > now;
-    if (!detail) this.detailUntil.delete(id);
+    const width = this.deps.keyWidth(key);
+    const bgColor = this.deps.bgColor(key);
+    const page = this.pager.pageOf(id, now);
+
+    if (page !== null && this.monitor && this.ready) {
+      const list = buildListView(
+        this.monitor.listRunning(settings.filter, now, settings.idleMs),
+        { lang: settings.lang, width, page }
+      );
+      return {
+        id,
+        signature: JSON.stringify(['list', list, width, bgColor]),
+        render: () => renderSessionList(width, list, { bgColor }),
+      };
+    }
+
     let view: SessionView;
     if (!this.monitor || !this.ready) {
       view = loadingView(settings.lang);
@@ -237,18 +286,11 @@ export class SessionKeys {
         others,
       });
     }
-    const width = this.deps.keyWidth(key);
-    const options = {
-      showClawd: settings.showClawd,
-      detail,
-      bgColor: this.deps.bgColor(key),
-    };
+    const options = { showClawd: settings.showClawd, bgColor };
     return {
       id,
-      view,
-      width,
-      options,
       signature: JSON.stringify([view, width, options]),
+      render: () => renderSessionKey(width, view, options),
     };
   }
 
@@ -272,7 +314,7 @@ export class SessionKeys {
     // look the key up again: it may have died or changed while queued
     const key = this.keys.get(serialNumber)?.find(k => k.uid === uid);
     if (!key || this.deps.isOffline(serialNumber)) return;
-    const { id, view, width, options, signature } = this.viewFor(
+    const { id, signature, render } = this.viewFor(
       serialNumber,
       key,
       Date.now()
@@ -281,8 +323,7 @@ export class SessionKeys {
     // (at the latest when the clock ticks over), not every few seconds
     this.drawn.set(id, signature);
     try {
-      const image = await renderSessionKey(width, view, options);
-      await this.deps.send(serialNumber, key, image);
+      await this.deps.send(serialNumber, key, await render());
     } catch (error) {
       const text = error instanceof Error ? error.message : `${error}`;
       this.deps.logger?.warn?.(
