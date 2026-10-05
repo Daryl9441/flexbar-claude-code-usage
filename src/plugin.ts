@@ -17,11 +17,14 @@ const DEFAULT_LOCKOUT_SECONDS = 300;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Key = any;
 
+/** Title and message shown on a key face. */
+type KeyText = { title: string; message: string };
+
 const aliveKeys = new Map<string, Key[]>();
 
 let config: Config | null = null;
 let lastUsage: UsageData | null = null;
-let lastError: string | null = null;
+let lastError: KeyText | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
 let lockedUntil: number | null = null;
 let lockTicker: NodeJS.Timeout | null = null;
@@ -37,6 +40,31 @@ async function getConfigCached(): Promise<Config> {
     return {};
   }
   return config;
+}
+
+/**
+ * Short key-face text for a fetch error. Keys can be under 100px wide, so the
+ * full error message only goes to the log and the settings UI.
+ */
+function errorKeyText(error: unknown): KeyText {
+  if (error instanceof UsageError) {
+    switch (error.code) {
+      case 'no-credentials':
+        return { title: 'Not logged in', message: 'Run claude to log in' };
+      case 'unauthorized':
+        return { title: 'Login expired', message: 'Run claude to log in' };
+      case 'rate-limited':
+        return { title: 'Rate limited', message: 'Retrying later' };
+      case 'http':
+        return {
+          title: 'Usage error',
+          message: error.message.match(/HTTP \d+/)?.[0] ?? error.message,
+        };
+      case 'network':
+        return { title: 'Network error', message: 'Check your connection' };
+    }
+  }
+  return { title: 'Claude Code', message: `${error}` };
 }
 
 function keyWidth(key: Key): number {
@@ -61,7 +89,7 @@ async function drawKey(serialNumber: string, key: Key) {
     image = renderMessageKey(
       keyWidth(key),
       'Rate limited',
-      `Usage data returns in ${lift}`
+      `Resumes in ${lift}`
     );
   } else if (lastUsage) {
     const metric: Metric = key.data?.metric || 'session';
@@ -78,11 +106,11 @@ async function drawKey(serialNumber: string, key: Key) {
           'No data for this limit'
         );
   } else {
-    image = renderMessageKey(
-      keyWidth(key),
-      'Claude Code',
-      lastError ?? 'Loading…'
-    );
+    const { title, message } = lastError ?? {
+      title: 'Claude Code',
+      message: 'Loading…',
+    };
+    image = renderMessageKey(keyWidth(key), title, message);
   }
 
   try {
@@ -159,7 +187,7 @@ async function doRefresh() {
     lastError = null;
     clearLock();
   } catch (error) {
-    lastError = error instanceof UsageError ? error.message : `${error}`;
+    lastError = errorKeyText(error);
     logger?.error('Failed to fetch Claude usage:', error);
     if (error instanceof UsageError && error.code === 'rate-limited') {
       setLock(error.retryAfterSeconds ?? DEFAULT_LOCKOUT_SECONDS);
