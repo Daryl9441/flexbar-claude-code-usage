@@ -1,39 +1,259 @@
 /**
  * Kimi usage meter source.
  *
- * OWNER: the kimi-usage implementer (worktree feat/mp-kimi-usage). Edit this
- * file and add helpers as src/providers/kimi/usage*.ts (e.g. usageApi.ts);
- * do not edit index.ts, brand.ts, ../types.ts, ../kit.ts or anything
- * outside src/providers/kimi/, ui/kimi_usage.vue and
- * scripts/test-kimi-usage.mjs.
+ * Plan limits come from the Kimi Code CLI's official quota endpoint
+ * (GET <baseUrl>/usages, ./usageApi.ts) with the CLI's own OAuth login
+ * (./usageAuth.ts, endpoint and slot from ./usageConfig.ts): 5-hour, weekly,
+ * monthly and the monthly Kimi Code share, plus the extra-usage booster
+ * wallet. The Kimi desktop app keeps its plan data behind its own web
+ * session, which this plugin never touches; the only desktop number is the
+ * context fill of the current Kimi Work task (./usageContext.ts, local and
+ * credential-free), added as the `context` metric.
  *
- * Data folders: kimiCodeHome() / kimiDesktopDir() in ./paths.ts (shared, do not
- * re-implement). Contract (see ../types.ts UsageSource and architecture.md):
- * - fetch(config) returns every limit as { id, label, percent, resetsAt };
- *   ids are stored in the key's `metric` setting, labels go on the chip.
- * - Throw ProviderError (../kit.ts) with a fitting code: 'not-installed',
- *   'not-configured', 'no-credentials', 'unauthorized', 'rate-limited'
- *   (with retryAfterSeconds), 'http' ("HTTP 500" in the message), 'network',
- *   'parse'. The key shows a short text for the code (override errorText for
- *   custom texts); the message goes to the log and the settings UI.
- * - Never log, throw or return credentials; route error text through
- *   safeErrorMessage (src/redact.ts); never JSON.parse credential data
- *   bare. Tests stub the network: no real requests from a test.
+ * | Found on this computer          | Metrics / key face                       |
+ * | ------------------------------- | ---------------------------------------- |
+ * | Kimi Code logged in             | 5h, weekly, … (+ context with Kimi Work) |
+ * | only Kimi Work context data     | context                                  |
+ * | Kimi Code folder, no login      | "Not logged in · Run kimi login"         |
+ * | login rejected / tombstone      | "Login expired · Run kimi login"         |
+ * | expired, refreshing turned off  | "Login expired · Run kimi to refresh"    |
+ * | desktop app only, no task yet   | "No usage data · Log in with Kimi Code"  |
+ * | neither                         | "Kimi not found · Install Kimi Code"     |
+ *
+ * Never logs, throws or returns credentials: errors are ProviderErrors with
+ * fixed texts; transport errors go through safeErrorMessage. Tests stub
+ * `fetch` (no real requests).
  */
+import { safeErrorMessage } from '../../redact';
 import { ProviderError } from '../kit';
-import { PluginConfig, UsageMetric, UsageSource } from '../types';
+import {
+  KeyText,
+  Lang,
+  PluginConfig,
+  UsageDescription,
+  UsageMetric,
+  UsageSource,
+} from '../types';
 
-export const usageSource: UsageSource = {
-  // TODO(kimi-usage): the metric id a key shows by default ('' = first one)
+import { kimiCodeHome, kimiDesktopDir } from './paths';
+import { parseUsagePayload, requestUsage } from './usageApi';
+import {
+  AuthDeps,
+  CLI_LOCK,
+  getAccessToken,
+  loginExpired,
+  refreshOff,
+} from './usageAuth';
+import { loadEndpoint } from './usageConfig';
+import { isDirectory, readContextMetric } from './usageContext';
+
+/** Fetches closer together than this reuse the last result in describe() */
+const DESCRIBE_CACHE_MS = 30_000;
+
+const TEXT = {
+  notInstalled: {
+    en: { title: 'Kimi not found', message: 'Install Kimi Code' },
+    zh: { title: '未找到 Kimi', message: '请安装 Kimi Code' },
+  },
+  desktopOnly: {
+    en: { title: 'No usage data', message: 'Log in with Kimi Code' },
+    zh: { title: '暂无用量数据', message: '请登录 Kimi Code' },
+  },
+  noLimits: {
+    en: { title: 'No usage data', message: 'No limits reported' },
+    zh: { title: '暂无用量数据', message: '未返回任何限额' },
+  },
+  noContext: {
+    en: { title: 'No context data', message: 'Use Kimi Work first' },
+    zh: { title: '暂无上下文数据', message: '请先使用 Kimi Work' },
+  },
+} satisfies Record<string, Record<Lang, KeyText>>;
+
+export type KimiUsageDeps = AuthDeps;
+
+export function defaultDeps(): KimiUsageDeps {
+  return {
+    // looked up per call, so a replaced global fetch (tests) is used
+    fetch: (input, init) => globalThis.fetch(input, init),
+    now: () => Date.now(),
+    sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    platform: process.platform,
+    env: process.env,
+    lock: CLI_LOCK,
+  };
+}
+
+/** Why the last fetch had no plan limits, for keys that show one. */
+let planGap: ProviderError | null = null;
+/** The last successful fetch, reused by describe() for a short while. */
+let lastResult: { at: number; key: string; metrics: UsageMetric[] } | null =
+  null;
+
+/** Forgets the remembered results (tests). */
+export function resetUsageState(): void {
+  planGap = null;
+  lastResult = null;
+}
+
+function cacheKey(config: PluginConfig, deps: KimiUsageDeps): string {
+  return JSON.stringify([
+    kimiCodeHome(config, deps.env),
+    kimiDesktopDir(config, deps.platform, deps.env),
+    config?.kimiRefreshLogin !== false,
+  ]);
+}
+
+/**
+ * Every Kimi limit available on this computer, plan limits first (5h is
+ * the default), the Kimi Work context last.
+ */
+export async function fetchKimiUsage(
+  config: PluginConfig,
+  deps: KimiUsageDeps = defaultDeps()
+): Promise<UsageMetric[]> {
+  const home = kimiCodeHome(config, deps.env);
+  const desktop = kimiDesktopDir(config, deps.platform, deps.env);
+  const allowRefresh = config?.kimiRefreshLogin !== false;
+  const endpoint = await loadEndpoint(home, deps.env);
+  // read alongside the request; a failed local read only drops the metric
+  const context = readContextMetric(desktop).catch(() => null);
+
+  let token: string;
+  try {
+    token = await getAccessToken({ home, endpoint, allowRefresh }, deps);
+  } catch (error) {
+    if (!(error instanceof ProviderError) || error.code !== 'no-credentials') {
+      throw error;
+    }
+    // no Kimi Code login at all: the desktop context is all there is
+    let reason: ProviderError = error;
+    if (!(await isDirectory(home))) {
+      reason = (await isDirectory(desktop))
+        ? new ProviderError(
+            'not-configured',
+            'The Kimi desktop app keeps its plan usage to itself. Log in with Kimi Code (`kimi login`) for plan limits.',
+            { keyText: TEXT.desktopOnly }
+          )
+        : new ProviderError(
+            'not-installed',
+            'Neither Kimi Code nor the Kimi desktop app was found on this computer.',
+            { keyText: TEXT.notInstalled }
+          );
+    }
+    const only = await context;
+    if (!only) throw reason;
+    planGap = reason;
+    return [only];
+  }
+
+  let response = await requestUsage(
+    endpoint.baseUrl,
+    token,
+    deps.fetch,
+    deps.now()
+  );
+  if (response.kind === 'unauthorized') {
+    if (!allowRefresh) throw refreshOff();
+    // rejected despite a plausible expiry: one forced refresh, one retry
+    const fresh = await getAccessToken(
+      { home, endpoint, allowRefresh, force: true },
+      deps
+    );
+    if (fresh === token) throw loginExpired();
+    response = await requestUsage(
+      endpoint.baseUrl,
+      fresh,
+      deps.fetch,
+      deps.now()
+    );
+    if (response.kind === 'unauthorized') throw loginExpired();
+  }
+
+  const metrics = parseUsagePayload(response.payload, deps.now());
+  planGap =
+    metrics.length > 0
+      ? null
+      : new ProviderError(
+          'unsupported',
+          'The Kimi Code usage endpoint reported no limits.',
+          { keyText: TEXT.noLimits }
+        );
+  const local = await context;
+  if (local) metrics.push(local);
+  if (metrics.length === 0 && planGap) throw planGap;
+  return metrics;
+}
+
+function logText(error: unknown): string {
+  // ProviderError messages are fixed texts; keep "ProviderError:" out
+  return error instanceof ProviderError
+    ? safeErrorMessage(new Error(error.message))
+    : safeErrorMessage(error);
+}
+
+/**
+ * Key face for a key whose metric the last fetch did not return, or null
+ * for the generic "No data for this limit". Not part of UsageSource yet:
+ * the integrator can call it from UsageKeys (see the hand-back).
+ */
+function missingText(metricId: string, lang: Lang): KeyText | null {
+  if (metricId === 'context') return TEXT.noContext[lang];
+  const extra = planGap?.extra.keyText;
+  if (!extra) return null;
+  return 'title' in extra ? extra : extra[lang];
+}
+
+async function fetchAndRemember(
+  config: PluginConfig,
+  deps: KimiUsageDeps = defaultDeps()
+): Promise<UsageMetric[]> {
+  const metrics = await fetchKimiUsage(config, deps);
+  lastResult = { at: deps.now(), key: cacheKey(config, deps), metrics };
+  return metrics;
+}
+
+export type KimiUsageSource = UsageSource & {
+  missingText(metricId: string, lang: Lang): KeyText | null;
+};
+
+export const usageSource: KimiUsageSource = {
+  // '' = the first metric returned: 5h when the plan has it
   defaultMetric: '',
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async fetch(config: PluginConfig): Promise<UsageMetric[]> {
-    // TODO(kimi-usage): find the Kimi login on this computer, request the
-    // usage, and map every limit to a UsageMetric.
-    throw new ProviderError(
-      'not-configured',
-      'Kimi usage is not available yet'
-    );
+  fetch: config => fetchAndRemember(config ?? {}),
+
+  logText,
+
+  missingText,
+
+  /**
+   * The key's settings page ('usage-status'): the available metrics, or a
+   * log-safe error with its code so the page can word it in its language.
+   * Reuses a result younger than 30 s instead of asking the server again.
+   */
+  async describe(config: PluginConfig) {
+    const deps = defaultDeps();
+    const safeConfig = config ?? {};
+    try {
+      const fresh =
+        lastResult &&
+        lastResult.key === cacheKey(safeConfig, deps) &&
+        deps.now() - lastResult.at < DESCRIBE_CACHE_MS
+          ? lastResult.metrics
+          : await fetchAndRemember(safeConfig, deps);
+      const contextOnly = fresh.every(m => m.id === 'context');
+      return {
+        success: true,
+        metrics: fresh,
+        contextOnly,
+        ...(contextOnly && planGap ? { planCode: planGap.code } : {}),
+      } satisfies UsageDescription;
+    } catch (error) {
+      return {
+        success: false,
+        error: logText(error),
+        code: error instanceof ProviderError ? error.code : undefined,
+      } satisfies UsageDescription;
+    }
   },
 };
