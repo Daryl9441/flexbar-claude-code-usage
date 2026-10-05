@@ -25,6 +25,10 @@ repository owner requires this without exception.
   `os.tmpdir()` in code.
 - Hostnames (`*.local`), device serial numbers, real Claude Code session ids,
   transcript content, and logs or screenshots that show any of the above.
+- The same data in encoded form: Claude Code project folder names
+  (`-Users-<name>-app`), URL-encoded paths and addresses
+  (`%2FUsers%2F<name>`, `<name>%40<domain>`), or inside binary files (PNG
+  metadata, packed `.flexplugin` files).
 
 **Rules:**
 
@@ -33,7 +37,11 @@ repository owner requires this without exception.
    before committing and never switch it to a personal address.
 2. Fixtures are synthetic. When test code needs a token-shaped string, build it
    at runtime (e.g. `['sk-', 'ant-', body].join('')`) so the source never
-   contains a literal token.
+   contains a literal token. Synthetic values must look synthetic, or the
+   scanner flags them: serials contain `TEST`, `FAKE` or `MOCK`
+   (`FAKE-DEVICE-1`), session UUIDs use few distinct digits
+   (`00000000-0000-4000-8000-000000000001`), home folders use `you`
+   (`/Users/you`, `-Users-you-app`, `%2FUsers%2Fyou`).
 3. Never log, print or draw a token or credential. Error text from the
    credential and usage code goes through `safeErrorMessage` (`src/redact.ts`).
    Never log raw error objects there (a failed Keychain write's error repeats
@@ -41,16 +49,60 @@ repository owner requires this without exception.
    a bare `JSON.parse` (its error message quotes the input).
 4. Run `npm run check:privacy` before every push, and
    `npm run check:privacy:history` for the commits you are about to push. Both
-   must report 0 errors.
+   must report 0 errors. `npm run check:privacy:all` checks every local branch
+   and everything already on `origin` (it needs the `upstream` remote, the
+   parent repository, to leave out upstream's own commits).
 5. Activate the git hooks once per clone with `npm run setup:hooks`: pre-commit
-   scans the staged changes and the commit identity, pre-push scans every new
-   commit including author/committer. CI (`.github/workflows/privacy.yml`) runs
-   the same checks on every push and pull request.
+   scans the staged changes (binary files included) and the commit identity,
+   pre-push scans every new commit including author/committer and the binary
+   files it adds. CI (`.github/workflows/privacy.yml`) runs the same checks on
+   every push and pull request.
 6. `.privacy-allowlist` is only for values verified to be public (e.g. Claude
-   Code's public OAuth client id), each with a comment saying why. When a check
-   fails, remove the data instead of allowlisting it. A credential that was
-   ever committed must be rotated: deleting it in a later commit leaves it in
-   the history.
+   Code's public OAuth client id) or obviously synthetic, each with a comment
+   saying why. When a check fails, remove the data instead of allowlisting it.
+   A credential that was ever committed must be rotated: deleting it in a
+   later commit leaves it in the history.
+7. List your own identifiers in `.privacy-denylist.local` at the repository
+   root (git-ignored; committing it is an error): your macOS user name, real
+   name, hostname, Flexbar serial, personal email addresses, one per line, or
+   `re:<regex>` for a pattern. A plain entry matches case-insensitively as a
+   whole word, in file content, binary files, commit messages and author
+   names, and the allowlist cannot exempt it. A file outside the repository
+   works too: `export PRIVACY_DENYLIST=~/.config/privacy-denylist`. Leave out
+   your public GitHub user name; it is in every commit. The session ids of the
+   transcripts on your machine (file names in `~/.claude/projects`) are denied
+   automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off.
+
+**If private data was already committed or pushed:**
+
+1. A credential: revoke or rotate it first (log in to Claude Code again,
+   revoke the GitHub token, regenerate the API key). Rewriting history does not
+   take back a leaked secret.
+2. Rewrite only this fork's own commits, on every branch that contains them,
+   with `git filter-repo`. Remove extra worktrees first (`git worktree list`).
+   For a personal address in commit metadata, use a mailmap file kept outside
+   the repository, with lines like
+   `<name> <id>+<user>@users.noreply.github.com> <personal address>`:
+
+   ```sh
+   git filter-repo --force --mailmap ~/private.mailmap \
+     --refs <every affected branch> ^upstream/main
+   ```
+
+   For file content add `--replace-text <file>` (lines like
+   `literal==>REPLACEMENT` or `regex:(?<!FAKE-)DEVICE-1==>FAKE-DEVICE-1`), or
+   `--invert-paths --path <file>` to drop a file. Always keep the
+   `--refs … ^upstream/main` limit: filter-repo strips GitHub's signatures, so
+   an unlimited run re-hashes upstream's commits too and breaks the fork.
+3. Check the result: `npm run check:privacy:all` reports 0 errors, and
+   `git diff <old tip> <new tip>` is empty for an identity-only rewrite.
+4. Force-pushing the rewritten branches (`git push --force-with-lease`) and
+   deleting remote branches that are no longer needed is the repository
+   owner's decision; agents never push. GitHub can still serve the old commits
+   by SHA (pull request refs, caches), so a full purge also needs GitHub
+   Support, see
+   https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository.
+   Every other clone must then be re-cloned or hard-reset.
 
 ## Commands
 
@@ -63,6 +115,7 @@ npm run test:newsession       # New Session key tests (launcher stubbed; never o
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
+npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
 ```
 
 - `node scripts/session-report.mjs` (after `npm run test:session`) classifies

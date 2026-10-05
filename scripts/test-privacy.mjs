@@ -16,13 +16,16 @@ import { fileURLToPath } from 'node:url';
 
 import {
   isSensitiveFileName,
+  isSyntheticUuid,
   parseAllowlist,
+  parseDenylist,
   redact,
   scanDiff,
   scanFile,
   scanIdentity,
   scanLine,
   scanText,
+  unquoteGitPath,
 } from './check-privacy.mjs';
 
 const require = createRequire(import.meta.url);
@@ -37,6 +40,7 @@ const build =
 const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const UPPER_DIGITS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const B64URL = `${ALNUM}-_`;
+const HEX = '0123456789abcdef';
 
 /** Deterministic pseudo-random string (xorshift), different per seed. */
 function randomString(length, alphabet = ALNUM, seed = 1) {
@@ -55,6 +59,18 @@ function randomString(length, alphabet = ALNUM, seed = 1) {
 
 const join = (...parts) => parts.join('');
 const b64 = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+
+/** A random-looking (not synthetic) UUID, different per seed. */
+function uuidFrom(seed) {
+  const h = randomString(32, HEX, seed);
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    h.slice(12, 16),
+    h.slice(16, 20),
+    h.slice(20),
+  ].join('-');
+}
 
 const SAMPLES = {
   ghp: join('gh', 'p_', randomString(36, ALNUM, 1)),
@@ -89,6 +105,9 @@ const SAMPLES = {
   macHostEmail: ['jdoe', ['janes-macbook', 'lo' + 'cal'].join('.')].join('@'),
   host: ['janes-macbook', 'lo' + 'cal'].join('.'),
   serial: join('FX', '24', '07A3B9C1'),
+  flexSerial: randomString(12, HEX.toUpperCase(), 23), // Flexbar: 12 hex
+  macSerial: join('C02', 'XK1AB', 'JG5H'),
+  sessionId: uuidFrom(22),
   highEntropy: randomString(40, ALNUM, 18),
   words: ['correct', 'horse', 'battery', 'staple'].join('-'),
 };
@@ -98,6 +117,9 @@ const macHome = ['', 'Users', USER, 'work', 'app'].join('/');
 const linuxHome = ['', 'home', USER, '.config'].join('/');
 const winHome = ['C:', 'Users', USER, 'AppData'].join('\\');
 const winHomeJson = ['C:', 'Users', USER, 'AppData'].join('\\\\');
+// Claude Code's project folder names: every "/", "\" and ":" becomes "-"
+const encodedHome = ['', 'Users', USER, 'work', 'app'].join('-');
+const encodedWinHome = ['C', '', 'Users', USER, 'AppData'].join('-');
 
 const repoAllowlist = parseAllowlist(
   fs.readFileSync(path.join(repoRoot, '.privacy-allowlist'), 'utf8')
@@ -286,6 +308,96 @@ describe('detects every category', () => {
       `serial_number = '${SAMPLES.serial}'`,
       SAMPLES.serial,
     ],
+    [
+      'serial-number',
+      'sn key',
+      `{ sn: '${SAMPLES.flexSerial}' }`,
+      SAMPLES.flexSerial,
+    ],
+    [
+      'serial-number',
+      'deviceSerial key',
+      `"deviceSerial": "${SAMPLES.flexSerial}"`,
+      SAMPLES.flexSerial,
+    ],
+    [
+      'serial-number',
+      'serial comparison',
+      `if (device.serialNumber === '${SAMPLES.flexSerial}') {`,
+      SAMPLES.flexSerial,
+    ],
+    [
+      'serial-number',
+      'system_profiler output',
+      `      Serial Number (system): ${SAMPLES.macSerial}`,
+      SAMPLES.macSerial,
+    ],
+    [
+      'session-id',
+      'sessionId in a transcript line',
+      `{"type":"user","sessionId":"${SAMPLES.sessionId}"}`,
+      SAMPLES.sessionId,
+    ],
+    [
+      'session-id',
+      'session_id in hook input',
+      `session_id = '${SAMPLES.sessionId}'`,
+      SAMPLES.sessionId,
+    ],
+    [
+      'session-id',
+      'transcript path',
+      `~/.claude/projects/-Users-you-app/${SAMPLES.sessionId}.jsonl`,
+      SAMPLES.sessionId,
+    ],
+    [
+      'session-id',
+      'transcript file name',
+      `open ${SAMPLES.sessionId}.jsonl`,
+      SAMPLES.sessionId,
+    ],
+    [
+      'session-id',
+      'resume command',
+      `claude --resume ${SAMPLES.sessionId}`,
+      SAMPLES.sessionId,
+    ],
+    [
+      'encoded-home-path',
+      'Claude project folder',
+      `projects/${encodedHome}/`,
+      USER,
+    ],
+    [
+      'encoded-home-path',
+      'project folder below a placeholder home',
+      `/Users/you/.claude/projects/${encodedHome}/x.jsonl`,
+      USER,
+    ],
+    [
+      'encoded-home-path',
+      'Windows project folder',
+      `"${encodedWinHome}"`,
+      USER,
+    ],
+    [
+      'home-path',
+      'URL-encoded folder',
+      `claude://code/new?folder=${encodeURIComponent(macHome)}`,
+      USER,
+    ],
+    [
+      'home-path',
+      'double URL-encoded folder',
+      `next=${encodeURIComponent(`?folder=${encodeURIComponent(macHome)}`)}`,
+      USER,
+    ],
+    [
+      'email',
+      'URL-encoded email',
+      `mailto:${encodeURIComponent(SAMPLES.email)}`,
+      SAMPLES.email,
+    ],
   ];
 
   for (const [rule, label, line, secret, file = 'src/example.ts'] of cases) {
@@ -312,6 +424,24 @@ describe('detects every category', () => {
       [['high-entropy', 'warn']]
     );
     assertRedacted(findings, s);
+  });
+
+  test('a bare Flexbar-style serial is a warning', () => {
+    const serial = SAMPLES.flexSerial;
+    assert.ok(/[A-F]/.test(serial) && /\d/.test(serial));
+    for (const line of [
+      `Usage keys alive on ${serial}: uid=1`,
+      `const devices = ['${serial}'];`,
+      `plugin.draw('${serial}', image);`,
+    ]) {
+      const findings = scanLine(line, { file: 'notes.md' });
+      assert.deepEqual(
+        findings.map(f => [f.rule, f.severity]),
+        [['hex-serial', 'warn']],
+        line
+      );
+      assertRedacted(findings, serial);
+    }
   });
 
   test('one finding per secret even when several rules match', () => {
@@ -407,6 +537,21 @@ describe('ignores placeholders and public values', () => {
     ],
     ['commit 2319505e470490ae2a3284b8e77701a0100bc37'],
     ['id 123e4567-e89b-12d3-a456-426614174000'],
+    ['commits 2319505e4704 and 5c0f819a1b2c'],
+    ['"sessionId": "00000000-0000-4000-8000-000000000001"'],
+    ['claude --resume 123e4567-e89b-12d3-a456-426614174000'],
+    ['projects/-Users-you-app/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jsonl'],
+    ["sessionId: 'sess-1'", 'scripts/test.mjs'],
+    ['~/.claude/projects/-Users-you-work-app'],
+    ['C--Users-you-AppData'],
+    ['claude --home-dir=/tmp/x', 'notes.md'],
+    ['class="nav-home-link"'],
+    ['claude://code/new?folder=%2FUsers%2Fyou%2Fmy+app'],
+    ['progress 100%25 done, 50%'],
+    ["sn: 'FAKE-0001'", 'scripts/test.mjs'],
+    ["serialNumber === 'MOCK-SERIAL-42'", 'scripts/test.mjs'],
+    ['serialNumber: string;', 'src/types.ts'],
+    ['serial: SerialNumber2', 'src/types.ts'],
     ['dev.sese.flexbar_claude_code_usage.plugin/backend/plugin.cjs'],
   ];
   for (const [line, file = 'notes.md'] of clean) {
@@ -447,6 +592,88 @@ describe('ignores placeholders and public values', () => {
   });
 });
 
+// --- session ids and the local denylist ---------------------------------------------------
+
+describe('session ids', () => {
+  test('synthetic UUIDs are recognised, random ones are not', () => {
+    for (const id of [
+      '123e4567-e89b-12d3-a456-426614174000',
+      '00000000-0000-0000-0000-000000000000',
+      '00000000-0000-4000-8000-000000000001',
+      '11111111-2222-3333-4444-555555555555',
+      '12345678-90ab-4cde-8f01-234567890abc',
+    ]) {
+      assert.ok(isSyntheticUuid(id), id);
+    }
+    for (const seed of [22, 24, 25, 26]) {
+      assert.ok(!isSyntheticUuid(uuidFrom(seed)), uuidFrom(seed));
+    }
+  });
+
+  test("this machine's session ids are found in any context", () => {
+    const sessionIds = new Set([SAMPLES.sessionId]);
+    const line = `see ${SAMPLES.sessionId.toUpperCase()} for details`;
+    assert.deepEqual(scanLine(line, {}), []);
+    const findings = scanLine(line, { sessionIds });
+    assert.deepEqual(
+      findings.map(f => [f.rule, f.severity]),
+      [['local-session-id', 'error']]
+    );
+    assertRedacted(findings, SAMPLES.sessionId.toUpperCase());
+  });
+});
+
+describe('local denylist', () => {
+  test('literals match whole words, case-insensitively; re: entries are regexes', () => {
+    const denylist = parseDenylist(
+      ['# my identifiers', '', USER, 're:(?i)acme-?corp\\d+'].join('\n')
+    );
+    assert.equal(denylist.length, 2);
+    const hits = line =>
+      scanLine(line, { denylist }).filter(f => f.rule === 'denylist').length;
+    assert.equal(hits(`ssh ${USER.toUpperCase()}_mac`), 1);
+    assert.equal(hits(`by ${USER}@host and ${USER}`), 2);
+    assert.equal(hits(`${USER}42 and x${USER}`), 0);
+    assert.equal(hits('build ACMECorp7'), 1);
+    assert.equal(hits('build acme-corp'), 0);
+  });
+
+  test('denied values beat the allowlist, are redacted and checked in binaries', () => {
+    const denylist = parseDenylist(SAMPLES.flexSerial);
+    const allowlist = parseAllowlist(`^${SAMPLES.flexSerial}$`);
+    const line = `alive on ${SAMPLES.flexSerial}: uid=1`;
+    const findings = scanLine(line, { denylist, allowlist });
+    assert.deepEqual(
+      findings.map(f => [f.rule, f.severity]),
+      [['denylist', 'error']]
+    );
+    assertRedacted(findings, SAMPLES.flexSerial);
+    const binary = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0]),
+      Buffer.from(`device=${SAMPLES.flexSerial}\0`),
+    ]);
+    assert.deepEqual(
+      scanFile('docs/media/key.png', binary, { denylist }).map(f => f.rule),
+      ['denylist']
+    );
+    // encoded forms too
+    assert.deepEqual(
+      scanLine(`folder=${encodeURIComponent(`/x/${SAMPLES.flexSerial}`)}`, {
+        denylist,
+      }).map(f => f.rule),
+      ['denylist']
+    );
+  });
+
+  test('unsafe entries are rejected; the denylist file is never committed', () => {
+    assert.throws(() => parseDenylist('ab'), /line 1: entries need at least 3/);
+    assert.throws(() => parseDenylist('\nre:x*'), /line 2: matches the empty/);
+    assert.throws(() => parseDenylist('re:(['), /line 1/);
+    assert.ok(isSensitiveFileName('.privacy-denylist.local'));
+    assert.ok(isSensitiveFileName('sub/.privacy-denylist'));
+  });
+});
+
 // --- diffs and commit metadata ----------------------------------------------------------
 
 describe('diffs and identities', () => {
@@ -483,6 +710,49 @@ describe('diffs and identities', () => {
       ]
     );
     assert.ok(findings.every(f => f.commit === 'abc123'));
+  });
+
+  test('binary files in a diff are read through readBlob and scanned', () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]),
+      Buffer.from(`tEXtComment\0${SAMPLES.ghp}\0`),
+    ]);
+    const diff = [
+      'diff --git a/docs/shot.png b/docs/shot.png',
+      'new file mode 100644',
+      'Binary files /dev/null and b/docs/shot.png differ',
+      'diff --git "a/docs/my\\tshot.png" "b/docs/my\\tshot.png"',
+      'Binary files "a/docs/my\\tshot.png" and "b/docs/my\\tshot.png" differ',
+      'diff --git a/old.png b/old.png',
+      'deleted file mode 100644',
+      'Binary files a/old.png and /dev/null differ',
+    ].join('\n');
+    const read = [];
+    const findings = scanDiff(diff, {
+      commit: 'abc123',
+      readBlob: file => {
+        read.push(file);
+        if (file.includes('\t')) throw new Error('missing');
+        return png;
+      },
+    });
+    assert.deepEqual(read, ['docs/shot.png', 'docs/my\tshot.png']);
+    assert.deepEqual(
+      findings.map(f => [f.rule, f.file, f.severity]),
+      [
+        ['github-token', 'docs/shot.png', 'error'],
+        // fail closed: content that could not be read was not checked
+        ['unscanned-binary', 'docs/my\tshot.png', 'error'],
+      ]
+    );
+    assertRedacted(findings, SAMPLES.ghp);
+  });
+
+  test('git path quoting is undone', () => {
+    assert.equal(unquoteGitPath('b/a b.png'), 'b/a b.png');
+    assert.equal(unquoteGitPath('"b/a\\tb\\"c\\\\d"'), 'b/a\tb"c\\d');
+    assert.equal(unquoteGitPath('"b/caf\\303\\251.png"'), 'b/caf\u00e9.png');
+    assert.equal(unquoteGitPath('"b/\u6f14\u793a.png"'), 'b/\u6f14\u793a.png');
   });
 
   test('personal commit emails are errors; noreply and allowlisted are not', () => {
@@ -558,8 +828,12 @@ describe('CLI and hooks in a scratch repository', () => {
   fs.writeFileSync(emptyConfig, '');
   const noreply = '1+tester@users.noreply.github.com';
 
-  // isolated from the user's git config (hooks, signing, identity)
-  const env = (email = noreply) => ({
+  // where the scanner looks for this machine's Claude Code session ids
+  const claudeDir = path.join(tmp, 'claude');
+
+  // isolated from the user's git config (hooks, signing, identity), denylist
+  // and Claude Code sessions
+  const env = (email = noreply, extra = {}) => ({
     ...process.env,
     PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? ''}`,
     GIT_CONFIG_NOSYSTEM: '1',
@@ -568,6 +842,10 @@ describe('CLI and hooks in a scratch repository', () => {
     GIT_AUTHOR_EMAIL: email,
     GIT_COMMITTER_NAME: 'Tester',
     GIT_COMMITTER_EMAIL: email,
+    CLAUDE_CONFIG_DIR: claudeDir,
+    PRIVACY_DENYLIST: '',
+    PRIVACY_LOCAL_SESSIONS: '',
+    ...extra,
   });
   const git = (args, email) =>
     execFileSync('git', args, {
@@ -575,13 +853,13 @@ describe('CLI and hooks in a scratch repository', () => {
       env: env(email),
       encoding: 'utf8',
     }).trim();
-  const run = (args, email) =>
+  const run = (args, email, extra) =>
     spawnSync(
       process.execPath,
       [path.join(repo, 'scripts', 'check-privacy.mjs'), ...args],
       {
         cwd: repo,
-        env: env(email),
+        env: env(email, extra),
         encoding: 'utf8',
       }
     );
@@ -754,6 +1032,104 @@ describe('CLI and hooks in a scratch repository', () => {
       assert.equal(hook('pre-push', ['origin', url], update).status, 0);
     } finally {
       git(['update-ref', '-d', 'refs/remotes/upstream/main']);
+    }
+  });
+
+  test('binary file content is scanned by --staged, --history and both hooks', () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]),
+      Buffer.from(`tEXtComment\0${SAMPLES.ghp}\0IEND`),
+    ]);
+    const before = git(['rev-parse', 'HEAD']);
+    // the diff parser must not depend on the user's prefix settings
+    git(['config', 'diff.noprefix', 'true']);
+    try {
+      fs.writeFileSync(path.join(repo, 'shot.png'), png);
+      git(['add', 'shot.png']);
+      const staged = run(['--staged', '--json']);
+      assert.equal(staged.status, 1);
+      assert.deepEqual(
+        JSON.parse(staged.stdout).findings.map(f => [f.file, f.rule]),
+        [['shot.png', 'github-token']]
+      );
+      assert.ok(!staged.stdout.includes(SAMPLES.ghp));
+      assert.equal(hook('pre-commit', [], '').status, 1);
+
+      // added, then removed again: still in the history
+      git(['commit', '-q', '--no-verify', '-m', 'docs: add screenshot']);
+      const added = git(['rev-parse', 'HEAD']);
+      git(['rm', '-q', 'shot.png']);
+      git(['commit', '-q', '--no-verify', '-m', 'docs: drop screenshot']);
+      const head = git(['rev-parse', 'HEAD']);
+      const history = run(['--history', `${before}..HEAD`, '--json']);
+      assert.equal(history.status, 1);
+      assert.deepEqual(
+        JSON.parse(history.stdout).findings.map(f => [
+          f.commit,
+          f.file,
+          f.rule,
+        ]),
+        [[added.slice(0, 12), 'shot.png', 'github-token']]
+      );
+      assert.ok(!history.stdout.includes(SAMPLES.ghp));
+      const push = hook(
+        'pre-push',
+        ['origin', 'https://example.invalid/demo.git'],
+        `refs/heads/main ${head} refs/heads/main ${before}\n`
+      );
+      assert.equal(push.status, 1, push.stdout);
+    } finally {
+      git(['config', '--unset', 'diff.noprefix']);
+      git(['reset', '-q', '--hard', before]);
+    }
+  });
+
+  test("the local denylist and this machine's session ids are enforced", () => {
+    const denyFile = path.join(repo, '.privacy-denylist.local');
+    const external = path.join(tmp, 'my-denylist.txt');
+    const project = path.join(claudeDir, 'projects', '-Users-you-demo');
+    fs.writeFileSync(
+      path.join(repo, 'log.txt'),
+      `alive on ${SAMPLES.flexSerial}, session ${SAMPLES.sessionId}\n`
+    );
+    git(['add', 'log.txt']);
+    const errors = (extra = {}) => {
+      const result = run(['--staged', '--json'], undefined, extra);
+      const report = JSON.parse(result.stdout);
+      assert.ok(!result.stdout.includes(SAMPLES.flexSerial));
+      assert.ok(!result.stdout.includes(SAMPLES.sessionId));
+      return report.findings
+        .filter(f => f.severity === 'error')
+        .map(f => f.rule);
+    };
+    try {
+      // without a denylist: a bare serial only warns, a bare UUID is unknown
+      assert.deepEqual(errors(), []);
+
+      fs.writeFileSync(denyFile, `# my device\n${SAMPLES.flexSerial}\n`);
+      assert.deepEqual(errors(), ['denylist']);
+      fs.rmSync(denyFile);
+
+      fs.writeFileSync(external, `re:(?i)${SAMPLES.flexSerial}\n`);
+      assert.deepEqual(errors({ PRIVACY_DENYLIST: external }), ['denylist']);
+      const missing = run(['--staged'], undefined, {
+        PRIVACY_DENYLIST: path.join(tmp, 'nope.txt'),
+      });
+      assert.equal(missing.status, 2);
+      assert.match(missing.stderr, /PRIVACY_DENYLIST names a missing file/);
+
+      // a transcript of this machine makes its session id private everywhere
+      fs.mkdirSync(project, { recursive: true });
+      fs.writeFileSync(path.join(project, `${SAMPLES.sessionId}.jsonl`), '');
+      assert.deepEqual(errors(), ['local-session-id']);
+      assert.deepEqual(errors({ PRIVACY_LOCAL_SESSIONS: '0' }), []);
+      assert.equal(hook('pre-commit', [], '').status, 1);
+    } finally {
+      git(['rm', '-q', '-f', '--cached', 'log.txt']);
+      for (const file of [path.join(repo, 'log.txt'), denyFile, external]) {
+        fs.rmSync(file, { force: true });
+      }
+      fs.rmSync(claudeDir, { recursive: true, force: true });
     }
   });
 });

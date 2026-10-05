@@ -17,6 +17,8 @@ credentials.json
 *.key
 *.p12
 *.pfx
+# your own identifiers for scripts/check-privacy.mjs (see CLAUDE.md)
+.privacy-denylist*
 logs/
 *.log
 .DS_Store

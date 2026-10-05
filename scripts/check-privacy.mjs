@@ -15,11 +15,24 @@
 // --remotes" both work. Exit code: 1 when an error-level finding remains, 0
 // otherwise (warnings never fail), 2 on usage or git errors.
 //
+// Every mode reads the content of binary files too (staged blobs, and in
+// --history the blob each commit added), and also scans a URL-decoded copy of
+// every line that contains %XX escapes.
+//
 // Matches are always printed redacted, so CI logs never repeat a secret.
 // Verified-public values go in .privacy-allowlist (one regex per line, tested
 // against the matched text), each with a comment explaining why it is public.
+//
+// Your own identifiers (user name, real name, hostname, device serial, personal
+// email addresses, ...) go in the git-ignored .privacy-denylist.local, or in
+// the file the PRIVACY_DENYLIST environment variable names: one literal per
+// line (matched case-insensitively as a whole word) or `re:<regex>`. They are
+// never committed. The session ids of this machine's Claude Code transcripts
+// (file names in ~/.claude/projects, never their content) are denied too; set
+// PRIVACY_LOCAL_SESSIONS=0 to skip that.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -99,6 +112,36 @@ function isPlaceholderUser(name) {
   );
 }
 
+const UUID = String.raw`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`;
+const UUID_EXACT = new RegExp(`^${UUID}$`);
+
+/** Well-known example UUIDs; never a real session. */
+const EXAMPLE_UUIDS = new Set([
+  '123e4567-e89b-12d3-a456-426614174000', // RFC 4122 / Wikipedia example
+  '00000000-0000-0000-0000-000000000000', // nil UUID
+  'ffffffff-ffff-ffff-ffff-ffffffffffff', // max UUID
+]);
+
+/**
+ * Synthetic UUIDs (examples, few distinct digits such as
+ * 00000000-0000-4000-8000-000000000001, or runs such as 12345678): a random
+ * UUID practically never looks like this.
+ */
+export function isSyntheticUuid(uuid) {
+  const u = uuid.toLowerCase();
+  if (EXAMPLE_UUIDS.has(u)) return true;
+  const hex = u.replace(/-/g, '');
+  return new Set(hex).size <= 8 || hasAscendingRun(hex, 7);
+}
+
+// Where a Claude Code session id shows up: transcript/hook JSON keys, the
+// CLI's resume flags, and the per-session folders and files under ~/.claude.
+const SESSION_CONTEXT = [
+  String.raw`\b[A-Za-z_]*session[_-]?id["']?\s*(?:[!=]==?|[:=])\s*["'\x60]?`,
+  String.raw`(?:--resume|--session-id|/resume|(?<![\w-])-r)(?:=|\s+)["'\x60]?`,
+  String.raw`(?:projects[/\\][^\s/\\"'\x60]+|sessions|todos|file-history|session-env|shell-snapshots|debug)[/\\]`,
+].join('|');
+
 /** Built-in safe addresses; everything else needs an allowlist entry. */
 export function isBuiltinSafeEmail(email) {
   const e = email.toLowerCase();
@@ -172,6 +215,20 @@ export const RULES = [
     check: m => hasDigit(m) && hasLetter(m),
   },
   {
+    id: 'session-id',
+    category: 'Claude Code session id',
+    re: new RegExp(
+      String.raw`(?:${SESSION_CONTEXT})(${UUID})(?![0-9a-fA-F])|(?<![0-9a-fA-F-])(${UUID})(?=\.jsonl\b)`,
+      'gi'
+    ),
+    value: m =>
+      m[1] !== undefined
+        ? { text: m[1], index: m.index + m[0].length - m[1].length }
+        : { text: m[2], index: m.index },
+    check: m => !isSyntheticUuid(m),
+    binary: true,
+  },
+  {
     id: 'credential-assignment',
     category: 'credential assigned a literal value',
     re: CREDENTIAL_ASSIGNMENT,
@@ -210,23 +267,64 @@ export const RULES = [
     binary: true,
   },
   {
+    // Claude Code's project folder names (~/.claude/projects/-Users-<name>-app)
+    // and other encodings that turn every "/" into "-"
+    id: 'encoded-home-path',
+    category: 'local home directory in an encoded path',
+    re: /(?<![\w-])(?:[A-Za-z]-)?-(?:Users|home)-([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)/g,
+    check: (m, match) => !isPlaceholderUser(match[1]),
+    preview: (m, match) =>
+      `${m.slice(0, m.length - match[1].length)}${redact(match[1])}`,
+    binary: true,
+  },
+  {
     id: 'local-hostname',
     category: '.local hostname',
     re: /(?<![\w.-])((?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?))\.local(?![\w-]|\.\w)/gi,
     check: (m, match) => !FILE_LIKE_LOCAL_LABELS.has(match[2].toLowerCase()),
   },
   {
+    // serialNumber: '…', serial_no = "…", sn: '…', deviceSerial === '…',
+    // "Serial Number (system): …" (system_profiler). A synthetic serial must
+    // say so (TEST, FAKE, MOCK, ...).
     id: 'serial-number',
     category: 'device serial number',
-    re: /\b(?:serial[_-]?(?:number|num|no)?|device[_-]?serial(?:[_-]?(?:number|no))?)["']?\s*[:=]\s*(["'\x60])([A-Za-z0-9][A-Za-z0-9:_-]{5,})\1/gi,
-    group: 2,
+    re: /\b(?:serial[ _-]?(?:number|num|no)?|device[_-]?serial(?:[_-]?(?:number|num|no))?|sn)(?:\s*\([^)\n]{0,20}\))?["']?\s*(?:[!=]==?|[:=])\s*(?:(["'\x60])([A-Za-z0-9][A-Za-z0-9:_-]{5,})\1|([A-Za-z0-9]{8,})(?![\w-]))/gi,
+    value: m => {
+      if (m[2] !== undefined)
+        return { text: m[2], index: m.index + m[0].length - m[2].length - 1 };
+      // unquoted: only serial-shaped values (upper-case letters and digits),
+      // never an identifier such as `payload`
+      if (/^[A-Z0-9]+$/.test(m[3]) && hasLetter(m[3]))
+        return { text: m[3], index: m.index + m[0].length - m[3].length };
+      return null;
+    },
     check: m =>
       hasDigit(m) &&
       !/test|fake|mock|dummy|sample|example|demo|placeholder|synthetic/i.test(
         m
       ),
   },
+  {
+    // a bare Flexbar serial (12 upper-case hex digits), e.g. in a pasted log
+    // line; the local denylist is the reliable way to catch your own
+    id: 'hex-serial',
+    category: 'possible device serial number (12 upper-case hex digits)',
+    severity: WARN,
+    re: /(?<![A-Za-z0-9_-])[0-9A-F]{12}(?![A-Za-z0-9_-])/g,
+    check: m => /[A-F]/.test(m) && hasDigit(m) && !hasAscendingRun(m),
+  },
 ];
+
+const DENYLIST = {
+  id: 'denylist',
+  category: 'value from your local privacy denylist',
+};
+
+const LOCAL_SESSION = {
+  id: 'local-session-id',
+  category: 'session id of a Claude Code transcript on this machine',
+};
 
 const HIGH_ENTROPY = {
   id: 'high-entropy',
@@ -291,6 +389,103 @@ export function parseAllowlist(text) {
 
 const isAllowed = (text, allowlist) => allowlist.some(re => re.test(text));
 
+// --- denylist ----------------------------------------------------------------
+
+const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Parses a denylist (.privacy-denylist.local, PRIVACY_DENYLIST): one entry per
+ * line, `#` starts a comment line. A plain entry is a literal matched
+ * case-insensitively where it is not part of a longer run of letters/digits
+ * ("jdoe" matches "jdoe@host" and "jdoe_mac", not "jdoe42"); `re:<regex>`
+ * is a regular expression (`re:(?i)…` for case-insensitive). Denied values are
+ * reported even when .privacy-allowlist would allow them.
+ */
+export function parseDenylist(text, source = '.privacy-denylist.local') {
+  const entries = [];
+  for (const [i, raw] of text.split(/\r?\n/).entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const where = `${source} line ${i + 1}`;
+    let re;
+    if (line.startsWith('re:')) {
+      let body = line.slice(3);
+      const insensitive = body.startsWith('(?i)');
+      if (insensitive) body = body.slice(4);
+      try {
+        re = new RegExp(body, insensitive ? 'gi' : 'g');
+      } catch (error) {
+        throw new Error(`${where}: ${error.message}`);
+      }
+      if (re.test('')) throw new Error(`${where}: matches the empty string`);
+    } else {
+      if (line.length < 3)
+        throw new Error(`${where}: entries need at least 3 characters`);
+      re = new RegExp(
+        `(?<![A-Za-z0-9])${escapeRegExp(line)}(?![A-Za-z0-9])`,
+        'gi'
+      );
+    }
+    entries.push(re);
+  }
+  return entries;
+}
+
+function loadDenylist(root) {
+  const entries = [];
+  const local = path.join(root, '.privacy-denylist.local');
+  if (fs.existsSync(local)) {
+    entries.push(...parseDenylist(fs.readFileSync(local, 'utf8')));
+  }
+  const named = process.env.PRIVACY_DENYLIST?.trim();
+  if (named) {
+    const file = path.resolve(
+      root,
+      named.replace(/^~(?=$|[/\\])/, os.homedir())
+    );
+    if (!fs.existsSync(file))
+      throw new Error(`PRIVACY_DENYLIST names a missing file: ${named}`);
+    entries.push(
+      ...parseDenylist(fs.readFileSync(file, 'utf8'), 'PRIVACY_DENYLIST')
+    );
+  }
+  return entries;
+}
+
+/**
+ * Session ids of this machine's Claude Code transcripts, from the file and
+ * folder names in <config dir>/projects/<project>/. Contents are never read.
+ */
+function loadLocalSessionIds() {
+  const ids = new Set();
+  if (/^(?:0|false|no|off)$/i.test(process.env.PRIVACY_LOCAL_SESSIONS ?? ''))
+    return ids;
+  const claudeDir =
+    process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), '.claude');
+  const projects = path.join(claudeDir, 'projects');
+  let dirs;
+  try {
+    dirs = fs.readdirSync(projects, { withFileTypes: true });
+  } catch {
+    return ids; // no Claude Code here (e.g. CI)
+  }
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue;
+    let names;
+    try {
+      names = fs.readdirSync(path.join(projects, dir.name));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const id = name.replace(/\.jsonl$/, '');
+      if (UUID_EXACT.test(id) && !isSyntheticUuid(id))
+        ids.add(id.toLowerCase());
+    }
+  }
+  return ids;
+}
+
 // --- scanning ----------------------------------------------------------------
 
 /** Masks a match so output never repeats the secret itself. */
@@ -316,15 +511,74 @@ function finding(rule, text, ctx, extra = {}) {
   };
 }
 
+const URL_ESCAPE = /%[0-9A-Fa-f]{2}/;
+
 /**
- * Scans one line. ctx: { file, line, commit, field, allowlist, binary }.
- * Overlapping matches keep only the first (most specific) rule.
+ * The line with its %XX escapes decoded (up to three times, for double
+ * encoding), or null when there is nothing to decode. Invalid UTF-8 sequences
+ * keep their ASCII escapes decoded.
+ */
+function urlDecoded(text) {
+  if (!URL_ESCAPE.test(text)) return null;
+  let out = text;
+  for (let i = 0; i < 3 && URL_ESCAPE.test(out); i++) {
+    const next = out.replace(/(?:%[0-9A-Fa-f]{2})+/g, seq => {
+      try {
+        return decodeURIComponent(seq);
+      } catch {
+        return seq.replace(/%([0-7][0-9A-Fa-f])/g, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16))
+        );
+      }
+    });
+    if (next === out) break;
+    out = next;
+  }
+  return out === text ? null : out;
+}
+
+/**
+ * Scans one line. ctx: { file, line, commit, field, allowlist, denylist,
+ * sessionIds, binary }. Overlapping matches keep only the first (most
+ * specific) rule. Lines with %XX escapes are scanned decoded as well, so
+ * `%2FUsers%2F<name>` and `<name>%40<domain>` are found too.
  */
 export function scanLine(text, ctx = {}) {
+  const results = scanLineOnce(text, ctx, false);
+  const decoded = urlDecoded(text);
+  if (decoded !== null) {
+    const seen = new Set(results.map(f => `${f.rule}\0${f.match}`));
+    for (const f of scanLineOnce(decoded, ctx, true)) {
+      const key = `${f.rule}\0${f.match}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({ ...f, category: `${f.category} (URL-encoded)` });
+    }
+  }
+  return results;
+}
+
+function scanLineOnce(text, ctx, decodedPass) {
   const allowlist = ctx.allowlist ?? [];
   const results = [];
   const spans = [];
   const overlaps = (start, end) => spans.some(([s, e]) => start < e && s < end);
+  // your own identifiers first: they win every overlap and are never allowed
+  for (const re of ctx.denylist ?? []) {
+    for (const m of text.matchAll(re)) {
+      if (!m[0] || overlaps(m.index, m.index + m[0].length)) continue;
+      spans.push([m.index, m.index + m[0].length]);
+      results.push(finding(DENYLIST, m[0], ctx));
+    }
+  }
+  if (ctx.sessionIds?.size) {
+    for (const m of text.matchAll(new RegExp(UUID, 'g'))) {
+      if (!ctx.sessionIds.has(m[0].toLowerCase())) continue;
+      if (overlaps(m.index, m.index + m[0].length)) continue;
+      spans.push([m.index, m.index + m[0].length]);
+      results.push(finding(LOCAL_SESSION, m[0], ctx));
+    }
+  }
   for (const rule of RULES) {
     if (ctx.binary && !rule.binary) continue;
     rule.re.lastIndex = 0;
@@ -353,7 +607,7 @@ export function scanLine(text, ctx = {}) {
       results.push(finding(rule, value.text, ctx, extra));
     }
   }
-  if (!ctx.binary) {
+  if (!ctx.binary && !decodedPass) {
     for (const value of highEntropyMatches(text)) {
       const end = value.index + value.text.length;
       if (overlaps(value.index, end)) continue;
@@ -398,12 +652,20 @@ export function isSensitiveFileName(file) {
     /^\.?credentials\.json$/i.test(base) ||
     /\.(?:pem|key|p12|pfx|jks|keystore|ppk)$/i.test(base) ||
     /^id_(?:rsa|dsa|ecdsa|ed25519)$/.test(base) ||
-    base === '.netrc'
+    base === '.netrc' ||
+    /^\.privacy-denylist(?:\.|$)/.test(base) // your own identifiers
   );
 }
 
 export function looksBinary(buffer) {
   return buffer.subarray(0, 8000).includes(0);
+}
+
+/** Scans file content: text line by line, binary by its printable runs. */
+function scanContent(file, buffer, ctx) {
+  return looksBinary(buffer)
+    ? scanBinary(buffer, { ...ctx, file })
+    : scanText(buffer.toString('utf8'), { ...ctx, file });
 }
 
 /** Scans file content (text or binary) plus its name. */
@@ -414,17 +676,50 @@ export function scanFile(file, buffer, ctx = {}) {
       finding(SENSITIVE_FILE, file, { ...ctx, file }, { preview: file })
     );
   }
-  if (looksBinary(buffer)) {
-    results.push(...scanBinary(buffer, { ...ctx, file }));
-  } else {
-    results.push(...scanText(buffer.toString('utf8'), { ...ctx, file }));
-  }
+  results.push(...scanContent(file, buffer, ctx));
   return results;
 }
 
+const UNREADABLE_BLOB = {
+  id: 'unscanned-binary',
+  category: 'binary file content could not be read for scanning',
+};
+
+/** Undoes git's C-style quoting of a path ("a\tb", "\303\251", ...). */
+export function unquoteGitPath(text) {
+  if (!(text.length >= 2 && text.startsWith('"') && text.endsWith('"')))
+    return text;
+  const body = text.slice(1, -1);
+  const bytes = [];
+  const escapes = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '\\') {
+      const cp = body.codePointAt(i);
+      const ch = String.fromCodePoint(cp);
+      bytes.push(...Buffer.from(ch, 'utf8'));
+      i += ch.length - 1;
+      continue;
+    }
+    const next = body[++i] ?? '';
+    if (/^[0-7]{3}$/.test(body.slice(i, i + 3))) {
+      bytes.push(parseInt(body.slice(i, i + 3), 8));
+      i += 2;
+    } else {
+      bytes.push(escapes[next] ?? next.charCodeAt(0));
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+const BINARY_LINE =
+  /^Binary files (?:\/dev\/null|"?a\/.*?) and (\/dev\/null|"?b\/.*) differ$/;
+
 /**
  * Scans the added lines of a unified diff (as printed by `git diff -U0` or
- * `git log -p -U0`); line numbers refer to the new file.
+ * `git log -p -U0`, with the default a/ b/ prefixes); line numbers refer to
+ * the new file. A diff only names a binary file ("Binary files … differ"), so
+ * its content comes from ctx.readBlob(path) → Buffer when given: without
+ * it, a secret inside a binary file would pass unseen.
  */
 export function scanDiff(diffText, ctx = {}) {
   const results = [];
@@ -439,11 +734,10 @@ export function scanDiff(diffText, ctx = {}) {
     }
     if (!inHunk) {
       // "+++ b/path" for text, "Binary files a/x and b/path differ" for binary
-      const target = line.startsWith('+++ ')
-        ? line.slice(4)
-        : /^Binary files .* and (.*) differ$/.exec(line)?.[1];
+      const binary = BINARY_LINE.exec(line);
+      const target = line.startsWith('+++ ') ? line.slice(4) : binary?.[1];
       if (target !== undefined) {
-        const unquoted = target.replace(/^"(.*)"$/, '$1');
+        const unquoted = unquoteGitPath(target);
         file = unquoted === '/dev/null' ? null : unquoted.replace(/^b\//, '');
         if (
           file &&
@@ -452,6 +746,26 @@ export function scanDiff(diffText, ctx = {}) {
         ) {
           results.push(
             finding(SENSITIVE_FILE, file, { ...ctx, file }, { preview: file })
+          );
+        }
+        if (binary && file && ctx.readBlob) {
+          let buffer = null;
+          try {
+            buffer = ctx.readBlob(file);
+          } catch {
+            // fail closed: content that cannot be read was not checked
+          }
+          results.push(
+            ...(buffer
+              ? scanContent(file, buffer, ctx)
+              : [
+                  finding(
+                    UNREADABLE_BLOB,
+                    file,
+                    { ...ctx, file },
+                    { preview: file }
+                  ),
+                ])
           );
         }
         continue;
@@ -531,7 +845,7 @@ function loadAllowlist(root) {
 }
 
 /** Every file in the index, read from the working tree. */
-function scanTrackedFiles(root, allowlist) {
+function scanTrackedFiles(root, base) {
   const results = [];
   const files = git(['ls-files', '-z'], { cwd: root })
     .split('\0')
@@ -546,33 +860,45 @@ function scanTrackedFiles(root, allowlist) {
     }
     if (stat.isSymbolicLink()) {
       results.push(
-        ...scanLine(fs.readlinkSync(abs), { file, line: 1, allowlist })
+        ...scanLine(fs.readlinkSync(abs), { ...base, file, line: 1 })
       );
       continue;
     }
     if (!stat.isFile()) continue;
-    results.push(...scanFile(file, fs.readFileSync(abs), { allowlist }));
+    results.push(...scanFile(file, fs.readFileSync(abs), base));
   }
   return { results, scanned: `${files.length} tracked files` };
 }
 
-function scanStaged(root, allowlist) {
+/** Options that keep diff output parseable whatever the user's git config. */
+const DIFF_OPTIONS = [
+  '-U0',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+];
+
+const readBlob = (root, rev) => file =>
+  git(['cat-file', 'blob', `${rev}:${file}`], {
+    cwd: root,
+    encoding: 'buffer',
+  });
+
+function scanStaged(root, base) {
   const diff = git(
-    [
-      'diff',
-      '--cached',
-      '-U0',
-      '--no-color',
-      '--no-ext-diff',
-      '--diff-filter=ACMR',
-    ],
-    { cwd: root }
+    ['diff', '--cached', ...DIFF_OPTIONS, '--diff-filter=ACMR'],
+    {
+      cwd: root,
+    }
   );
-  return scanDiff(diff, { allowlist });
+  // ":0:<path>" is the staged (stage 0) version of a file
+  return scanDiff(diff, { ...base, readBlob: readBlob(root, ':0') });
 }
 
 /** The identity the next commit will be made with (pre-commit). */
-function scanNextCommitIdentity(root, allowlist) {
+function scanNextCommitIdentity(root, base) {
   const results = [];
   for (const [role, variable] of [
     ['author', 'GIT_AUTHOR_IDENT'],
@@ -587,7 +913,7 @@ function scanNextCommitIdentity(root, allowlist) {
     const m = /^(.*?) <([^>]*)>/.exec(ident);
     if (m)
       results.push(
-        ...scanIdentity(role, m[1], m[2], { allowlist, commit: 'next commit' })
+        ...scanIdentity(role, m[1], m[2], { ...base, commit: 'next commit' })
       );
   }
   return results;
@@ -611,7 +937,7 @@ const REV_ARG =
 const COMMIT_MARK = '\x00\x00commit ';
 const PATCH_MARK = '\x00\x00patch';
 
-function scanHistory(root, range, allowlist) {
+function scanHistory(root, range, base) {
   const revArgs = range.trim().split(/\s+/).filter(Boolean);
   for (const arg of revArgs) {
     if (!REV_ARG.test(arg))
@@ -626,9 +952,7 @@ function scanHistory(root, range, allowlist) {
       // argv cannot carry NUL bytes; git expands %x00 into the markers
       '--format=%x00%x00commit %H%x00%an%x00%ae%x00%cn%x00%ce%x00%B%x00%x00patch',
       '-p',
-      '-U0',
-      '--no-color',
-      '--no-ext-diff',
+      ...DIFF_OPTIONS,
       ...mergeDiff,
       ...revArgs,
       '--',
@@ -644,7 +968,7 @@ function scanHistory(root, range, allowlist) {
     const patch = chunk.slice(patchAt + PATCH_MARK.length);
     const [sha, an, ae, cn, ce, ...messageParts] = header.split('\x00');
     const message = messageParts.join('\x00');
-    const ctx = { commit: sha.slice(0, 12), allowlist };
+    const ctx = { ...base, commit: sha.slice(0, 12) };
     results.push(...scanIdentity('author', an, ae, ctx));
     results.push(...scanIdentity('committer', cn, ce, ctx));
     message.split('\n').forEach((line, i) => {
@@ -652,7 +976,8 @@ function scanHistory(root, range, allowlist) {
         ...scanLine(line, { ...ctx, field: 'message', line: i + 1 })
       );
     });
-    results.push(...scanDiff(patch, ctx));
+    // binary files: the blob as this commit left it
+    results.push(...scanDiff(patch, { ...ctx, readBlob: readBlob(root, sha) }));
   }
   return { results, scanned: `${commits} commits in ${range}` };
 }
@@ -751,24 +1076,28 @@ export function main(argv = process.argv.slice(2)) {
   let scanned = '';
   try {
     root = git(['rev-parse', '--show-toplevel']).trim();
-    const allowlist = loadAllowlist(root);
+    const base = {
+      allowlist: loadAllowlist(root),
+      denylist: loadDenylist(root),
+      sessionIds: loadLocalSessionIds(),
+    };
     if (mode === 'staged') {
       results = [
-        ...scanStaged(root, allowlist),
-        ...scanNextCommitIdentity(root, allowlist),
+        ...scanStaged(root, base),
+        ...scanNextCommitIdentity(root, base),
       ];
       scanned = 'staged changes';
     } else if (mode === 'history') {
       const r = range ?? defaultHistoryRange(root);
-      ({ results, scanned } = scanHistory(root, r, allowlist));
+      ({ results, scanned } = scanHistory(root, r, base));
     } else {
       // staged content usually equals the working tree: report it only when
       // the staged version holds something the working tree no longer does
-      const tracked = scanTrackedFiles(root, allowlist);
+      const tracked = scanTrackedFiles(root, base);
       const known = new Set(
         tracked.results.map(f => [f.file, f.rule, f.match].join('\x00'))
       );
-      const staged = scanStaged(root, allowlist).filter(
+      const staged = scanStaged(root, base).filter(
         f => !known.has([f.file, f.rule, f.match].join('\x00'))
       );
       results = [

@@ -90,7 +90,7 @@ Requirements:
 - Tokens are never logged or shown on a key; error messages are redacted before they reach the FlexDesigner log or the settings page. A refreshed token pair is written back only to the credential store it came from.
 - The Session Status key reads transcripts and session status locally and sends nothing anywhere.
 - The New Session key only hands a `claude://` link to your system's opener and sends nothing anywhere; its log messages leave out the project folder.
-- No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once and `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
+- No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
 
 ## Installation
 

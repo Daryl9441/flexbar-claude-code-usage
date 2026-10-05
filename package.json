@@ -17,6 +17,7 @@
         "test:privacy": "tsc --outDir .test-build --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/redact.ts && node --test scripts/test-privacy.mjs",
         "check:privacy": "node scripts/check-privacy.mjs",
         "check:privacy:history": "node scripts/check-privacy.mjs --history",
+        "check:privacy:all": "node scripts/check-privacy.mjs --history \"HEAD --branches --remotes=origin --not --remotes=upstream\"",
         "setup:hooks": "git config core.hooksPath .githooks"
     },
     "type": "commonjs",
