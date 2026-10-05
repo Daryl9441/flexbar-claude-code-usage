@@ -4,6 +4,7 @@
  * after a press. Pure (no canvas), so it is testable and doubles as the
  * redraw signature — a key is only redrawn when its view changes.
  */
+import type { Localized } from './providers/types';
 import {
   RunningGroup,
   RunningSession,
@@ -51,7 +52,7 @@ const STRINGS = {
     error: 'Error',
     idle: 'Idle',
     none: 'No sessions',
-    noneText: 'Start Claude Code',
+    noneText: (product: string) => `Start ${product}`,
     background: 'Background tasks running',
     planText: 'Review the plan',
     permissionText: 'Waiting for permission',
@@ -75,7 +76,7 @@ const STRINGS = {
     error: '出错',
     idle: '空闲',
     none: '无会话',
-    noneText: '启动 Claude Code',
+    noneText: (product: string) => `启动 ${product}`,
     background: '后台任务运行中',
     planText: '请审阅计划',
     permissionText: '等待授权',
@@ -126,7 +127,12 @@ export type ViewOptions = {
   showProject: boolean;
   now: number;
   others?: number;
+  /** Named in "Start …" when there is no session (default Claude Code) */
+  productName?: string;
 };
+
+/** The product named on Claude's key faces */
+export const DEFAULT_PRODUCT = 'Claude Code';
 
 export function buildSessionView(
   status: SessionStatus | null,
@@ -137,7 +143,7 @@ export function buildSessionView(
     return {
       tone: 'idle',
       label: s.none,
-      text: s.noneText,
+      text: s.noneText(options.productName ?? DEFAULT_PRODUCT),
       time: '',
       project: null,
       progress: null,
@@ -210,6 +216,22 @@ export function buildSessionView(
     project: options.showProject ? status.project : null,
     progress,
     others: options.others ?? 0,
+  };
+}
+
+/** A provider notice ("Not installed", …) in the session view's shape. */
+export function buildNoticeView(
+  notice: { label: Localized; text: Localized },
+  lang: Lang
+): SessionView {
+  return {
+    tone: 'idle',
+    label: notice.label[lang],
+    text: notice.text[lang],
+    time: '',
+    project: null,
+    progress: null,
+    others: 0,
   };
 }
 

@@ -1,28 +1,81 @@
 /**
- * The New Session key: a press opens the Claude desktop app's "new Claude
- * Code session" page through its claude:// deep link. Self-contained apart
- * from a few drawing hooks supplied by plugin.ts. The face only changes on
- * plugin.alive, on a press (new width or settings) and for the brief press
- * feedback; there are no periodic redraws.
+ * New Session keys of one provider: a press opens a new session of the
+ * provider's coding agent (Claude: the Claude desktop app's "new Claude Code
+ * session" page through its claude:// deep link). Generic over the provider
+ * (src/providers/types.ts, Claude by default) apart from a few drawing hooks
+ * supplied by plugin.ts. The face only changes on plugin.alive, on a press
+ * (new width or settings) and for the brief press feedback; there are no
+ * periodic redraws.
  */
 import {
+  CommandRunner,
+  TerminalOpener,
+  createTerminalOpener,
+  runCommand,
+} from './launch';
+import {
+  CLAUDE_NEW_SESSION_STRINGS,
   NewSessionState,
-  buildNewSessionUrl,
+  NewSessionStrings,
   buildNewSessionView,
   newSessionSettings,
+  resolveFolder,
 } from './newSession';
 import { renderNewSessionKey } from './newSessionRender';
 import { Launcher, openUrl } from './openUrl';
+import { CLAUDE_BRAND } from './providers/claude/brand';
+import { claudeNewSessionLauncher } from './providers/claude/newSession';
+import { brandMark, keyCid, pick } from './providers/kit';
+import {
+  Brand,
+  Key,
+  KeyGroup,
+  LaunchTarget,
+  NewSessionLauncher,
+  NewSessionRequest,
+} from './providers/types';
 
-export const NEW_SESSION_CID = 'dev.sese.flexbar_claude_code_usage.newsession';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Key = any;
+export const NEW_SESSION_CID = keyCid('claude', 'newsession');
 
 type Logger = {
   info?: (...args: unknown[]) => void;
   warn?: (...args: unknown[]) => void;
 };
+
+export type NewSessionKeyProvider = {
+  cid: string;
+  brand: Brand;
+  launcher: NewSessionLauncher;
+};
+
+/** The original New Session key: the Claude app's new Claude Code session. */
+export const CLAUDE_NEW_SESSION_KEYS: NewSessionKeyProvider = {
+  cid: NEW_SESSION_CID,
+  brand: CLAUDE_BRAND,
+  launcher: claudeNewSessionLauncher,
+};
+
+/** A provider's key texts: its own strings over the generic defaults. */
+export function newSessionStrings(
+  provider: NewSessionKeyProvider
+): NewSessionStrings {
+  if (provider.launcher === claudeNewSessionLauncher) {
+    return CLAUDE_NEW_SESSION_STRINGS;
+  }
+  const own = provider.launcher.strings ?? {};
+  const name = provider.brand.name;
+  const defaults = {
+    ready: { en: 'New Session', zh: '新建会话' },
+    opening: { en: 'Opening…', zh: '正在打开…' },
+    error: { en: `${name} not available`, zh: `${name} 不可用` },
+  };
+  const table = (lang: 'en' | 'zh') => ({
+    ready: pick(own.ready ?? defaults.ready, lang),
+    opening: pick(own.opening ?? defaults.opening, lang),
+    error: pick(own.error ?? defaults.error, lang),
+  });
+  return { en: table('en'), zh: table('zh') };
+}
 
 export type NewSessionTimings = {
   /** How long "Opening…" stays on the key after a press */
@@ -48,8 +101,16 @@ export type NewSessionKeyDeps = {
   keyWidth: (key: Key) => number;
   bgColor: (key: Key) => string | undefined;
   logger?: Logger | null;
-  /** Opens the deep link (tests pass a stub; nothing else should) */
+  /** Whose sessions the keys open (default: Claude) */
+  provider?: NewSessionKeyProvider;
+  /** Opens a URL target (tests pass a stub; nothing else should) */
   launch?: Launcher;
+  /** Starts a command target (tests pass a stub, too) */
+  run?: CommandRunner;
+  /** Opens a terminal target (default: built on `run`; tests pass a stub) */
+  terminal?: TerminalOpener;
+  /** Platform targets are built for (default: this one) */
+  platform?: NodeJS.Platform;
   /** Renders a key face (defaults to renderNewSessionKey) */
   render?: typeof renderNewSessionKey;
   now?: () => number;
@@ -60,7 +121,8 @@ export type NewSessionKeyDeps = {
 
 type Feedback = { state: 'opening' | 'error'; timer: NodeJS.Timeout };
 
-export class NewSessionKeys {
+export class NewSessionKeys implements KeyGroup {
+  readonly cid: string;
   private keys = new Map<string, Key[]>();
   /** Signature of the image each key shows, by `${serialNumber}#${uid}` */
   private drawn = new Map<string, string>();
@@ -69,20 +131,38 @@ export class NewSessionKeys {
   private feedback = new Map<string, Feedback>();
   private lastPress = new Map<string, number>();
   private readonly launch: Launcher;
+  private readonly run: CommandRunner;
+  private readonly terminal: TerminalOpener;
   private readonly render: typeof renderNewSessionKey;
   private readonly now: () => number;
   private readonly timings: NewSessionTimings;
+  private readonly provider: NewSessionKeyProvider;
+  private readonly strings: NewSessionStrings;
+  /** Brand look on the face; empty for Claude (keeps its look) */
+  private readonly look: {
+    accent?: string;
+    mark?: ReturnType<typeof brandMark>;
+  };
 
   constructor(private readonly deps: NewSessionKeyDeps) {
+    this.provider = deps.provider ?? CLAUDE_NEW_SESSION_KEYS;
+    this.cid = this.provider.cid;
     this.launch = deps.launch ?? openUrl;
+    this.run = deps.run ?? runCommand;
+    this.terminal =
+      deps.terminal ??
+      createTerminalOpener({ platform: deps.platform, run: this.run });
     this.render = deps.render ?? renderNewSessionKey;
     this.now = deps.now ?? Date.now;
     this.timings = { ...DEFAULT_TIMINGS, ...deps.timings };
+    this.strings = newSessionStrings(this.provider);
+    const mark = brandMark(this.provider.brand);
+    this.look = mark ? { accent: this.provider.brand.accent, mark } : {};
   }
 
   /** plugin.alive: the device's current plugin keys (any cid). */
   alive(serialNumber: string, keys: Key[]): Promise<void> {
-    const mine = keys.filter(key => key?.cid === NEW_SESSION_CID);
+    const mine = keys.filter(key => key?.cid === this.cid);
     if (mine.length > 0) this.keys.set(serialNumber, mine);
     else this.keys.delete(serialNumber);
     // the page was (re)loaded: repaint everything on it
@@ -104,9 +184,16 @@ export class NewSessionKeys {
     return Promise.resolve();
   }
 
+  /** No global settings and no settings-page messages. */
+  async configure() {}
+
+  async message(): Promise<unknown> {
+    return undefined;
+  }
+
   /**
-   * Key press: opens a new Claude Code session, unless the same key was
-   * pressed less than a second ago. Resolves to whether it launched.
+   * Key press: opens a new session, unless the same key was pressed less
+   * than a second ago. Resolves to whether it launched.
    */
   async press(serialNumber: string, pressed: Key): Promise<boolean> {
     const id = `${serialNumber}#${pressed?.uid}`;
@@ -124,19 +211,49 @@ export class NewSessionKeys {
     this.lastPress.set(id, now);
 
     this.showFeedback(id, 'opening', this.timings.openingMs);
+    const appName = this.provider.launcher.appName;
     try {
-      const settings = newSessionSettings(pressed?.data, this.deps.home);
-      const url = buildNewSessionUrl(settings.folder, this.deps.home);
-      this.deps.logger?.info?.('New Session key: opening the Claude app');
-      await this.launch(url);
+      const home = this.deps.home;
+      const data = (pressed?.data ?? {}) as Record<string, unknown>;
+      const settings = newSessionSettings(data, home);
+      const request: NewSessionRequest = {
+        data,
+        rawFolder: settings.folder,
+        folder: resolveFolder(settings.folder, home),
+        home,
+        platform: this.deps.platform ?? process.platform,
+      };
+      // async, so a launcher that throws still shows "Opening…" first
+      const target = await (async () =>
+        this.provider.launcher.target(request))();
+      this.deps.logger?.info?.(`New Session key: opening ${appName}`);
+      await this.open(target);
       return true;
     } catch (error) {
       const text = error instanceof Error ? error.message : `${error}`;
       this.deps.logger?.warn?.(
-        `New Session key: could not open the Claude app: ${text.slice(0, 200)}`
+        `New Session key: could not open ${appName}: ${text.slice(0, 200)}`
       );
       this.showFeedback(id, 'error', this.timings.errorMs);
       return false;
+    }
+  }
+
+  /** Hands a target to the URL opener or the command runner (no shell). */
+  private open(target: LaunchTarget): Promise<void> {
+    switch (target.kind) {
+      case 'url':
+        return this.launch(target.url);
+      case 'command':
+        return this.run({
+          file: target.file,
+          args: target.args,
+          ...(target.cwd ? { cwd: target.cwd } : {}),
+        });
+      case 'terminal':
+        return this.terminal(target.command, target.cwd);
+      default:
+        throw new Error('Unknown launch target');
     }
   }
 
@@ -203,10 +320,11 @@ export class NewSessionKeys {
     const state: NewSessionState = this.feedback.get(id)?.state ?? 'ready';
     const view = buildNewSessionView(
       state,
-      newSessionSettings(key?.data, this.deps.home)
+      newSessionSettings(key?.data, this.deps.home),
+      this.strings
     );
     const width = this.deps.keyWidth(key);
-    const options = { bgColor: this.deps.bgColor(key) };
+    const options = { bgColor: this.deps.bgColor(key), ...this.look };
     return {
       id,
       view,

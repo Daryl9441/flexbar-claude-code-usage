@@ -2,7 +2,15 @@ import { SKRSContext2D, createCanvas } from '@napi-rs/canvas';
 
 import { FONT } from './fonts';
 import { NewSessionState, NewSessionView } from './newSession';
-import { COLORS, KEY_HEIGHT, ellipsize, pixelWidth, textWidth } from './render';
+import type { KeyMark } from './providers/types';
+import {
+  COLORS,
+  KEY_HEIGHT,
+  drawMark,
+  ellipsize,
+  pixelWidth,
+  textWidth,
+} from './render';
 
 const ERROR_COLOR = '#d9534f';
 const ICON_GLYPH = '#ffffff';
@@ -15,20 +23,65 @@ const SUBTITLE_GAP = 3;
 
 export type NewSessionRenderOptions = {
   bgColor?: string;
+  /** Icon circle colour (default Claude orange) */
+  accent?: string;
+  /** Provider mark on a small badge at the icon's lower right */
+  mark?: KeyMark;
 };
 
+type IconStyle = { accent?: string; mark?: KeyMark; bgColor?: string };
+
+/** The provider badge: the mark on a dark disc cut out of the icon. */
+function drawBadge(
+  ctx: SKRSContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  style: IconStyle
+) {
+  if (!style.mark) return;
+  const br = Math.max(6.5, r * 0.5);
+  const bx = cx + r * 0.72;
+  const by = cy + r * 0.72;
+  ctx.fillStyle = style.bgColor || COLORS.background;
+  ctx.beginPath();
+  ctx.arc(bx, by, br + 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.chipBg;
+  ctx.beginPath();
+  ctx.arc(bx, by, br, 0, Math.PI * 2);
+  ctx.fill();
+  const size = br * 1.7;
+  drawMark(ctx, style.mark, bx - size / 2, by - size / 2, size);
+}
+
 /**
- * The key icon: a "+" in a Claude-orange circle, three dots while the app
- * is being opened, and a "!" in a red circle when it could not be opened.
+ * The key icon: a "+" in a Claude-orange (or provider accent) circle, three
+ * dots while the app is being opened, and a "!" in a red circle when it
+ * could not be opened; other providers add their mark on a badge.
  */
 function drawIcon(
   ctx: SKRSContext2D,
   cx: number,
   cy: number,
   r: number,
-  state: NewSessionState
+  state: NewSessionState,
+  style: IconStyle = {}
 ) {
-  ctx.fillStyle = state === 'error' ? ERROR_COLOR : COLORS.claude;
+  drawGlyph(ctx, cx, cy, r, state, style);
+  drawBadge(ctx, cx, cy, r, style);
+}
+
+function drawGlyph(
+  ctx: SKRSContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  state: NewSessionState,
+  style: IconStyle
+) {
+  ctx.fillStyle =
+    state === 'error' ? ERROR_COLOR : style.accent || COLORS.claude;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
@@ -131,10 +184,11 @@ function layoutTitle(
 function drawIconOnly(
   ctx: SKRSContext2D,
   keyWidth: number,
-  state: NewSessionState
+  state: NewSessionState,
+  style: IconStyle
 ) {
   const r = Math.max(10, Math.min(17, (keyWidth - 16) / 2));
-  drawIcon(ctx, keyWidth / 2, KEY_HEIGHT / 2, r, state);
+  drawIcon(ctx, keyWidth / 2, KEY_HEIGHT / 2, r, state, style);
 }
 
 /**
@@ -155,8 +209,13 @@ export function renderNewSessionKey(
   ctx.fillStyle = options.bgColor || COLORS.background;
   ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
 
+  const style: IconStyle = {
+    accent: options.accent,
+    mark: options.mark,
+    bgColor: options.bgColor,
+  };
   if (keyWidth <= ICON_ONLY_MAX_WIDTH) {
-    drawIconOnly(ctx, keyWidth, view.state);
+    drawIconOnly(ctx, keyWidth, view.state, style);
     return canvas.toDataURL('image/png');
   }
 
@@ -167,10 +226,10 @@ export function renderNewSessionKey(
   const maxWidth = keyWidth - pad - x;
   const title = layoutTitle(ctx, view.title, maxWidth, narrow ? 14 : 15);
   if (!title) {
-    drawIconOnly(ctx, keyWidth, view.state);
+    drawIconOnly(ctx, keyWidth, view.state, style);
     return canvas.toDataURL('image/png');
   }
-  drawIcon(ctx, pad + r, KEY_HEIGHT / 2, r, view.state);
+  drawIcon(ctx, pad + r, KEY_HEIGHT / 2, r, view.state, style);
 
   const lineHeight = Math.round(title.size * 1.2);
 

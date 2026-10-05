@@ -1,8 +1,10 @@
 # CLAUDE.md
 
-Guide for coding agents working on this repository: the **Claude Code Usage**
-plugin for FlexDesigner / Flexbar (uuid `dev.sese.flexbar_claude_code_usage`),
-a fork of `Sese-Schneider/flexbar-claude-code-usage`.
+Guide for coding agents working on this repository: the **AI Coding Usage**
+plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
+`dev.sese.flexbar_claude_code_usage`), a fork of
+`Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
+status and new-session keys for Claude Code, Kimi and Gemini CLI.
 
 ## Privacy rules (mandatory)
 
@@ -121,6 +123,11 @@ npx tsc --noEmit -p .         # type check
 npm run test:session          # Session Status tests (tsc -> .test-build/, node --test)
 npm run test:newsession       # New Session key tests (launcher stubbed; never opens a link)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
+npm run test:providers        # provider layer: kit, generic key groups, launchers, manifest ids
+npm run test:kimi-usage       # Kimi usage source (tsc -> .test-build-kimi-usage/)
+npm run test:kimi-session     # Kimi sessions + New Session launcher
+npm run test:gemini-usage     # Gemini usage source
+npm run test:gemini-session   # Gemini sessions + New Session launcher
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
 npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
@@ -164,24 +171,44 @@ outside the repository with `assert` changed to `with` in
 ## Structure
 
 - `src/plugin.ts`: entry point. FlexDesigner events (`plugin.alive`/`dead`/
-  `data`, `device.status`, `ui.message`, config updates), usage polling with
-  the rate-limit lockout, and the serialized draw queue all keys share.
-- `src/credentials.ts`: reads Claude Code's OAuth credentials (env,
+  `data`, `device.status`, `ui.message`, config updates) routed by cid to the
+  key groups from `src/providers/registry.ts`, and the serialized draw queue
+  all keys share.
+- Provider layer (`src/providers/`): `types.ts` (contracts: `UsageSource`,
+  `SessionProvider`/`SessionSource`, `NewSessionLauncher`/`LaunchTarget`,
+  `Brand`, `KeyGroup`), `kit.ts` (`keyCid`, `ProviderError` and its key-face
+  texts, `makeStatus`, `runningItem`, notices), `registry.ts` (provider list,
+  one usage/session/new-session key group per provider). Each provider has a
+  folder `src/providers/<id>/` with `brand.ts` (accent colour, mark drawn with
+  canvas primitives), `usage.ts` (`usageSource`), `session.ts`
+  (`sessionProvider`), `newSession.ts` (`newSessionLauncher`) and `index.ts`
+  (wiring only). Claude keeps its cids (`….usage`, `….session`,
+  `….newsession`); other keys are `….<provider>_<kind>` with UI files
+  `ui/<provider>_<kind>.vue`.
+- Generic key groups: `src/usageKey.ts` (`UsageKeys`: polling, rate-limit
+  lockout, usage faces), `src/sessionKey.ts` (`SessionKeys`; a press lists
+  the running sessions, paged by `ListPager`), `src/newSessionKey.ts`
+  (`NewSessionKeys`; URL, command or terminal targets). Without a provider
+  the session and new-session groups default to Claude.
+- Claude: `src/credentials.ts` reads Claude Code's OAuth credentials (env,
   `~/.claude/.credentials.json`, macOS Keychain), refreshes them and writes the
   new pair back. `src/api.ts`: usage endpoint client (`UsageError`).
-  `src/redact.ts`: credential redaction for logs and key text.
-- Usage meter key: `src/usage.ts`, `src/render.ts`, `src/clawd.ts`,
-  `src/fonts.ts`, `src/types.ts`.
-- Session Status key: `src/session.ts` (transcript parser, status derivation),
-  `src/sessionSource.ts` (`SessionMonitor`: transcripts in `~/.claude/projects`,
-  live status in `~/.claude/sessions`), `src/sessionView.ts` (view model,
-  en/zh-CN), `src/sessionRender.ts`, `src/sessionKey.ts` (a press lists the
-  running sessions, paged by `ListPager`).
-- New Session key: `src/newSession.ts` (builds the `claude://code/new` link),
-  `src/openUrl.ts` (hands it to the system opener via `execFile`, no shell;
-  errors drop the query so folder paths never reach the log),
-  `src/newSessionRender.ts`, `src/newSessionKey.ts`. Tests stub the launcher:
-  never open a `claude://` link or start the Claude app from a test.
+  `src/usage.ts`, `src/types.ts`: usage response and metrics.
+  `src/session.ts` (transcript parser, status derivation),
+  `src/sessionSource.ts` (`SessionMonitor`: transcripts in
+  `~/.claude/projects`, live status in `~/.claude/sessions`),
+  `src/newSession.ts` (builds the `claude://code/new` link). Adapters in
+  `src/providers/claude/`.
+- Rendering: `src/render.ts` (usage and message faces, `drawMark`),
+  `src/sessionView.ts` (view model, en/zh-CN), `src/sessionRender.ts`,
+  `src/newSessionRender.ts`, `src/clawd.ts`, `src/fonts.ts`.
+- Launching: `src/openUrl.ts` (URLs to the system opener via `execFile`, no
+  shell; errors drop the query so folder paths never reach the log),
+  `src/launch.ts` (commands via `execFile`; terminals: macOS opens a
+  self-deleting `.command` script with `open -a Terminal`, every word
+  single-quoted). Tests stub every launcher: never open a link, a terminal or
+  an app from a test.
+- `src/redact.ts`: credential redaction for logs and key text.
 - `dev.sese.flexbar_claude_code_usage.plugin/`: `manifest.json` (keys, `local`
   strings for `en` and `zh-CN`), `ui/*.vue` key settings (file name = last
   segment of the key's cid), resources. `backend/` is build output.

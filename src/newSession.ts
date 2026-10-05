@@ -5,6 +5,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import type { NewSessionState } from './providers/types';
 import { Lang, langOf } from './sessionView';
 
 /**
@@ -79,8 +80,7 @@ export function newSessionSettings(
   };
 }
 
-/** ready: the normal face; opening / error: brief feedback after a press. */
-export type NewSessionState = 'ready' | 'opening' | 'error';
+export type { NewSessionState };
 
 export type NewSessionView = {
   state: NewSessionState;
@@ -88,7 +88,10 @@ export type NewSessionView = {
   subtitle: string | null;
 };
 
-const STRINGS: Record<Lang, Record<NewSessionState, string>> = {
+export type NewSessionStrings = Record<Lang, Record<NewSessionState, string>>;
+
+/** The Claude key's texts; other providers pass their own table. */
+export const CLAUDE_NEW_SESSION_STRINGS: NewSessionStrings = {
   en: {
     ready: 'New Session',
     opening: 'Opening…',
@@ -103,11 +106,12 @@ const STRINGS: Record<Lang, Record<NewSessionState, string>> = {
 
 export function buildNewSessionView(
   state: NewSessionState,
-  settings: NewSessionSettings
+  settings: NewSessionSettings,
+  strings: NewSessionStrings = CLAUDE_NEW_SESSION_STRINGS
 ): NewSessionView {
   return {
     state,
-    title: STRINGS[settings.lang][state],
+    title: strings[settings.lang][state],
     subtitle: state === 'error' ? null : settings.folderName,
   };
 }

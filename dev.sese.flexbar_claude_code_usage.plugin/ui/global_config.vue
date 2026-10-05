@@ -37,6 +37,55 @@
                             hide-details
                         ></v-text-field>
                     </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">Kimi</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.kimiDir"
+                            :label="$t('Config.KimiDir')"
+                            placeholder="~/.kimi-code"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.kimiDesktopDir"
+                            :label="$t('Config.KimiDesktopDir')"
+                            placeholder="~/Library/Application Support/kimi-desktop"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-switch
+                            v-model="modelValue.config.kimiRefreshLogin"
+                            :label="$t('Config.KimiRefreshLogin')"
+                            hide-details
+                        ></v-switch>
+                    </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">Gemini</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.geminiDir"
+                            :label="$t('Config.GeminiDir')"
+                            placeholder="~/.gemini"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.geminiPath"
+                            :label="$t('Config.GeminiPath')"
+                            placeholder="/opt/homebrew/bin/gemini"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
                 </v-row>
             </v-card-text>
             <v-card-actions>
@@ -97,6 +146,10 @@ export default {
         },
     },
     mounted() {
+        // on unless turned off (the backend reads a missing value as on)
+        if (this.modelValue.config.kimiRefreshLogin === undefined) {
+            this.modelValue.config.kimiRefreshLogin = true;
+        }
         this.testConnection();
     },
 };

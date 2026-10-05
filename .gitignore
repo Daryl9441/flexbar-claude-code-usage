@@ -7,6 +7,8 @@ dev.sese.flexbar_claude_code_usage.plugin/backend
 dev.sese.flexbar_claude_code_usage.plugin/config.json
 *.flexplugin
 .test-build
+# per-suite test builds (npm run test:providers, test:kimi-usage, …)
+.test-build-*/
 
 # Credentials, keys and other private data: never commit (see CLAUDE.md)
 .credentials.json

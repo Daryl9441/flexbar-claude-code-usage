@@ -1,10 +1,10 @@
 {
-    "name": "Claude Code Usage",
+    "name": "AI Coding Usage",
     "uuid": "dev.sese.flexbar_claude_code_usage",
     "version": "0.4.0",
     "author": "Sese-Schneider",
     "entry": "backend/plugin.cjs",
-    "description": "Display your Claude Code usage limits on your Flexbar",
+    "description": "Display your Claude Code, Kimi and Gemini usage limits and sessions on your Flexbar",
     "repo": "https://github.com/Sese-Schneider/flexbar-claude-code-usage",
     "sdk": {
         "version": "1.0.0"
@@ -106,14 +106,150 @@
                 "data": {
                     "folder": ""
                 }
+            },
+            {
+                "title": "$KimiUsage.Title",
+                "tip": "$KimiUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.kimi_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-gauge",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showResetTime": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$KimiSession.Title",
+                "tip": "$KimiSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.kimi_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-progress-question",
+                    "width": 240
+                },
+                "data": {
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$KimiNewSession.Title",
+                "tip": "$KimiNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.kimi_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-plus-circle-outline",
+                    "width": 120
+                },
+                "data": {
+                    "folder": ""
+                }
+            },
+            {
+                "title": "$GeminiUsage.Title",
+                "tip": "$GeminiUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.gemini_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-gauge",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showResetTime": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$GeminiSession.Title",
+                "tip": "$GeminiSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.gemini_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-progress-question",
+                    "width": 240
+                },
+                "data": {
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$GeminiNewSession.Title",
+                "tip": "$GeminiNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.gemini_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-plus-circle-outline",
+                    "width": 120
+                },
+                "data": {
+                    "folder": ""
+                }
             }
         ]
     },
     "local": {
         "en": {
-            "PluginName": "Claude Code Usage",
+            "PluginName": "AI Coding Usage",
             "Usage": {
-                "Title": "Usage Meter",
+                "Title": "Claude Usage",
                 "Tip": "Shows a Claude Code usage limit as a live meter",
                 "UI": {
                     "metric": "Usage limit",
@@ -132,10 +268,15 @@
                 "Connected": "Connected — session {session}%, week {weekly}%",
                 "Disconnected": "Disconnected",
                 "Saved": "Config updated",
-                "ClaudeDir": "Claude Code folder for Session Status keys (optional)"
+                "ClaudeDir": "Claude Code folder for Session Status keys (optional)",
+                "KimiDir": "Kimi Code folder (optional)",
+                "KimiDesktopDir": "Kimi desktop app data folder (optional)",
+                "KimiRefreshLogin": "Refresh an expired Kimi Code login",
+                "GeminiDir": "Gemini CLI folder (optional)",
+                "GeminiPath": "Gemini CLI program (optional)"
             },
             "Session": {
-                "Title": "Session Status",
+                "Title": "Claude Sessions",
                 "Tip": "Shows whether your latest Claude Code session is working, done, or waiting for you; press to list running sessions",
                 "UI": {
                     "projectFilter": "Project filter",
@@ -160,19 +301,93 @@
                 }
             },
             "NewSession": {
-                "Title": "New Session",
+                "Title": "Claude New Session",
                 "Tip": "Opens a new Claude Code session in the Claude app",
                 "UI": {
                     "folder": "Project folder (optional)",
                     "folderHint": "Absolute path or ~/…; leave empty to let the Claude app choose",
                     "lang": "Key text language"
                 }
+            },
+            "KimiUsage": {
+                "Title": "Kimi Usage",
+                "Tip": "Shows a Kimi Code usage limit as a live meter",
+                "UI": {
+                    "metric": "Usage limit",
+                    "metricDefault": "Default",
+                    "showResetTime": "Show time until reset",
+                    "showMark": "Show Kimi mark",
+                    "checking": "Checking…",
+                    "connected": "Connected",
+                    "notAvailable": "Not available: {error}"
+                }
+            },
+            "KimiSession": {
+                "Title": "Kimi Sessions",
+                "Tip": "Shows whether your latest Kimi Code session is working, done, or waiting for you; press to list running sessions",
+                "UI": {
+                    "projectFilter": "Project filter",
+                    "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show project name",
+                    "showMark": "Show Kimi mark",
+                    "checking": "Looking for sessions…",
+                    "found": "Now showing: {project} — {state}",
+                    "notFound": "No Kimi Code session found in {dir}"
+                }
+            },
+            "KimiNewSession": {
+                "Title": "Kimi New Session",
+                "Tip": "Opens a new Kimi Code session",
+                "UI": {
+                    "folder": "Project folder (optional)",
+                    "folderHint": "Absolute path or ~/…; leave empty for your home folder",
+                    "lang": "Key text language"
+                }
+            },
+            "GeminiUsage": {
+                "Title": "Gemini Usage",
+                "Tip": "Shows a Gemini CLI usage limit as a live meter",
+                "UI": {
+                    "metric": "Usage limit",
+                    "metricDefault": "Default",
+                    "showResetTime": "Show time until reset",
+                    "showMark": "Show Gemini mark",
+                    "checking": "Checking…",
+                    "connected": "Connected",
+                    "notAvailable": "Not available: {error}"
+                }
+            },
+            "GeminiSession": {
+                "Title": "Gemini Sessions",
+                "Tip": "Shows whether your latest Gemini CLI session is working, done, or waiting for you; press to list running sessions",
+                "UI": {
+                    "projectFilter": "Project filter",
+                    "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show project name",
+                    "showMark": "Show Gemini mark",
+                    "checking": "Looking for sessions…",
+                    "found": "Now showing: {project} — {state}",
+                    "notFound": "No Gemini CLI session found in {dir}"
+                }
+            },
+            "GeminiNewSession": {
+                "Title": "Gemini New Session",
+                "Tip": "Opens a new Gemini CLI session",
+                "UI": {
+                    "folder": "Project folder (optional)",
+                    "folderHint": "Absolute path or ~/…; leave empty for your home folder",
+                    "lang": "Key text language"
+                }
             }
         },
         "zh-CN": {
-            "PluginName": "Claude Code 用量",
+            "PluginName": "AI 编程用量",
             "Usage": {
-                "Title": "用量仪表",
+                "Title": "Claude 用量",
                 "Tip": "以实时仪表显示 Claude Code 的用量限制",
                 "UI": {
                     "metric": "用量限制",
@@ -191,10 +406,15 @@
                 "Connected": "已连接 — 会话 {session}%，本周 {weekly}%",
                 "Disconnected": "未连接",
                 "Saved": "配置已更新",
-                "ClaudeDir": "会话状态按键使用的 Claude Code 目录（可选）"
+                "ClaudeDir": "会话状态按键使用的 Claude Code 目录（可选）",
+                "KimiDir": "Kimi Code 目录（可选）",
+                "KimiDesktopDir": "Kimi 桌面版数据目录（可选）",
+                "KimiRefreshLogin": "自动刷新过期的 Kimi Code 登录",
+                "GeminiDir": "Gemini CLI 目录（可选）",
+                "GeminiPath": "Gemini CLI 程序（可选）"
             },
             "Session": {
-                "Title": "会话状态",
+                "Title": "Claude 会话",
                 "Tip": "显示最新的 Claude Code 会话是在进行中、已完成，还是在等你；按下可列出运行中的会话",
                 "UI": {
                     "projectFilter": "项目筛选",
@@ -219,11 +439,85 @@
                 }
             },
             "NewSession": {
-                "Title": "新建会话",
+                "Title": "Claude 新建会话",
                 "Tip": "在 Claude App 中打开新的 Claude Code 会话",
                 "UI": {
                     "folder": "项目文件夹（可选）",
                     "folderHint": "绝对路径或 ~/…；留空则由 Claude App 选择",
+                    "lang": "按键文字语言"
+                }
+            },
+            "KimiUsage": {
+                "Title": "Kimi 用量",
+                "Tip": "以实时仪表显示 Kimi Code 的用量限制",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricDefault": "默认",
+                    "showResetTime": "显示距重置的时间",
+                    "showMark": "显示 Kimi 标志",
+                    "checking": "正在检查…",
+                    "connected": "已连接",
+                    "notAvailable": "不可用：{error}"
+                }
+            },
+            "KimiSession": {
+                "Title": "Kimi 会话",
+                "Tip": "显示最新的 Kimi Code 会话是在进行中、已完成，还是在等你；按下可列出运行中的会话",
+                "UI": {
+                    "projectFilter": "项目筛选",
+                    "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
+                    "idleMinutes": "多久后视为空闲（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示项目名",
+                    "showMark": "显示 Kimi 标志",
+                    "checking": "正在查找会话…",
+                    "found": "当前显示：{project} — {state}",
+                    "notFound": "在 {dir} 中没有找到 Kimi Code 会话"
+                }
+            },
+            "KimiNewSession": {
+                "Title": "Kimi 新建会话",
+                "Tip": "打开新的 Kimi Code 会话",
+                "UI": {
+                    "folder": "项目文件夹（可选）",
+                    "folderHint": "绝对路径或 ~/…；留空则使用主目录",
+                    "lang": "按键文字语言"
+                }
+            },
+            "GeminiUsage": {
+                "Title": "Gemini 用量",
+                "Tip": "以实时仪表显示 Gemini CLI 的用量限制",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricDefault": "默认",
+                    "showResetTime": "显示距重置的时间",
+                    "showMark": "显示 Gemini 标志",
+                    "checking": "正在检查…",
+                    "connected": "已连接",
+                    "notAvailable": "不可用：{error}"
+                }
+            },
+            "GeminiSession": {
+                "Title": "Gemini 会话",
+                "Tip": "显示最新的 Gemini CLI 会话是在进行中、已完成，还是在等你；按下可列出运行中的会话",
+                "UI": {
+                    "projectFilter": "项目筛选",
+                    "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
+                    "idleMinutes": "多久后视为空闲（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示项目名",
+                    "showMark": "显示 Gemini 标志",
+                    "checking": "正在查找会话…",
+                    "found": "当前显示：{project} — {state}",
+                    "notFound": "在 {dir} 中没有找到 Gemini CLI 会话"
+                }
+            },
+            "GeminiNewSession": {
+                "Title": "Gemini 新建会话",
+                "Tip": "打开新的 Gemini CLI 会话",
+                "UI": {
+                    "folder": "项目文件夹（可选）",
+                    "folderHint": "绝对路径或 ~/…；留空则使用主目录",
                     "lang": "按键文字语言"
                 }
             }

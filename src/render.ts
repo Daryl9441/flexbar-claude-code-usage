@@ -2,6 +2,7 @@ import { Image, SKRSContext2D, createCanvas, loadImage } from '@napi-rs/canvas';
 
 import { CLAWD_PNG_BASE64 } from './clawd';
 import { FONT } from './fonts';
+import type { KeyMark } from './providers/types';
 import { MetricSnapshot, formatTimeUntilReset } from './usage';
 
 export const KEY_HEIGHT = 60;
@@ -242,7 +243,12 @@ export type RenderOptions = {
   showResetTime: boolean;
   showClawd: boolean;
   bgColor?: string;
+  /** Provider mark drawn where Clawd goes (ignored while showClawd is on) */
+  mark?: KeyMark;
 };
+
+// Provider marks sit in a square this tall, left of the meter
+const MARK_SIZE = 30;
 
 // Room the meter needs beside Clawd; on narrower keys Clawd is left out
 const MIN_METER_WIDTH = 80;
@@ -286,6 +292,19 @@ export async function renderUsageKey(
         (KEY_HEIGHT - clawdHeight) / 2,
         clawdWidth,
         clawdHeight
+      );
+      contentX = meterX;
+    }
+  } else if (options.mark) {
+    const markX = padding - 1;
+    const meterX = markX + MARK_SIZE + 12;
+    if (rightX - meterX >= MIN_METER_WIDTH) {
+      drawMark(
+        ctx,
+        options.mark,
+        markX,
+        (KEY_HEIGHT - MARK_SIZE) / 2,
+        MARK_SIZE
       );
       contentX = meterX;
     }
@@ -377,13 +396,46 @@ export async function renderUsageKey(
 }
 
 /**
+ * Draws a provider mark into a square box, isolated from the caller's
+ * context state (a mark that throws is skipped, never fatal).
+ */
+export function drawMark(
+  ctx: SKRSContext2D,
+  mark: KeyMark,
+  x: number,
+  y: number,
+  size: number
+) {
+  ctx.save();
+  try {
+    mark.draw(ctx, x, y, size);
+  } catch {
+    // a broken mark only costs the identity, not the key face
+  } finally {
+    ctx.restore();
+  }
+}
+
+export type MessageOptions = {
+  /** Title colour (default Claude orange) */
+  accent?: string;
+  /** Provider mark left of the title, on keys at least 100px wide */
+  mark?: KeyMark;
+};
+
+// Message-face mark: a square this big, then this much room to the title
+const MESSAGE_MARK_SIZE = 14;
+const MESSAGE_MARK_GAP = 5;
+
+/**
  * Renders an error/placeholder key face: a title and a message wrapped onto
  * up to two lines (ellipsized beyond that) — never squashed to fit.
  */
 export function renderMessageKey(
   width: number,
   title: string,
-  message: string
+  message: string,
+  options: MessageOptions = {}
 ): string {
   const keyWidth = pixelWidth(width);
   const canvas = createCanvas(keyWidth, KEY_HEIGHT);
@@ -401,9 +453,16 @@ export function renderMessageKey(
   const lines = wrapText(ctx, message, maxWidth, 2);
   const wrapped = lines.length > 1;
 
-  ctx.fillStyle = COLORS.claude;
-  fitFont(ctx, title, maxWidth, 13, 10, '600');
-  ctx.fillText(ellipsize(ctx, title, maxWidth), padX, wrapped ? 6 : 10);
+  const titleY = wrapped ? 6 : 10;
+  let titleX = padX;
+  if (options.mark && keyWidth >= 100) {
+    drawMark(ctx, options.mark, padX, titleY - 0.5, MESSAGE_MARK_SIZE);
+    titleX += MESSAGE_MARK_SIZE + MESSAGE_MARK_GAP;
+  }
+  const titleWidth = padX + maxWidth - titleX;
+  ctx.fillStyle = options.accent || COLORS.claude;
+  fitFont(ctx, title, titleWidth, 13, 10, '600');
+  ctx.fillText(ellipsize(ctx, title, titleWidth), titleX, titleY);
 
   ctx.fillStyle = COLORS.label;
   ctx.font = `12px ${FONT}`;

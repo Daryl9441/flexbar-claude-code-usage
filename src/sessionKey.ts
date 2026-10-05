@@ -1,57 +1,72 @@
 /**
- * The Session Status key: shows whether the latest Claude Code session is
- * working, done, or waiting for the user, kept live from the transcripts on
- * disk; a press lists all running sessions. Self-contained apart from a few
- * drawing hooks supplied by plugin.ts, and never touches the usage API.
+ * Session Status keys of one provider: show whether the provider's latest
+ * session is working, done, or waiting for the user, kept live by the
+ * provider's SessionSource; a press lists all running sessions. Generic over
+ * the provider (src/providers/types.ts, Claude Code by default) apart from a
+ * few drawing hooks supplied by plugin.ts; never touches the usage API.
  */
+import { CLAUDE_BRAND } from './providers/claude/brand';
+import { claudeSessionProvider } from './providers/claude/session';
+import { keyCid, markOptions, staticSessionSource } from './providers/kit';
+import {
+  Brand,
+  Key,
+  KeyGroup,
+  KeyHost,
+  PluginConfig,
+  SessionDescription,
+  SessionNotice,
+  SessionPick,
+  SessionProvider,
+  SessionSource,
+  UiMessage,
+} from './providers/types';
 import { renderSessionKey, renderSessionList } from './sessionRender';
-import { SessionMonitor, resolveClaudeDir } from './sessionSource';
 import {
   LIST_TIMEOUT_MS,
   Lang,
   ListPager,
   SessionView,
   buildListView,
+  buildNoticeView,
   buildSessionView,
   langOf,
   listPages,
 } from './sessionView';
 
-export const SESSION_CID = 'dev.sese.flexbar_claude_code_usage.session';
+export const SESSION_CID = keyCid('claude', 'session');
 
 const DEFAULT_IDLE_MINUTES = 15;
 /** Re-evaluates time-based transitions (permission guess, idle, clock) */
 const TICK_MS = 5_000;
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Key = any;
-
-type Logger = {
-  info?: (...args: unknown[]) => void;
-  warn?: (...args: unknown[]) => void;
+export type SessionKeyProvider = {
+  cid: string;
+  brand: Brand;
+  sessions: SessionProvider;
 };
 
-export type SessionKeyDeps = {
-  /** Runs a draw after every draw queued before it */
-  enqueue: (task: () => Promise<void>) => Promise<void>;
-  /** Sends a rendered image to a key; may reject */
-  send: (serialNumber: string, key: Key, image: string) => Promise<void>;
-  isOffline: (serialNumber: string) => boolean;
-  keyWidth: (key: Key) => number;
-  bgColor: (key: Key) => string | undefined;
-  loadConfig: () => Promise<{ claudeDir?: string } | null | undefined>;
-  logger?: Logger | null;
+/** The original Session Status key: Claude Code sessions. */
+export const CLAUDE_SESSION_KEYS: SessionKeyProvider = {
+  cid: SESSION_CID,
+  brand: CLAUDE_BRAND,
+  sessions: claudeSessionProvider,
+};
+
+export type SessionKeyDeps = KeyHost & {
+  /** Whose sessions the keys show (default: Claude Code) */
+  provider?: SessionKeyProvider;
 };
 
 type KeySettings = {
   filter: string;
   idleMs: number;
   showProject: boolean;
-  showClawd: boolean;
+  marks: ReturnType<typeof markOptions>;
   lang: Lang;
 };
 
-function settingsOf(key: Key): KeySettings {
+function settingsOf(key: Key, brand: Brand): KeySettings {
   const data = key?.data ?? {};
   const idle = Number(data.idleMinutes);
   return {
@@ -60,15 +75,15 @@ function settingsOf(key: Key): KeySettings {
       (Number.isFinite(idle) && idle > 0 ? idle : DEFAULT_IDLE_MINUTES) *
       60_000,
     showProject: data.showProject !== false,
-    showClawd: data.showClawd === true,
+    marks: markOptions(brand, data),
     lang: langOf(data.lang),
   };
 }
 
-function loadingView(lang: Lang): SessionView {
+function loadingView(lang: Lang, productName: string): SessionView {
   return {
     tone: 'idle',
-    label: 'Claude Code',
+    label: productName,
     text: lang === 'zh' ? '加载中…' : 'Loading…',
     time: '',
     project: null,
@@ -77,7 +92,13 @@ function loadingView(lang: Lang): SessionView {
   };
 }
 
-export class SessionKeys {
+const BROKEN: SessionNotice = {
+  label: { en: 'Error', zh: '出错' },
+  text: { en: 'Could not read sessions', zh: '无法读取会话' },
+};
+
+export class SessionKeys implements KeyGroup {
+  readonly cid: string;
   private keys = new Map<string, Key[]>();
   /** Signature of the image each key shows, by `${serialNumber}#${uid}` */
   private drawn = new Map<string, string>();
@@ -86,17 +107,25 @@ export class SessionKeys {
   /** Keys showing the running-sessions list, by `${serialNumber}#${uid}` */
   private pager = new ListPager();
   private listTimers = new Map<string, NodeJS.Timeout>();
-  private monitor: SessionMonitor | null = null;
+  private monitor: SessionSource | null = null;
   private ready = false;
-  private claudeDir: string | null = null;
+  private location: string | null = null;
   private ticker: NodeJS.Timeout | null = null;
   private starting: Promise<void> | null = null;
+  private readonly provider: SessionKeyProvider;
 
-  constructor(private readonly deps: SessionKeyDeps) {}
+  constructor(private readonly deps: SessionKeyDeps) {
+    this.provider = deps.provider ?? CLAUDE_SESSION_KEYS;
+    this.cid = this.provider.cid;
+  }
+
+  private get brand(): Brand {
+    return this.provider.brand;
+  }
 
   /** plugin.alive: the device's current plugin keys (any cid). */
   async alive(serialNumber: string, keys: Key[]) {
-    const mine = keys.filter(key => key?.cid === SESSION_CID);
+    const mine = keys.filter(key => key?.cid === this.cid);
     if (mine.length > 0) this.keys.set(serialNumber, mine);
     else this.keys.delete(serialNumber);
     // the page was (re)loaded: repaint everything on it
@@ -142,40 +171,60 @@ export class SessionKeys {
       );
     }
     this.redraw();
-    await this.monitor?.rescan();
+    try {
+      await this.monitor?.rescan();
+    } catch (error) {
+      this.warn('rescan failed', error);
+    }
   }
 
-  /** Global config changed: follow a different Claude config dir. */
-  async configure(config: { claudeDir?: string } | null | undefined) {
-    const dir = resolveClaudeDir(config?.claudeDir);
-    if (!this.monitor || dir === this.claudeDir) return;
+  /** Global config changed: follow a different data location. */
+  async configure(config: PluginConfig | null | undefined) {
+    const location = this.locationFor(config ?? {});
+    if (!this.monitor || location === this.location) return;
     this.stopMonitor();
     await this.sync();
   }
 
+  /** Settings UI: 'session-status' asks what a key with a filter shows. */
+  async message(payload: UiMessage): Promise<unknown> {
+    if (payload.data !== 'session-status') return undefined;
+    return this.describe(`${payload.filter ?? ''}`);
+  }
+
   /** For the key settings page: what a key with this filter would show. */
-  async describe(filter: string) {
-    const config = await this.deps.loadConfig().catch(() => null);
-    const monitor = new SessionMonitor({
-      claudeDir: resolveClaudeDir(config?.claudeDir),
-      onChange: () => undefined,
-    });
-    monitor.setFilters([filter]);
-    await monitor.rescan();
-    monitor.stop();
-    const { status, others } = monitor.getStatus(
-      filter,
-      Date.now(),
-      DEFAULT_IDLE_MINUTES * 60_000
+  async describe(filter: string): Promise<SessionDescription> {
+    const config = (await this.deps.loadConfig().catch(() => null)) ?? {};
+    try {
+      return await this.provider.sessions.describe(filter, config);
+    } catch (error) {
+      this.warn('describe failed', error);
+      return {
+        success: false,
+        projectsDir: null,
+        state: null,
+        project: null,
+        title: null,
+        others: 0,
+        notice: BROKEN,
+      };
+    }
+  }
+
+  private warn(what: string, error: unknown) {
+    const text = error instanceof Error ? error.message : `${error}`;
+    this.deps.logger?.warn?.(
+      `${this.brand.name} session keys: ${what}: ${text.slice(0, 200)}`
     );
-    return {
-      success: !!status,
-      projectsDir: monitor.projectsDir,
-      state: status?.state ?? null,
-      project: status?.project ?? null,
-      title: status?.title ?? null,
-      others,
-    };
+  }
+
+  private locationFor(config: PluginConfig): string {
+    try {
+      return this.provider.sessions.location(config);
+    } catch (error) {
+      this.warn('no session location', error);
+      return '';
+    }
   }
 
   private hasKeys(): boolean {
@@ -194,10 +243,14 @@ export class SessionKeys {
     }
     await this.ensureMonitor();
     const settings = [...this.keys.values()].flatMap(keys =>
-      keys.map(settingsOf)
+      keys.map(key => settingsOf(key, this.brand))
     );
-    this.monitor?.setFilters(settings.map(s => s.filter));
-    this.monitor?.setRunningWindow(Math.max(...settings.map(s => s.idleMs)));
+    try {
+      this.monitor?.setFilters(settings.map(s => s.filter));
+      this.monitor?.setRunningWindow(Math.max(...settings.map(s => s.idleMs)));
+    } catch (error) {
+      this.warn('could not apply key settings', error);
+    }
     this.redraw();
   }
 
@@ -205,24 +258,39 @@ export class SessionKeys {
     if (this.monitor) return;
     if (!this.starting) {
       this.starting = (async () => {
-        const config = await this.deps.loadConfig().catch(() => null);
+        const config = (await this.deps.loadConfig().catch(() => null)) ?? {};
         if (this.monitor || !this.hasKeys()) return;
-        this.claudeDir = resolveClaudeDir(config?.claudeDir);
+        this.location = this.locationFor(config);
         this.ready = false;
-        const monitor = new SessionMonitor({
-          claudeDir: this.claudeDir,
-          logger: this.deps.logger,
-          onChange: () => {
-            if (this.monitor !== monitor) return;
-            this.ready = true;
-            this.redraw();
-          },
-        });
+        const onChange = () => {
+          if (this.monitor !== monitor) return;
+          this.ready = true;
+          this.redraw();
+        };
+        let monitor: SessionSource;
+        try {
+          monitor = this.provider.sessions.create({
+            location: this.location,
+            config,
+            onChange,
+            logger: this.deps.logger,
+          });
+        } catch (error) {
+          this.warn('could not start', error);
+          monitor = staticSessionSource({ onChange }, BROKEN);
+        }
         this.monitor = monitor;
-        monitor.start();
+        try {
+          monitor.start();
+        } catch (error) {
+          this.warn('could not start', error);
+          this.monitor = staticSessionSource({ onChange }, BROKEN);
+          monitor = this.monitor;
+          monitor.start();
+        }
         this.ticker = setInterval(() => this.redraw(), TICK_MS);
         this.deps.logger?.info?.(
-          `Session keys: watching ${monitor.projectsDir}`
+          `${this.brand.name} session keys: watching ${this.location}`
         );
       })().finally(() => {
         this.starting = null;
@@ -232,7 +300,11 @@ export class SessionKeys {
   }
 
   private stopMonitor() {
-    this.monitor?.stop();
+    try {
+      this.monitor?.stop();
+    } catch (error) {
+      this.warn('could not stop', error);
+    }
     this.monitor = null;
     this.ready = false;
     if (this.ticker) clearInterval(this.ticker);
@@ -242,9 +314,38 @@ export class SessionKeys {
   /** Pages of the running-sessions list on this key now (at least 1). */
   private listPagesFor(key: Key, now: number): number {
     if (!this.monitor || !this.ready) return 1;
-    const { filter, idleMs } = settingsOf(key);
-    const count = this.monitor.listRunning(filter, now, idleMs).length;
+    const { filter, idleMs } = settingsOf(key, this.brand);
+    const count = this.running(filter, now, idleMs).length;
     return listPages(count, this.deps.keyWidth(key));
+  }
+
+  private running(filter: string, now: number, idleMs: number) {
+    try {
+      return this.monitor?.listRunning(filter, now, idleMs) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private pick(filter: string, now: number, idleMs: number): SessionPick {
+    try {
+      return (
+        this.monitor?.getStatus(filter, now, idleMs) ?? {
+          status: null,
+          others: 0,
+        }
+      );
+    } catch {
+      return { status: null, others: 0 };
+    }
+  }
+
+  private notice(): SessionNotice | null {
+    try {
+      return this.monitor?.notice?.() ?? null;
+    } catch {
+      return BROKEN;
+    }
   }
 
   /**
@@ -252,7 +353,7 @@ export class SessionKeys {
    * the latest session. Equal signatures give equal images.
    */
   private viewFor(serialNumber: string, key: Key, now: number) {
-    const settings = settingsOf(key);
+    const settings = settingsOf(key, this.brand);
     const id = `${serialNumber}#${key.uid}`;
     const width = this.deps.keyWidth(key);
     const bgColor = this.deps.bgColor(key);
@@ -260,7 +361,7 @@ export class SessionKeys {
 
     if (page !== null && this.monitor && this.ready) {
       const list = buildListView(
-        this.monitor.listRunning(settings.filter, now, settings.idleMs),
+        this.running(settings.filter, now, settings.idleMs),
         { lang: settings.lang, width, page }
       );
       return {
@@ -272,21 +373,25 @@ export class SessionKeys {
 
     let view: SessionView;
     if (!this.monitor || !this.ready) {
-      view = loadingView(settings.lang);
+      view = loadingView(settings.lang, this.brand.productName);
     } else {
-      const { status, others } = this.monitor.getStatus(
+      const { status, others } = this.pick(
         settings.filter,
         now,
         settings.idleMs
       );
-      view = buildSessionView(status, {
-        lang: settings.lang,
-        showProject: settings.showProject,
-        now,
-        others,
-      });
+      const notice = status ? null : this.notice();
+      view = notice
+        ? buildNoticeView(notice, settings.lang)
+        : buildSessionView(status, {
+            lang: settings.lang,
+            showProject: settings.showProject,
+            now,
+            others,
+            productName: this.brand.productName,
+          });
     }
-    const options = { showClawd: settings.showClawd, bgColor };
+    const options = { ...settings.marks, bgColor };
     return {
       id,
       signature: JSON.stringify([view, width, options]),

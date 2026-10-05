@@ -1,9 +1,11 @@
 import { SKRSContext2D, createCanvas } from '@napi-rs/canvas';
 
 import { FONT } from './fonts';
+import type { KeyMark } from './providers/types';
 import {
   COLORS,
   KEY_HEIGHT,
+  drawMark as drawProviderMark,
   ellipsize,
   getClawdImage,
   pixelWidth,
@@ -31,7 +33,12 @@ const PAGE_FONT = `10px ${FONT}`;
 export type SessionRenderOptions = {
   showClawd: boolean;
   bgColor?: string;
+  /** Provider mark drawn where Clawd goes (ignored while showClawd is on) */
+  mark?: KeyMark;
 };
+
+// Provider marks sit in a square this tall, left of the text
+const MARK_SIZE = 26;
 
 /** Status mark: check (done), ring (idle), dot with halo (others). */
 function drawMark(ctx: SKRSContext2D, x: number, cy: number, tone: ViewTone) {
@@ -328,6 +335,19 @@ export async function renderSessionKey(
       );
       ctx.globalAlpha = 1;
       x += clawdWidth + 10;
+    }
+  } else if (options.mark) {
+    if (rightX - (x + MARK_SIZE + 10) >= MIN_CONTENT_WITH_CLAWD) {
+      ctx.globalAlpha = view.tone === 'idle' ? 0.45 : 1;
+      drawProviderMark(
+        ctx,
+        options.mark,
+        x,
+        (KEY_HEIGHT - MARK_SIZE) / 2,
+        MARK_SIZE
+      );
+      ctx.globalAlpha = 1;
+      x += MARK_SIZE + 10;
     }
   }
   const contentWidth = rightX - x;

@@ -15,7 +15,7 @@ export type OpenCommand = { file: string; args: string[] };
 export type ExecFileLike = (
   file: string,
   args: string[],
-  options: { windowsHide: boolean },
+  options: { windowsHide: boolean; cwd?: string },
   callback: (error: Error | null, stdout: unknown, stderr: unknown) => void
 ) => unknown;
 
@@ -29,7 +29,7 @@ export type LauncherOptions = {
   settleMs?: number;
 };
 
-const DEFAULT_SETTLE_MS = 5_000;
+export const DEFAULT_SETTLE_MS = 5_000;
 
 /** The opener command for a platform. */
 export function openCommand(
@@ -81,35 +81,54 @@ function describeFailure(
   return new OpenUrlError(detail ? `${status}: ${detail}` : status, code);
 }
 
+/**
+ * Runs a program without a shell and resolves once it exited cleanly or is
+ * still running after settleMs (it handed over to a long-lived process);
+ * rejects with fail()'s error when it could not start or failed.
+ */
+export function execDetached(
+  run: ExecFileLike,
+  command: OpenCommand & { cwd?: string },
+  settleMs: number,
+  fail: (error: Error, stderr: unknown) => Error
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const { file, args } = command;
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      resolve();
+    }, settleMs);
+    timer.unref?.();
+    const done = (error: Error | null, stderr?: unknown) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      if (error) reject(fail(error, stderr));
+      else resolve();
+    };
+    const options = command.cwd
+      ? { windowsHide: true, cwd: command.cwd }
+      : { windowsHide: true };
+    try {
+      run(file, args, options, (error, _stdout, stderr) => done(error, stderr));
+    } catch (error) {
+      done(error instanceof Error ? error : new Error(`${error}`));
+    }
+  });
+}
+
 /** Creates a launcher; options exist so tests never start a real process. */
 export function createLauncher(options: LauncherOptions = {}): Launcher {
   const platform = options.platform ?? process.platform;
   const run: ExecFileLike = options.execFile ?? execFile;
   const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
-  return url =>
-    new Promise<void>((resolve, reject) => {
-      const { file, args } = openCommand(url, platform);
-      let settled = false;
-      const timer = setTimeout(() => {
-        settled = true;
-        resolve();
-      }, settleMs);
-      timer.unref?.();
-      const done = (error: Error | null, stderr?: unknown) => {
-        clearTimeout(timer);
-        if (settled) return;
-        settled = true;
-        if (error) reject(describeFailure(file, url, error, stderr));
-        else resolve();
-      };
-      try {
-        run(file, args, { windowsHide: true }, (error, _stdout, stderr) =>
-          done(error, stderr)
-        );
-      } catch (error) {
-        done(error instanceof Error ? error : new Error(`${error}`));
-      }
-    });
+  return url => {
+    const command = openCommand(url, platform);
+    return execDetached(run, command, settleMs, (error, stderr) =>
+      describeFailure(command.file, url, error, stderr)
+    );
+  };
 }
 
 /** Opens a URL with the default handler of this computer. */

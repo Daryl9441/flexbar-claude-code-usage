@@ -1,11 +1,6 @@
 import { logger, plugin } from '@eniac/flexdesigner';
 
-export type Config = {
-  credentialsPath?: string;
-  pollInterval?: number;
-  /** Claude Code config dir for the Session Status key (default ~/.claude) */
-  claudeDir?: string;
-};
+// Global plugin settings: PluginConfig in src/providers/types.ts
 
 export type UsageWindow = {
   utilization: number;
