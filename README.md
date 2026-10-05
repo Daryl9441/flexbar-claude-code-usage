@@ -2,7 +2,12 @@
 
 Display your [Claude Code](https://claude.com/claude-code) usage limits live on your [Flexbar](https://eniacelec.com/products/flexbar) — like a [clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter), but on the macro bar you already own.
 
-Each key shows one usage limit as a meter: the current percentage, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
+By default a key shows how much is **left** of both your 5-hour and weekly limits, in as little as 120 px:
+
+![5 hours + weekly, remaining (120 px)](docs/media/render-dual-120.png)
+![5 hours + weekly, remaining, with reset times (240 px)](docs/media/render-dual-240.png)
+
+A key can instead show one usage limit as a meter: the current percentage used, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
 
 ![Session meter](docs/media/render-v4-session.png)
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
@@ -10,6 +15,7 @@ Each key shows one usage limit as a meter: the current percentage, a progress ba
 
 ## Features
 
+- **5 hours + weekly (remaining)**, the default: both limits on one compact key, as the percentage you have left
 - **Session meter** — your 5-hour rolling usage window
 - **Weekly meter** — your 7-day usage window (all models)
 - **Per-model weekly meter** — the model-scoped weekly limit (e.g. Opus)
@@ -110,11 +116,13 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Usage limit | Session | Session (5 h), Weekly (all models), or Weekly (per model) |
+| Usage limit | 5 hours + weekly (remaining) | 5 hours + weekly (remaining), Session (5 h), Weekly (all models), or Weekly (per model) |
 | Show time until reset | on | Show the countdown until the limit resets |
-| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter |
+| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter (single-limit meters only) |
 
-The countdown sits next to the percentage; on narrow keys with Clawd enabled it moves below the progress bar. A custom background color set in the key's style editor is used as the meter background.
+**5 hours + weekly (remaining)** shows the 5-hour window in the top row (`5h`) and the weekly window, all models, in the bottom row (`7d`). The number is what is left, 100% minus what you have used: green while plenty is left, orange as it runs low, red when almost nothing is left. The bar empties like a battery. From about 130 px the time until each limit resets (↻) appears above its bar, and from about 225 px in a column of its own; on narrower keys it is shown only for a limit that has run out. Keys narrower than about 100 px leave out the bars. New keys are 120 px wide; widen a key that shows a single limit to see the chip naming the limit.
+
+In the single-limit meters the countdown sits next to the percentage; on narrow keys with Clawd enabled it moves below the progress bar. A custom background color set in the key's style editor is used as the key background in every mode.
 
 ## Development
 
