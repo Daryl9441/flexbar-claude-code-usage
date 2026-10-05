@@ -1,6 +1,7 @@
 /**
  * Claude Code usage: the OAuth usage endpoint (src/api.ts) with the
- * credentials Claude Code stores on this computer (src/credentials.ts).
+ * credentials Claude Code stores on this computer (src/credentials.ts). Keys
+ * show the 'dual' face (./usageFace.ts) unless set to one limit.
  */
 import { UsageError, fetchUsage } from '../../api';
 import { safeErrorMessage } from '../../redact';
@@ -14,6 +15,8 @@ import {
   UsageMetric,
   UsageSource,
 } from '../types';
+
+import { DUAL_METRIC, claudeUsageFace } from './usageFace';
 
 const METRICS: Metric[] = ['session', 'weekly', 'weekly_model'];
 
@@ -51,8 +54,10 @@ async function fetchMetrics(config: PluginConfig): Promise<UsageMetric[]> {
 }
 
 export const claudeUsageSource: UsageSource = {
-  defaultMetric: 'session',
+  // what is left of the 5-hour and weekly limits, on one key
+  defaultMetric: DUAL_METRIC,
   fetch: fetchMetrics,
+  face: claudeUsageFace,
   // Claude's key texts are English only, like before
   errorText: error => claudeErrorText(error),
   logText: error => safeErrorMessage(error),

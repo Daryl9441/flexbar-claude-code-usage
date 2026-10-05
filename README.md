@@ -2,18 +2,24 @@
 
 Display your [Claude Code](https://claude.com/claude-code) usage limits live on your [Flexbar](https://eniacelec.com/products/flexbar) — like a [clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter), but on the macro bar you already own.
 
-Each key shows one usage limit as a meter: the current percentage, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
+By default a **Claude Usage** key shows how much is **left** of both your 5-hour and weekly limits, in as little as 120 px:
 
-The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work) and [Gemini](#gemini-keys) (Gemini CLI). They appear in FlexDesigner's key library under "AI Coding Usage", nine keys in all.
+![5 hours + weekly, remaining (120 px)](docs/media/render-dual-120.png)
+![5 hours + weekly, remaining, with reset times (240 px)](docs/media/render-dual-240.png)
 
-The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
+A key can instead show one usage limit as a meter: the current percentage used, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
 
 ![Session meter](docs/media/render-v4-session.png)
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
 ![Per-model meter](docs/media/render-v4-model-full.png)
 
+The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work) and [Gemini](#gemini-keys) (Gemini CLI). They appear in FlexDesigner's key library under "AI Coding Usage", nine keys in all.
+
+The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
+
 ## Features
 
+- **5 hours + weekly (remaining)**, the default: both limits on one compact key, as the percentage you have left
 - **Session meter** — your 5-hour rolling usage window
 - **Weekly meter** — your 7-day usage window (all models)
 - **Per-model weekly meter** — the model-scoped weekly limit (e.g. Opus)
@@ -199,11 +205,15 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Usage limit | Session | Session (5 h), Weekly (all models), or Weekly (per model) |
+| Usage limit | 5 hours + weekly (remaining) | 5 hours + weekly (remaining), or one limit as used: Session (5 hours), Weekly (all models), or Weekly (per model) |
 | Show time until reset | on | Show the countdown until the limit resets |
-| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter |
+| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter (single-limit meters on keys from about 170 px) |
 
-The countdown sits next to the percentage; on narrow keys with Clawd enabled it moves below the progress bar. A custom background color set in the key's style editor is used as the meter background.
+**5 hours + weekly (remaining)** shows the 5-hour window in the top row (`5h`) and the weekly window, all models, in the bottom row (`7d`). The number is what is left, 100% minus what you have used: green while plenty is left, orange as it runs low, red when almost nothing is left. The gauge is a battery that empties as you use the limit; next to a full battery the number reads `100`, without the `%`. From about 135 px the time until each limit resets (↻) appears above its battery, and from about 225 px in a column of its own. Between about 97 and 135 px only a limit that has run out shows it, in place of its empty battery and where it fits: any countdown fits from about 113 px, so the default 120 px key always shows it. Keys narrower than about 97 px leave out the batteries and the countdowns.
+
+New Claude Usage keys are 120 px wide. At that width a single-limit meter names its limit with a short `5h` or `7d` chip; on wider keys the chip says Session or Weekly.
+
+In the single-limit meters the countdown sits next to the percentage; on narrow keys with Clawd enabled it moves below the progress bar. A custom background color set in the key's style editor is used as the key background in every mode.
 
 ## Development
 

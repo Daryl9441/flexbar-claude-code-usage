@@ -105,7 +105,35 @@ export type UsageMetric = {
   percent: number;
   /** ISO time the limit resets, or null */
   resetsAt: string | null;
+  /**
+   * Short chip text for keys too narrow for the label ("5h", "7d"); without
+   * one, the label is shortened
+   */
+  tag?: string;
 };
+
+/** What UsageKeys passes to a source's own key face (UsageSource.face). */
+export type UsageFaceRequest = {
+  /** The metric the key shows: its `metric` setting or the default */
+  metric: string;
+  /** Every metric of the last successful fetch */
+  metrics: UsageMetric[];
+  /** Key width in pixels */
+  width: number;
+  /** The key's "Show time until reset" setting (on unless turned off) */
+  showResetTime: boolean;
+  /** The key's own background colour, if it has one */
+  bgColor?: string;
+  lang: Lang;
+  /** The key's settings (key.data) */
+  data: KeyData;
+};
+
+/**
+ * A key face a source draws itself: an image (base64 PNG data URL), or a
+ * message face drawn like "No data for this limit".
+ */
+export type UsageFace = { image: string } | { text: KeyText };
 
 /** Reply to the settings UI ('usage-status', 'test-connection'). */
 export type UsageDescription = {
@@ -139,6 +167,16 @@ export interface UsageSource {
   logText?(error: unknown): string;
   /** Chip text of a metric in a key language (default: metric.label) */
   metricLabel?(metric: UsageMetric, lang: Lang): string;
+  /**
+   * The key face for a `metric` setting that is a view of several metrics
+   * rather than one (Claude's 'dual': what is left of the 5-hour and weekly
+   * limits on one key), or null to draw the single meter as usual. Only
+   * called while there are metrics from the last fetch; errors, loading and
+   * rate-limit faces stay generic.
+   */
+  face?(
+    request: UsageFaceRequest
+  ): UsageFace | null | Promise<UsageFace | null>;
   /**
    * Seconds to stop fetching after this error (a rate limit), or null to
    * retry at the next poll (default: ProviderError 'rate-limited' → its

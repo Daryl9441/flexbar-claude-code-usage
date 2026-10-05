@@ -73,7 +73,11 @@ repository owner requires this without exception.
    works too: `export PRIVACY_DENYLIST=~/.config/privacy-denylist`. Leave out
    your public GitHub user name; it is in every commit. The session ids of the
    transcripts on your machine (file names in `~/.claude/projects`) are denied
-   automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off.
+   automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off. A git worktree
+   has its own root, so the scanner and hooks there do not see the main
+   clone's `.privacy-denylist.local`: export `PRIVACY_DENYLIST` (pointing at
+   the main clone's file, or a file outside the repository) before running
+   checks or committing in a worktree.
 
 **Accepted exception (owner decision, 2026-10-05):** the fork's earliest own
 commits (527603b, 62195b6, ccd6975, 2b57e20, 3689257, 2319505, and e1752e4 on
@@ -122,6 +126,7 @@ npx eslint "src/**/*.ts"      # lint + Prettier (npm run format fixes)
 npx tsc --noEmit -p .         # type check
 npm run test:session          # Session Status tests (tsc -> .test-build/, node --test)
 npm run test:newsession       # New Session key tests (launcher stubbed; never opens a link)
+npm run test:usage            # Usage Meter tests: remaining %, dual-key layout (tsc -> .test-build/, node --test)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run test:providers        # provider layer: kit, generic key groups, launchers, manifest ids
 npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kimi Work context (fetch stubbed)
@@ -144,9 +149,10 @@ npm run check:privacy:all     # privacy scan of every local branch and origin, m
 ## Rendering keys
 
 Key images are 60 px tall PNGs drawn with `@napi-rs/canvas` (`src/render.ts`,
-`src/sessionRender.ts`, fonts in `src/fonts.ts`). For results identical to the
-device, render with FlexDesigner's own runtime instead of your local Node:
-compile the needed `src/*.ts` (include `src/fonts.ts`) to CommonJS with
+`src/usageDualRender.ts`, `src/sessionRender.ts`, fonts in `src/fonts.ts`).
+For results identical to the device, render with FlexDesigner's own runtime
+instead of your local Node: compile the needed `src/*.ts` (include
+`src/fonts.ts`) to CommonJS with
 `tsc --outDir <tmp> --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node`,
 then run a script that writes PNGs to a temp directory:
 
@@ -193,12 +199,14 @@ outside the repository with `assert` changed to `with` in
 - Claude: `src/credentials.ts` reads Claude Code's OAuth credentials (env,
   `~/.claude/.credentials.json`, macOS Keychain), refreshes them and writes the
   new pair back. `src/api.ts`: usage endpoint client (`UsageError`).
-  `src/usage.ts`, `src/types.ts`: usage response and metrics.
+  `src/usage.ts`, `src/types.ts`: usage response and metrics
+  (`remainingPercent` for the dual face).
   `src/session.ts` (transcript parser, status derivation),
   `src/sessionSource.ts` (`SessionMonitor`: transcripts in
   `~/.claude/projects`, live status in `~/.claude/sessions`),
   `src/newSession.ts` (builds the `claude://code/new` link). Adapters in
-  `src/providers/claude/`.
+  `src/providers/claude/`; `usageFace.ts` is the Usage key's default 'dual'
+  face (what is left of the 5-hour and weekly limits, `UsageSource.face`).
 - Kimi (`src/providers/kimi/`): `paths.ts` (Kimi Code home, desktop data
   folder). Usage: `usage.ts` (`usageSource`, `missingText`), `usageConfig.ts`
   (endpoint and login slot like the CLI: env, `config.toml`, region marker),
@@ -224,10 +232,14 @@ outside the repository with `assert` changed to `with` in
   `session.ts`. New session: `newSession.ts` (Terminal running `gemini`, or
   `googlegemini://newchat`), `sessionCli.ts` (finds the `gemini` program).
 - Key-group hooks a provider may use: `UsageSource.missingText` (text for a
-  metric the fetch did not return), `SessionSource.notice(data)` (per key
-  settings), `NewSessionRequest.config` (global settings), and a launcher's
-  `ProviderError` with `extra.keyText` (its title replaces the error face).
-- Rendering: `src/render.ts` (usage and message faces, `drawMark`),
+  metric the fetch did not return), `UsageSource.face` (a face of its own for
+  a metric setting, e.g. Claude's 'dual'), `SessionSource.notice(data)` (per
+  key settings), `NewSessionRequest.config` (global settings), and a
+  launcher's `ProviderError` with `extra.keyText` (its title replaces the
+  error face).
+- Rendering: `src/render.ts` (usage meter of one limit, used %, and message
+  faces, `drawMark`), `src/usageDualRender.ts` (Claude's 5h + 7d remaining
+  face; `dualLayout` places it and is what the tests check),
   `src/sessionView.ts` (view model, en/zh-CN), `src/sessionRender.ts`,
   `src/newSessionRender.ts`, `src/clawd.ts`, `src/fonts.ts`.
 - Launching: `src/openUrl.ts` (URLs to the system opener via `execFile`, no

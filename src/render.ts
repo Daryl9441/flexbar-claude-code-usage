@@ -363,17 +363,25 @@ export async function renderUsageKey(
   const textBaseline = resetBelow ? 25 : 28;
   const barY = resetBelow ? 32 : 38;
 
-  // tag chip, top right, never overlapping the percentage; a plain label
-  // when the chip does not fit, nothing when neither does
+  // tag chip, top right, never overlapping the percentage; the short tag
+  // ("5h", "7d") rather than a shortened label, a plain label when no chip
+  // fits, nothing when neither does
   const labelSpace = resetInline
     ? fullChipWidth
     : contentWidth - percentWidth - 8;
-  const chip = fitChip(ctx, snapshot.label, labelSpace);
+  const tag = snapshot.tag ?? '';
+  let chip = fitChip(ctx, snapshot.label, labelSpace);
+  if (tag && chip?.label !== snapshot.label) {
+    chip = fitChip(ctx, tag, labelSpace) ?? chip;
+  }
   if (chip) {
     drawChip(ctx, rightX, resetBelow ? 4 : 7, chip.label, chip.padX);
   } else {
     ctx.font = `bold 11px ${FONT}`;
-    const label = fitLabel(ctx, snapshot.label, labelSpace);
+    let label = fitLabel(ctx, snapshot.label, labelSpace);
+    if (tag && label !== snapshot.label) {
+      label = fitLabel(ctx, tag, labelSpace) ?? label;
+    }
     if (label) {
       ctx.fillStyle = COLORS.chipText;
       ctx.textAlign = 'right';

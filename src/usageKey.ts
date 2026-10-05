@@ -326,15 +326,39 @@ export class UsageKeys implements KeyGroup {
     if (this.metrics) {
       const metric: string =
         data.metric || this.source.defaultMetric || this.metrics[0]?.id || '';
+      const showResetTime = data.showResetTime !== false;
+      const bgColor = this.deps.bgColor(key);
+      // a view of several metrics the source draws itself (Claude's 'dual')
+      const face = this.source.face
+        ? await this.source.face({
+            metric,
+            metrics: this.metrics,
+            width,
+            showResetTime,
+            bgColor,
+            lang,
+            data,
+          })
+        : null;
+      if (face) {
+        return 'image' in face
+          ? face.image
+          : renderMessageKey(
+              width,
+              face.text.title,
+              face.text.message,
+              message
+            );
+      }
       const snapshot = this.metrics.find(m => m.id === metric);
       if (snapshot) {
         return renderUsageKey(
           width,
           { ...snapshot, label: this.metricLabel(snapshot, lang) },
           {
-            showResetTime: data.showResetTime !== false,
+            showResetTime,
             ...marks,
-            bgColor: this.deps.bgColor(key),
+            bgColor,
             ...(lang === 'zh' ? { lang } : {}),
           }
         );

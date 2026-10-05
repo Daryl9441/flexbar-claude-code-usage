@@ -30,6 +30,12 @@ export type UsageData = {
 
 export type Metric = 'session' | 'weekly' | 'weekly_model';
 
+/**
+ * What a Usage Meter key shows: one limit as used % (a Metric), or 'dual',
+ * the 5-hour and weekly limits side by side as remaining %.
+ */
+export type KeyMetric = Metric | 'dual';
+
 export type Plugin = typeof plugin;
 export type Logger = typeof logger;
 

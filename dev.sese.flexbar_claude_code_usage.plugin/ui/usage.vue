@@ -23,7 +23,8 @@
                     class="mx-2"
                 ></v-switch>
             </v-col>
-            <v-col cols="6">
+            <!-- the dual layout uses the full key height, so it has no Clawd -->
+            <v-col v-if="modelValue.data.metric !== 'dual'" cols="6">
                 <v-switch
                     v-model="modelValue.data.showClawd"
                     :label="$t('Usage.UI.showClawd')"
@@ -47,6 +48,7 @@ export default {
     computed: {
         metricOptions() {
             return [
+                { title: this.$t("Usage.UI.metricDual"), value: "dual" },
                 { title: this.$t("Usage.UI.metricSession"), value: "session" },
                 { title: this.$t("Usage.UI.metricWeekly"), value: "weekly" },
                 {
@@ -58,7 +60,7 @@ export default {
     },
     mounted() {
         if (this.modelValue.data.metric === undefined) {
-            this.modelValue.data.metric = "session";
+            this.modelValue.data.metric = "dual";
         }
         if (this.modelValue.data.showResetTime === undefined) {
             this.modelValue.data.showResetTime = true;

@@ -30,6 +30,8 @@ const V = req('sessionView.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
 const { GEMINI_BRAND } = req('providers/gemini/brand.js');
 const { CLAUDE_BRAND } = req('providers/claude/brand.js');
+const ClaudeFace = req('providers/claude/usageFace.js');
+const D = req('usageDualRender.js');
 const KimiPaths = req('providers/kimi/paths.js');
 const GeminiPaths = req('providers/gemini/paths.js');
 
@@ -869,6 +871,184 @@ describe('Claude keys keep their log wording', () => {
       await keys.dead(SERIAL, []);
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// --- Claude Usage: the dual face -------------------------------------------------
+
+describe("Claude Usage key: 5 hours + weekly (remaining)", () => {
+  const session = {
+    id: 'session',
+    label: 'Session',
+    tag: '5h',
+    percent: 30,
+    resetsAt: RESETS_AT,
+  };
+  const weekly = {
+    id: 'weekly',
+    label: 'Weekly',
+    tag: '7d',
+    percent: 85,
+    resetsAt: '2026-10-08T12:00:00.000Z',
+  };
+  const model = {
+    id: 'weekly_model',
+    label: 'Opus',
+    percent: 10,
+    resetsAt: RESETS_AT,
+  };
+
+  function claudeKeys(metrics, overrides = {}) {
+    const h = host(overrides);
+    const cid = Kit.keyCid('claude', 'usage');
+    const keys = new UsageKeys({
+      ...h.deps,
+      provider: {
+        cid,
+        brand: CLAUDE_BRAND,
+        source: {
+          defaultMetric: ClaudeFace.DUAL_METRIC,
+          face: ClaudeFace.claudeUsageFace,
+          fetch: async () => metrics,
+        },
+      },
+    });
+    const key = (uid, data = {}, width = 120) => ({ uid, cid, width, data });
+    return { ...h, keys, key };
+  }
+
+  test('is the default and draws exactly what renderDualUsageKey draws', async () => {
+    await withClock(NOW, async () => {
+      const t = claudeKeys([session, weekly, model]);
+      try {
+        await t.keys.alive(SERIAL, [
+          t.key(1),
+          t.key(2, { metric: 'dual', showResetTime: false }, 240),
+          t.key(3, { metric: 'dual', showClawd: true }, 60),
+        ]);
+        await t.settle();
+        assert.equal(ClaudeFace.DUAL_METRIC, 'dual');
+        assert.equal(
+          t.last(1),
+          D.renderDualUsageKey(120, session, weekly, { showResetTime: true })
+        );
+        assert.equal(
+          t.last(2),
+          D.renderDualUsageKey(240, session, weekly, { showResetTime: false })
+        );
+        // the dual face has no Clawd
+        assert.equal(
+          t.last(3),
+          D.renderDualUsageKey(60, session, weekly, { showResetTime: true })
+        );
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
+  test("uses the key's own background colour", async () => {
+    await withClock(NOW, async () => {
+      const t = claudeKeys([session, weekly], { bgColor: () => '#f5f5f4' });
+      try {
+        await t.keys.alive(SERIAL, [t.key(1)]);
+        await t.settle();
+        assert.equal(
+          t.last(1),
+          D.renderDualUsageKey(120, session, weekly, {
+            showResetTime: true,
+            bgColor: '#f5f5f4',
+          })
+        );
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
+  test('one missing limit is a muted row, both missing say so', async () => {
+    await withClock(NOW, async () => {
+      const t = claudeKeys([weekly]);
+      try {
+        await t.keys.alive(SERIAL, [t.key(1)]);
+        await t.settle();
+        assert.equal(
+          t.last(1),
+          D.renderDualUsageKey(120, null, weekly, { showResetTime: true })
+        );
+      } finally {
+        t.keys.stop();
+      }
+      const none = claudeKeys([model]);
+      try {
+        await none.keys.alive(SERIAL, [none.key(1), none.key(2, {}, 240)]);
+        await none.settle();
+        assert.equal(
+          none.last(1),
+          R.renderMessageKey(120, 'Claude Code', 'No data for these limits')
+        );
+        assert.equal(
+          none.last(2),
+          R.renderMessageKey(240, 'Claude Code', 'No data for these limits', {
+            accent: CLAUDE_BRAND.accent,
+          })
+        );
+      } finally {
+        none.keys.stop();
+      }
+    });
+  });
+
+  test('a single limit stays the used-% meter, with its short tag', async () => {
+    await withClock(NOW, async () => {
+      const t = claudeKeys([session, weekly, model]);
+      try {
+        await t.keys.alive(SERIAL, [
+          t.key(1, { metric: 'session' }),
+          t.key(2, { metric: 'weekly', showClawd: true }, 240),
+          t.key(3, { metric: 'weekly_model' }, 240),
+        ]);
+        await t.settle();
+        assert.equal(
+          t.last(1),
+          await R.renderUsageKey(120, session, {
+            showResetTime: true,
+            showClawd: false,
+          })
+        );
+        assert.equal(
+          t.last(2),
+          await R.renderUsageKey(240, weekly, {
+            showResetTime: true,
+            showClawd: true,
+          })
+        );
+        assert.equal(
+          t.last(3),
+          await R.renderUsageKey(240, model, {
+            showResetTime: true,
+            showClawd: false,
+          })
+        );
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
+  test('the face only answers for the dual metric', () => {
+    const request = metric => ({
+      metric,
+      metrics: [session, weekly],
+      width: 120,
+      showResetTime: true,
+      lang: 'en',
+      data: {},
+    });
+    for (const metric of ['session', 'weekly', 'weekly_model', '', '5h']) {
+      assert.equal(ClaudeFace.claudeUsageFace(request(metric)), null, metric);
+    }
+    assert.equal(typeof ClaudeFace.claudeUsageFace(request('dual')).image, 'string');
   });
 });
 
