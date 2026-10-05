@@ -1,6 +1,7 @@
 import { logger } from '@eniac/flexdesigner';
 
 import { getAccessToken } from './credentials';
+import { safeErrorMessage } from './redact';
 import { UsageData } from './types';
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -31,7 +32,10 @@ async function requestUsage(token: string): Promise<Response> {
       headers: { ...HEADERS, Authorization: `Bearer ${token}` },
     });
   } catch (error) {
-    throw new UsageError(`Network error: ${error}`, 'network');
+    throw new UsageError(
+      `Network error: ${safeErrorMessage(error)}`,
+      'network'
+    );
   }
 }
 

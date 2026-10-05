@@ -1,0 +1,60 @@
+name: privacy
+
+# Keeps tokens, API keys, personal email addresses, local paths and other
+# private data out of the repository (see "Privacy rules" in CLAUDE.md).
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Scan tracked files
+        run: node scripts/check-privacy.mjs
+
+      # Commits that are already public in the parent repository (this repo is
+      # a fork) are not re-checked when upstream changes are merged in.
+      - name: Fetch the parent repository's branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          parent=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.parent.clone_url // empty' 2>/dev/null || true)
+          if [ -n "$parent" ]; then
+            git fetch --quiet --no-tags "$parent" '+refs/heads/*:refs/remotes/upstream/*' \
+              || echo "::warning::could not fetch the parent repository; upstream commits in the range are checked too"
+          fi
+
+      - name: Scan the pushed / pull request commits
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -n "$BEFORE" ] && ! printf '%s' "$BEFORE" | grep -qE '^0+$' \
+              && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..$AFTER"
+          else
+            # new branch or tag, or a force push over history we do not have:
+            # every commit of this repository that the parent does not contain
+            range="$AFTER"
+          fi
+          echo "History range: $range (minus commits in the parent repository)"
+          node scripts/check-privacy.mjs --history "$range --not --remotes=upstream"

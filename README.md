@@ -62,6 +62,13 @@ Requirements:
 - [Claude Code](https://claude.com/claude-code) installed and logged in on the same computer
 - A Claude subscription (Pro / Max) — API-key-only accounts have no usage limits to display
 
+## Privacy
+
+- The plugin reads your Claude Code credentials locally (`~/.claude/.credentials.json`, `CLAUDE_CODE_OAUTH_TOKEN`, or the macOS Keychain) and sends them only to Anthropic's own endpoints: the usage endpoint on `api.anthropic.com`, and the OAuth token endpoint (`platform.claude.com`, falling back to `console.anthropic.com`) when it refreshes an expired token.
+- Tokens are never logged or shown on a key; error messages are redacted before they reach the FlexDesigner log or the settings page. A refreshed token pair is written back only to the credential store it came from.
+- The Session Status key reads transcripts and session status locally and sends nothing anywhere.
+- No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once and `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
+
 ## Installation
 
 Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexplugin` file from the [latest release](https://github.com/Sese-Schneider/flexbar-claude-code-usage/releases) and install it via FlexDesigner.

@@ -4,6 +4,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { safeErrorMessage } from './redact';
+
 const execFileAsync = promisify(execFile);
 
 type RefreshLogger = {
@@ -34,6 +36,19 @@ export type StoredCredentials = {
   source: 'env' | 'file' | 'keychain';
   path?: string;
 };
+
+/**
+ * JSON.parse for credential data. A bare JSON.parse error quotes the input it
+ * failed on, which here would put token material into logs.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseCredentialJson(text: string, source: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${source} is not valid JSON`);
+  }
+}
 
 function candidatePaths(customPath?: string): string[] {
   const paths: string[] = [];
@@ -83,7 +98,9 @@ async function readFromKeychain(): Promise<StoredCredentials | null> {
     const raw = stdout.trim();
     if (!raw) return null;
     if (raw.startsWith('{')) {
-      const section = extractOauthSection(JSON.parse(raw));
+      const section = extractOauthSection(
+        parseCredentialJson(raw, 'Keychain item')
+      );
       if (section) return { ...section, source: 'keychain' };
       return null;
     }
@@ -107,7 +124,7 @@ export async function getCredentials(
   for (const path of candidatePaths(customPath)) {
     try {
       const section = extractOauthSection(
-        JSON.parse(await readFile(path, 'utf-8'))
+        parseCredentialJson(await readFile(path, 'utf-8'), 'Credentials file')
       );
       if (section) return { ...section, source: 'file', path };
     } catch {
@@ -133,7 +150,10 @@ async function persistRefreshed(
   update: { accessToken: string; refreshToken: string; expiresAt: number }
 ): Promise<void> {
   if (creds.source === 'file' && creds.path) {
-    const parsed = JSON.parse(await readFile(creds.path, 'utf-8'));
+    const parsed = parseCredentialJson(
+      await readFile(creds.path, 'utf-8'),
+      'Credentials file'
+    );
     const sectionKey = Object.keys(parsed).find(
       key =>
         parsed[key] &&
@@ -163,7 +183,7 @@ async function persistRefreshed(
       KEYCHAIN_SERVICE,
       '-w',
     ]);
-    const parsed = JSON.parse(stdout.trim());
+    const parsed = parseCredentialJson(stdout.trim(), 'Keychain item');
     const sectionKey = Object.keys(parsed).find(
       key =>
         parsed[key] &&
@@ -227,28 +247,51 @@ async function doRefresh(
         `Token refresh via ${url} rejected with HTTP ${response.status}`
       );
     } catch (error) {
-      logger?.error(`Token refresh request to ${url} failed:`, error);
+      logger?.error(
+        `Token refresh request to ${url} failed: ${safeErrorMessage(error)}`
+      );
     }
   }
   if (!response?.ok) return null;
 
-  const data = (await response.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-  };
+  let data: {
+    access_token?: unknown;
+    refresh_token?: unknown;
+    expires_in?: unknown;
+  } | null;
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    // the parse error would quote the response body, i.e. the new tokens
+    logger?.error('Token refresh response was not valid JSON');
+    return null;
+  }
+  // never write an incomplete pair back into Claude Code's credential store
+  if (typeof data?.access_token !== 'string' || !data.access_token) {
+    logger?.error('Token refresh response did not include an access token');
+    return null;
+  }
+  const expiresIn = Number(data.expires_in);
   const update = {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? latest.refreshToken,
-    expiresAt: Date.now() + data.expires_in * 1000,
+    refreshToken:
+      typeof data.refresh_token === 'string' && data.refresh_token
+        ? data.refresh_token
+        : latest.refreshToken,
+    // an unknown lifetime counts as expired, so the next poll refreshes again
+    expiresAt: Date.now() + (Number.isFinite(expiresIn) ? expiresIn * 1000 : 0),
   };
 
   try {
     await persistRefreshed(latest, update);
     logger?.info('Refreshed Claude Code OAuth token');
   } catch (error) {
-    // The new pair is still good for this session even if persisting failed
-    logger?.error('Could not persist refreshed token:', error);
+    // The new pair is still good for this session even if persisting failed.
+    // A failed Keychain write's error repeats its command line, which carries
+    // the token pair, so only a sanitized description is logged.
+    logger?.error(
+      `Could not persist refreshed token: ${safeErrorMessage(error)}`
+    );
   }
   return update.accessToken;
 }

@@ -7,3 +7,16 @@ dev.sese.flexbar_claude_code_usage.plugin/backend
 dev.sese.flexbar_claude_code_usage.plugin/config.json
 *.flexplugin
 .test-build
+
+# Credentials, keys and other private data: never commit (see CLAUDE.md)
+.credentials.json
+credentials.json
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+logs/
+*.log
+.DS_Store
