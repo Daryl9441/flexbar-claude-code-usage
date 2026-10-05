@@ -1,6 +1,7 @@
 import { Image, SKRSContext2D, createCanvas, loadImage } from '@napi-rs/canvas';
 
 import { CLAWD_PNG_BASE64 } from './clawd';
+import { FONT } from './fonts';
 import { MetricSnapshot, formatTimeUntilReset } from './usage';
 
 const KEY_HEIGHT = 60;
@@ -21,8 +22,6 @@ const COLOR_STOPS: [number, [number, number, number]][] = [
   [75, [0xe0, 0x8c, 0x3c]],
   [100, [0xd9, 0x53, 0x4f]],
 ];
-
-const FONT = 'Arial, "Segoe UI", "Helvetica Neue", sans-serif';
 
 /** Interpolates the bar color along the green -> orange -> red gradient. */
 export function percentToColor(percent: number): string {
