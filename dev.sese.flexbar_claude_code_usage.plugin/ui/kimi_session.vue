@@ -17,6 +17,31 @@
         </v-row>
         <v-row>
             <v-col cols="6">
+                <v-select
+                    v-model="modelValue.data.source"
+                    :items="sourceOptions"
+                    :label="$t('KimiSession.UI.source')"
+                    item-title="title"
+                    item-value="value"
+                    hide-details
+                    outlined
+                    class="mx-2"
+                    @update:model-value="scheduleCheck"
+                ></v-select>
+            </v-col>
+            <v-col cols="6">
+                <v-switch
+                    v-model="modelValue.data.includeAutomations"
+                    :label="$t('KimiSession.UI.includeAutomations')"
+                    :disabled="modelValue.data.source === 'cli'"
+                    hide-details
+                    class="mx-2"
+                    @update:model-value="scheduleCheck"
+                ></v-switch>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="6">
                 <v-text-field
                     v-model.number="modelValue.data.idleMinutes"
                     :label="$t('KimiSession.UI.idleMinutes')"
@@ -26,6 +51,7 @@
                     hide-details
                     outlined
                     class="mx-2"
+                    @update:model-value="scheduleCheck"
                 ></v-text-field>
             </v-col>
             <v-col cols="6">
@@ -90,6 +116,13 @@ export default {
                 { title: "简体中文", value: "zh" },
             ];
         },
+        sourceOptions() {
+            return [
+                { title: this.$t("KimiSession.UI.sourceAuto"), value: "auto" },
+                { title: this.$t("KimiSession.UI.sourceDesktop"), value: "desktop" },
+                { title: this.$t("KimiSession.UI.sourceCli"), value: "cli" },
+            ];
+        },
     },
     methods: {
         scheduleCheck() {
@@ -115,7 +148,7 @@ export default {
                     this.statusText = `${response.notice.label[lang]} — ${response.notice.text[lang]}`;
                 } else {
                     this.statusText = this.$t("KimiSession.UI.notFound", {
-                        dir: (response && response.projectsDir) || "~/.kimi-code",
+                        dir: (response && response.projectsDir) || "~/.kimi-code/sessions",
                     });
                 }
             } catch (error) {
@@ -126,6 +159,8 @@ export default {
     mounted() {
         const data = this.modelValue.data;
         if (data.projectFilter === undefined) data.projectFilter = "";
+        if (data.source === undefined) data.source = "auto";
+        if (data.includeAutomations === undefined) data.includeAutomations = false;
         if (data.idleMinutes === undefined) data.idleMinutes = 15;
         if (data.showProject === undefined) data.showProject = true;
         if (data.showMark === undefined) data.showMark = true;
