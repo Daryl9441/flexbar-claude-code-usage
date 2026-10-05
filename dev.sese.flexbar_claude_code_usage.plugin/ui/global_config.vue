@@ -28,6 +28,15 @@
                             hide-details
                         ></v-text-field>
                     </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.claudeDir"
+                            :label="$t('Config.ClaudeDir')"
+                            placeholder="~/.claude"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
                 </v-row>
             </v-card-text>
             <v-card-actions>

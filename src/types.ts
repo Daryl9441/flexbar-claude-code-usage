@@ -3,6 +3,8 @@ import { logger, plugin } from '@eniac/flexdesigner';
 export type Config = {
   credentialsPath?: string;
   pollInterval?: number;
+  /** Claude Code config dir for the Session Status key (default ~/.claude) */
+  claudeDir?: string;
 };
 
 export type UsageWindow = {

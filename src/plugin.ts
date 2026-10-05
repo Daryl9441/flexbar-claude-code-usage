@@ -2,6 +2,7 @@ import { logger, plugin } from '@eniac/flexdesigner';
 
 import { UsageError, fetchUsage } from './api';
 import { renderMessageKey, renderUsageKey } from './render';
+import { SESSION_CID, SessionKeys } from './sessionKey';
 import { Config, Metric, UsageData } from './types';
 import { formatTimeUntilReset, getMetricSnapshot } from './usage';
 
@@ -137,7 +138,34 @@ function aliveKey(serialNumber: string, uid: unknown): Key | null {
 }
 
 /**
- * Sends one key image and waits for FlexDesigner's acknowledgement.
+ * Sends an image covering the whole key and waits for FlexDesigner's
+ * acknowledgement; rejects when the device or key is gone.
+ */
+async function sendImage(serialNumber: string, key: Key, image: string) {
+  // keep FlexDesigner from layering the key's default icon/title/emoji over
+  // the image, like ENIAC's own flexbar-ai-dashboard plugin does before its
+  // base64 draws
+  const target = {
+    ...key,
+    style: {
+      ...key.style,
+      showIcon: false,
+      showTitle: false,
+      showEmoji: false,
+    },
+  };
+  await plugin.draw(serialNumber, target, 'base64', image);
+}
+
+/** Runs a draw task after every draw queued before it. */
+function queueDraw(task: () => Promise<void>): Promise<void> {
+  const pass = drawChain.then(task);
+  drawChain = pass.catch(() => undefined);
+  return drawChain;
+}
+
+/**
+ * Renders one usage key and waits for FlexDesigner's acknowledgement.
  * plugin.draw returns a promise that rejects when the device is gone or the
  * key is no longer alive; left unhandled, that rejection terminates the
  * plugin process, so every failure is caught and logged here.
@@ -146,20 +174,7 @@ async function drawKey(serialNumber: string, uid: unknown) {
   const key = aliveKey(serialNumber, uid);
   if (!key) return;
   try {
-    const image = await renderKey(key);
-    // The image covers the whole key: keep FlexDesigner from layering the
-    // key's default icon/title/emoji over it, like ENIAC's own
-    // flexbar-ai-dashboard plugin does before its base64 draws
-    const target = {
-      ...key,
-      style: {
-        ...key.style,
-        showIcon: false,
-        showTitle: false,
-        showEmoji: false,
-      },
-    };
-    await plugin.draw(serialNumber, target, 'base64', image);
+    await sendImage(serialNumber, key, await renderKey(key));
   } catch (error) {
     logger?.warn(`Could not draw key ${uid}: ${describeError(error)}`);
   }
@@ -171,7 +186,7 @@ async function drawKey(serialNumber: string, uid: unknown) {
  * each key is looked up again right before it is drawn.
  */
 function drawAll(): Promise<void> {
-  const pass = drawChain.then(async () => {
+  return queueDraw(async () => {
     const targets = [...aliveKeys].flatMap(([serialNumber, keys]) =>
       keys.map(key => [serialNumber, key.uid] as const)
     );
@@ -179,9 +194,18 @@ function drawAll(): Promise<void> {
       await drawKey(serialNumber, uid);
     }
   });
-  drawChain = pass.catch(() => undefined);
-  return drawChain;
 }
+
+// Session Status keys: driven by local transcripts, never by the usage API
+const sessionKeys = new SessionKeys({
+  enqueue: queueDraw,
+  send: sendImage,
+  isOffline: serialNumber => offlineDevices.has(serialNumber),
+  keyWidth,
+  bgColor: userBgColor,
+  loadConfig: getConfigCached,
+  logger,
+});
 
 function clearLock() {
   lockedUntil = null;
@@ -276,6 +300,7 @@ plugin.on('plugin.alive', async payload => {
     (key: Key) => key?.cid === USAGE_CID
   );
   offlineDevices.delete(serialNumber);
+  void sessionKeys.alive(serialNumber, payload.keys ?? []);
   if (keys.length === 0) {
     aliveKeys.delete(serialNumber);
     return;
@@ -300,6 +325,7 @@ plugin.on('plugin.alive', async payload => {
 plugin.on('plugin.dead', payload => {
   const serialNumber: string | undefined = payload?.serialNumber;
   if (!serialNumber) return;
+  void sessionKeys.dead(serialNumber, payload.keys ?? []);
   const dead = new Set((payload.keys ?? []).map((key: Key) => key?.uid));
   const remaining =
     dead.size === 0
@@ -335,6 +361,10 @@ plugin.on('device.status', devices => {
  */
 plugin.on('plugin.data', async payload => {
   const pressed: Key = payload?.data?.key;
+  if (pressed?.cid === SESSION_CID) {
+    await sessionKeys.press(payload.serialNumber, pressed);
+    return;
+  }
   if (pressed?.cid !== USAGE_CID) return;
   const keys = aliveKeys.get(payload.serialNumber);
   const index = keys?.findIndex(key => key.uid === pressed.uid) ?? -1;
@@ -347,6 +377,10 @@ plugin.on('plugin.data', async payload => {
  */
 plugin.on('ui.message', async payload => {
   logger?.info('Received message from UI:', payload.data);
+
+  if (payload.data === 'session-status') {
+    return sessionKeys.describe(`${payload.filter ?? ''}`);
+  }
 
   if (payload.data === 'test-connection') {
     if (lockedUntil && Date.now() < lockedUntil) {
@@ -374,6 +408,7 @@ plugin.on('ui.message', async payload => {
  */
 plugin.on('plugin.config.updated', async (payload: { config?: Config }) => {
   config = payload?.config ?? {};
+  await sessionKeys.configure(config);
   ensurePolling(true);
   await refresh();
 });

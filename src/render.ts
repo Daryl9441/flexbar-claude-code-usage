@@ -4,11 +4,11 @@ import { CLAWD_PNG_BASE64 } from './clawd';
 import { FONT } from './fonts';
 import { MetricSnapshot, formatTimeUntilReset } from './usage';
 
-const KEY_HEIGHT = 60;
+export const KEY_HEIGHT = 60;
 const DEFAULT_KEY_WIDTH = 240;
 const ELLIPSIS = '…';
 
-const COLORS = {
+export const COLORS = {
   background: '#1c1917',
   label: '#a8a29e',
   text: '#fafaf9',
@@ -49,7 +49,7 @@ let clawdImage: Promise<Image> | null = null;
  * Image decoding in @napi-rs/canvas is asynchronous — drawing in the same
  * tick as `img.src = ...` silently produces nothing, hence loadImage.
  */
-function getClawdImage(): Promise<Image> {
+export function getClawdImage(): Promise<Image> {
   if (!clawdImage) {
     clawdImage = loadImage(Buffer.from(CLAWD_PNG_BASE64, 'base64'));
   }
@@ -72,12 +72,12 @@ export async function renderClawdIcon(size: number): Promise<Buffer> {
  * Whole-pixel canvas width. createCanvas truncates fractions (179.5 -> 179),
  * silently falls back to 350px for zero/negative values and throws on strings.
  */
-function pixelWidth(width: number): number {
+export function pixelWidth(width: number): number {
   const w = Math.round(Number(width));
   return Number.isFinite(w) && w > 0 ? w : DEFAULT_KEY_WIDTH;
 }
 
-function textWidth(ctx: SKRSContext2D, text: string): number {
+export function textWidth(ctx: SKRSContext2D, text: string): number {
   return ctx.measureText(text).width;
 }
 
@@ -106,7 +106,11 @@ function fittingPrefix(
  * Shortens text with a trailing ellipsis until it fits maxWidth in the current
  * font. Never squashes glyphs (unlike fillText's maxWidth argument).
  */
-function ellipsize(ctx: SKRSContext2D, text: string, maxWidth: number): string {
+export function ellipsize(
+  ctx: SKRSContext2D,
+  text: string,
+  maxWidth: number
+): string {
   if (textWidth(ctx, text) <= maxWidth) return text;
   const chars = Array.from(text);
   const n = fittingPrefix(ctx, chars, maxWidth, ELLIPSIS);
@@ -119,7 +123,7 @@ function ellipsize(ctx: SKRSContext2D, text: string, maxWidth: number): string {
  * wider than a line (or text without spaces, e.g. CJK) break between
  * characters; the last line is ellipsized when text is left over.
  */
-function wrapText(
+export function wrapText(
   ctx: SKRSContext2D,
   text: string,
   maxWidth: number,

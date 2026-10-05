@@ -61,6 +61,30 @@
                     "showResetTime": true,
                     "showClawd": false
                 }
+            },
+            {
+                "title": "$Session.Title",
+                "tip": "$Session.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-progress-question",
+                    "width": 240
+                },
+                "data": {
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showClawd": false
+                }
             }
         ]
     },
@@ -86,7 +110,33 @@
                 "Checking": "Checking…",
                 "Connected": "Connected — session {session}%, week {weekly}%",
                 "Disconnected": "Disconnected",
-                "Saved": "Config updated"
+                "Saved": "Config updated",
+                "ClaudeDir": "Claude Code folder for Session Status keys (optional)"
+            },
+            "Session": {
+                "Title": "Session Status",
+                "Tip": "Shows whether your latest Claude Code session is working, done, or waiting for you",
+                "UI": {
+                    "projectFilter": "Project filter",
+                    "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show project name",
+                    "showClawd": "Show Clawd",
+                    "checking": "Looking for sessions…",
+                    "found": "Now showing: {project} — {state}",
+                    "notFound": "No Claude Code session found in {dir}"
+                },
+                "State": {
+                    "working": "working",
+                    "question": "waiting for an answer",
+                    "plan": "plan ready for review",
+                    "permission": "waiting for permission",
+                    "done": "done",
+                    "interrupted": "interrupted",
+                    "error": "error",
+                    "idle": "idle"
+                }
             }
         },
         "zh-CN": {
@@ -110,7 +160,33 @@
                 "Checking": "正在检查…",
                 "Connected": "已连接 — 会话 {session}%，本周 {weekly}%",
                 "Disconnected": "未连接",
-                "Saved": "配置已更新"
+                "Saved": "配置已更新",
+                "ClaudeDir": "会话状态按键使用的 Claude Code 目录（可选）"
+            },
+            "Session": {
+                "Title": "会话状态",
+                "Tip": "显示最新的 Claude Code 会话是在进行中、已完成，还是在等你",
+                "UI": {
+                    "projectFilter": "项目筛选",
+                    "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
+                    "idleMinutes": "多久后视为空闲（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示项目名",
+                    "showClawd": "显示 Clawd",
+                    "checking": "正在查找会话…",
+                    "found": "当前显示：{project} — {state}",
+                    "notFound": "在 {dir} 中没有找到 Claude Code 会话"
+                },
+                "State": {
+                    "working": "进行中",
+                    "question": "等待回答",
+                    "plan": "计划待审",
+                    "permission": "等待授权",
+                    "done": "已完成",
+                    "interrupted": "已中断",
+                    "error": "出错",
+                    "idle": "空闲"
+                }
             }
         }
     }

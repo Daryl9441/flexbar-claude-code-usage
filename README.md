@@ -18,6 +18,37 @@ Each key shows one usage limit as a meter: the current percentage, a progress ba
 - Respects a custom key background color set in FlexDesigner
 - Optional Clawd mascot, using the official pixel-art artwork
 
+## Session Status key
+
+A second key shows what your latest Claude Code session is doing, so you can see at a glance whether Claude is still working, has finished, or is waiting for you:
+
+| Status | Meaning |
+| --- | --- |
+| **Working** (blue) | Claude is generating or running a tool (also while background agents run) |
+| **Question** (amber) | Claude asked you something (`AskUserQuestion`) — the question is shown |
+| **Plan ready** (amber) | A plan is waiting for your approval |
+| **Approval** (amber) | A tool call is waiting for your permission. **Approval?** means it is inferred (a tool call has made no progress for 10 s) |
+| **Asked you** (amber) | The turn ended with a question in Claude's reply |
+| **Done** (green) | The turn finished |
+| **Stopped** / **Error** (red) | You interrupted the turn, or it ended with an API error |
+| **Idle** (grey) | Nothing happened for a while |
+
+Below the status it shows the question, the current todo item or the session title, and a progress bar when Claude keeps a todo list (e.g. 3/5). The top right shows how long the current state has lasted, plus `+N` when other sessions are also working or waiting. Tap the key to rescan and show the full question or details for a few seconds.
+
+The key reads the session transcripts Claude Code writes to `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`), plus the live status Claude Code keeps in `~/.claude/sessions`. Everything stays on your computer; nothing is sent anywhere. Sessions from the Claude desktop app's Code tab are included. When several sessions are active, one that is waiting for you is shown first.
+
+**Per key:**
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Project filter | empty | Part of the project path; empty shows the latest session of any project |
+| Idle after | 15 min | When a finished session counts as idle |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show project name | on | Show the project folder name next to the status |
+| Show Clawd | off | Show Clawd on wide keys |
+
+If your Claude Code data is not in `~/.claude`, set the folder in the plugin settings.
+
 ## How it works
 
 The plugin reads the OAuth token that Claude Code stores on your machine (`~/.claude/.credentials.json`, or the Keychain on macOS) and polls the same usage endpoint that Claude Code's own `/usage` command uses. Usage polling costs no tokens and nothing is sent anywhere except to `api.anthropic.com`.
@@ -43,6 +74,7 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | --- | --- | --- |
 | Credentials file | auto-detect | Override path to `.credentials.json` (useful with `CLAUDE_CONFIG_DIR`) |
 | Refresh interval | 180 s | How often usage is polled (minimum 60 s) |
+| Claude Code folder | auto-detect | Override `~/.claude` for Session Status keys |
 
 **Per key:**
 
