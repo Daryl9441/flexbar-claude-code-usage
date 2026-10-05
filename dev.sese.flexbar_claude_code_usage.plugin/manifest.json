@@ -78,6 +78,39 @@
                     "showResetTime": "Show time until reset",
                     "showClawd": "Show Clawd"
                 }
+            },
+            "Config": {
+                "Description": "Reads your Claude Code login from this computer and shows your usage limits. Log in with Claude Code once and it works — no API key needed.",
+                "CredentialsPath": "Credentials file (optional override)",
+                "PollInterval": "Refresh interval (seconds)",
+                "Checking": "Checking…",
+                "Connected": "Connected — session {session}%, week {weekly}%",
+                "Disconnected": "Disconnected",
+                "Saved": "Config updated"
+            }
+        },
+        "zh-CN": {
+            "PluginName": "Claude Code 用量",
+            "Usage": {
+                "Title": "用量仪表",
+                "Tip": "以实时仪表显示 Claude Code 的用量限制",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricSession": "会话（5 小时）",
+                    "metricWeekly": "每周（所有模型）",
+                    "metricWeeklyModel": "每周（按模型）",
+                    "showResetTime": "显示距重置的时间",
+                    "showClawd": "显示 Clawd"
+                }
+            },
+            "Config": {
+                "Description": "读取本机的 Claude Code 登录信息并显示用量限制。只需用 Claude Code 登录一次即可使用，无需 API 密钥。",
+                "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
+                "PollInterval": "刷新间隔（秒）",
+                "Checking": "正在检查…",
+                "Connected": "已连接 — 会话 {session}%，本周 {weekly}%",
+                "Disconnected": "未连接",
+                "Saved": "配置已更新"
             }
         }
     }
