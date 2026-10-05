@@ -61,6 +61,18 @@
         </v-row>
         <v-row>
             <v-col cols="12">
+                <v-switch
+                    v-model="modelValue.data.liveDetection"
+                    :label="$t('GeminiSession.UI.liveDetection')"
+                    :hint="$t('GeminiSession.UI.liveDetectionHint')"
+                    persistent-hint
+                    class="mx-2"
+                    @update:model-value="scheduleCheck"
+                ></v-switch>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
             </v-col>
         </v-row>
@@ -69,6 +81,8 @@
 
 <script>
 // Gemini Sessions key settings. OWNER: the gemini-session implementer.
+// liveDetection: follow running Gemini CLI processes (ps + lsof) to tell
+// running sessions from stopped ones; off = from the session files alone.
 export default {
     props: {
         modelValue: {
@@ -129,6 +143,7 @@ export default {
         if (data.idleMinutes === undefined) data.idleMinutes = 15;
         if (data.showProject === undefined) data.showProject = true;
         if (data.showMark === undefined) data.showMark = true;
+        if (data.liveDetection === undefined) data.liveDetection = true;
         // key text follows the FlexDesigner language until changed here
         if (data.lang === undefined) {
             const locale = String(this.$i18n.locale || "");
