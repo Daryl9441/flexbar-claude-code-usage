@@ -62,6 +62,12 @@ const NOT_SET_UP: SessionNotice = {
   text: { en: 'Open Kimi Work', zh: '请打开 Kimi Work' },
 };
 
+/** A key set to Kimi Work on a computer without the Kimi app. */
+const NO_APP: SessionNotice = {
+  label: { en: 'Not installed', zh: '未安装' },
+  text: { en: 'Install the Kimi app', zh: '请先安装 Kimi App' },
+};
+
 type RefreshMode = 'watch' | 'poll' | 'full';
 const RANK: Record<RefreshMode, number> = { watch: 0, poll: 1, full: 2 };
 
@@ -181,9 +187,18 @@ export class KimiSessionSource implements SessionSource {
     return sortRunning(out).slice(0, MAX_RUNNING);
   }
 
-  notice(): SessionNotice | null {
+  /** Why a key with these settings finds nothing, per its `source`. */
+  notice(data?: KeyData): SessionNotice | null {
     const found = this.found;
     if (!found) return null;
+    const { source } = keyOptions(data);
+    if (source === 'cli') {
+      return found.cli ? null : unavailableNotice('not-installed', KIMI_BRAND);
+    }
+    if (source === 'desktop') {
+      if (!found.desktop) return NO_APP;
+      return found.used ? null : NOT_SET_UP;
+    }
     if (!found.cli && !found.desktop) {
       return unavailableNotice('not-installed', KIMI_BRAND);
     }

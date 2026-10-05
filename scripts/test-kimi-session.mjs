@@ -645,6 +645,22 @@ describe('merged sources and key settings', () => {
     assert.equal(source.getStatus('', Date.now(), IDLE).status, null);
   });
 
+  test('notices follow the key source setting', async () => {
+    // only the Kimi app, never used: a cli key asks for Kimi Code
+    const root = tmp('desktop-only');
+    let source = await scan({ desktopDir: root });
+    assert.equal(source.notice({ source: 'cli' }).text.en, 'Install Kimi Code');
+    assert.equal(source.notice({ source: 'desktop' }).text.en, 'Open Kimi Work');
+    assert.equal(source.notice({ source: 'auto' }).text.en, 'Open Kimi Work');
+    // only Kimi Code: a desktop key asks for the app
+    const home = tmp('cli-only');
+    source = await scan({ codeHome: home });
+    assert.equal(source.notice({ source: 'desktop' }).label.en, 'Not installed');
+    assert.equal(source.notice({ source: 'desktop' }).text.zh, '请先安装 Kimi App');
+    assert.equal(source.notice({ source: 'cli' }), null);
+    assert.equal(source.notice({}), null);
+  });
+
   test('describe answers the settings page', async () => {
     const home = tmp('cli');
     cliSession(home, 1, { wire: [R.meta(), R.prompt(Date.now() - MIN)], mtime: Date.now() - MIN });
@@ -831,6 +847,19 @@ describe('Kimi New Session launcher', () => {
     const win = NS.cliCandidates('C:\\Users\\you', 'win32', { APPDATA: 'C:\\Users\\you\\AppData\\Roaming' });
     assert.equal(win[0], 'C:\\Users\\you\\.kimi-code\\bin\\kimi.exe');
     assert.ok(win.includes('C:\\Users\\you\\AppData\\Roaming\\npm\\kimi.cmd'));
+  });
+
+  test('program search: the kimiDir setting stands in for KIMI_CODE_HOME', () => {
+    const custom = '/Users/you/kimi-home/bin/kimi';
+    const config = { kimiDir: '~/kimi-home' };
+    assert.equal(launcher([custom]).target(request({ target: 'cli' }, { config })).command[0], custom);
+    // the setting's folder without a program: kimi on the terminal's PATH
+    assert.deepEqual(
+      launcher(['/Users/you/kimi-home']).target(request({}, { config })).command,
+      ['kimi']
+    );
+    // no setting: the default home only
+    assert.equal(launcher([custom]).target(request({ target: 'cli' }, { config: {} })).command[0], 'kimi');
   });
 
   test('the real launcher only builds a target (nothing is opened)', async () => {

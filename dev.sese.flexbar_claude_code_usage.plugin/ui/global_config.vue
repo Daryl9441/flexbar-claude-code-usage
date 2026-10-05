@@ -64,6 +64,9 @@
                             :label="$t('Config.KimiRefreshLogin')"
                             hide-details
                         ></v-switch>
+                        <p class="text-caption text-medium-emphasis">
+                            {{ $t("Config.KimiRefreshLoginHint") }}
+                        </p>
                     </v-col>
                     <v-col cols="12">
                         <p class="text-subtitle-2 mt-2">Gemini</p>
@@ -84,6 +87,15 @@
                             placeholder="/opt/homebrew/bin/gemini"
                             outlined
                             hide-details
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.geminiCloudProject"
+                            :label="$t('Config.GeminiCloudProject')"
+                            :hint="$t('Config.GeminiCloudProjectHint')"
+                            persistent-hint
+                            outlined
                         ></v-text-field>
                     </v-col>
                 </v-row>

@@ -13,6 +13,18 @@
                     class="mx-2"
                 ></v-select>
             </v-col>
+            <v-col cols="6">
+                <v-select
+                    v-model="modelValue.data.lang"
+                    :items="langOptions"
+                    :label="$t('GeminiUsage.UI.lang')"
+                    item-title="title"
+                    item-value="value"
+                    hide-details
+                    outlined
+                    class="mx-2"
+                ></v-select>
+            </v-col>
         </v-row>
         <v-row>
             <v-col cols="6">
@@ -108,6 +120,12 @@ export default {
             }
             return options;
         },
+        langOptions() {
+            return [
+                { title: "English", value: "en" },
+                { title: "简体中文", value: "zh" },
+            ];
+        },
         hintText() {
             const hint = HINTS.find(([problems]) =>
                 problems.includes(this.problem)
@@ -150,6 +168,11 @@ export default {
         if (data.metric === undefined || data.metric === null) data.metric = "";
         if (data.showResetTime === undefined) data.showResetTime = true;
         if (data.showMark === undefined) data.showMark = true;
+        // key texts follow the FlexDesigner language until changed here
+        if (data.lang === undefined) {
+            const locale = String(this.$i18n.locale || "");
+            data.lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+        }
         this.check();
     },
 };

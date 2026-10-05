@@ -352,9 +352,9 @@ export class SessionKeys implements KeyGroup {
     }
   }
 
-  private notice(): SessionNotice | null {
+  private notice(data: KeyData): SessionNotice | null {
     try {
-      return this.monitor?.notice?.() ?? null;
+      return this.monitor?.notice?.(data) ?? null;
     } catch {
       return BROKEN;
     }
@@ -393,7 +393,7 @@ export class SessionKeys implements KeyGroup {
         settings.idleMs,
         key?.data ?? {}
       );
-      const notice = status ? null : this.notice();
+      const notice = status ? null : this.notice(key?.data ?? {});
       view = notice
         ? buildNoticeView(notice, settings.lang)
         : buildSessionView(status, {

@@ -228,6 +228,15 @@ export class UsageKeys implements KeyGroup {
     return errorKeyText(error, this.brand, lang);
   }
 
+  /** The source's text for a metric the last fetch did not return, or null. */
+  private missingText(metric: string, lang: Lang): KeyText | null {
+    try {
+      return this.source.missingText?.(metric, lang) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private lockout(error: unknown): number | null {
     try {
       return this.source.lockoutSeconds
@@ -270,12 +279,16 @@ export class UsageKeys implements KeyGroup {
       const metric: string =
         data.metric || this.source.defaultMetric || this.metrics[0]?.id || '';
       const snapshot = this.metrics.find(m => m.id === metric);
-      return snapshot
-        ? renderUsageKey(width, snapshot, {
-            showResetTime: data.showResetTime !== false,
-            ...marks,
-            bgColor: this.deps.bgColor(key),
-          })
+      if (snapshot) {
+        return renderUsageKey(width, snapshot, {
+          showResetTime: data.showResetTime !== false,
+          ...marks,
+          bgColor: this.deps.bgColor(key),
+        });
+      }
+      const missing = this.missingText(metric, lang);
+      return missing
+        ? renderMessageKey(width, missing.title, missing.message, message)
         : renderMessageKey(width, this.brand.productName, text.noData, message);
     }
 

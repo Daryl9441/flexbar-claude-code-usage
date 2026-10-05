@@ -48,6 +48,11 @@ export type PluginConfig = {
   geminiDir?: string;
   /** Gemini CLI program (default: found on PATH and common install folders) */
   geminiPath?: string;
+  /**
+   * Google Cloud project for Gemini Code Assist Standard/Enterprise quota
+   * (default: $GOOGLE_CLOUD_PROJECT or $GOOGLE_CLOUD_PROJECT_ID)
+   */
+  geminiCloudProject?: string;
   [key: string]: unknown;
 };
 
@@ -125,6 +130,11 @@ export interface UsageSource {
   defaultMetric: string;
   /** Key-face text for an error from fetch() (default: errorKeyText) */
   errorText?(error: unknown, lang: Lang): KeyText;
+  /**
+   * Key-face text for a key whose metric the last fetch did not return, or
+   * null for the generic "No data for this limit".
+   */
+  missingText?(metricId: string, lang: Lang): KeyText | null;
   /** Error text for the log and the settings UI (default: safeErrorMessage) */
   logText?(error: unknown): string;
   /**
@@ -207,8 +217,11 @@ export interface SessionSource {
     idleMs: number,
     data?: KeyData
   ): RunningSession[];
-  /** Why there is nothing to show (not installed, not set up), or null. */
-  notice?(): SessionNotice | null;
+  /**
+   * Why there is nothing to show (not installed, not set up), or null.
+   * `data` is the settings of the key asking (key.data).
+   */
+  notice?(data?: KeyData): SessionNotice | null;
 }
 
 /** Reply to the settings UI ('session-status'). */
@@ -267,6 +280,8 @@ export type NewSessionRequest = {
   /** Home folder used for ~ (tests pass a fake one) */
   home: string | undefined;
   platform: NodeJS.Platform;
+  /** The global plugin settings ({} when they could not be loaded) */
+  config?: PluginConfig;
 };
 
 export interface NewSessionLauncher {
@@ -277,7 +292,11 @@ export interface NewSessionLauncher {
    * "Opening…" and "<name> not available".
    */
   strings?: Partial<Record<NewSessionState, Localized>>;
-  /** The target for a press; throw (ProviderError) when it cannot open. */
+  /**
+   * The target for a press; throw when it cannot open. A ProviderError with
+   * `extra.keyText` shows that title on the error face instead of the
+   * generic one.
+   */
   target(request: NewSessionRequest): LaunchTarget | Promise<LaunchTarget>;
 }
 

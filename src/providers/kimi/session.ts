@@ -75,7 +75,7 @@ export const sessionProvider: SessionProvider = {
         project: status?.project ?? null,
         title: status?.title ?? null,
         others,
-        notice: status ? null : source.notice(),
+        notice: status ? null : source.notice(data),
       };
     } finally {
       source.stop();

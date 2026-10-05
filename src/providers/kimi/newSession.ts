@@ -19,6 +19,8 @@ import path from 'node:path';
 import { ProviderError } from '../kit';
 import { LaunchTarget, NewSessionLauncher, NewSessionRequest } from '../types';
 
+import { kimiCodeHome } from './paths';
+
 /** The desktop deep link that opens Kimi Work (no folder parameter). */
 export const KIMI_WORK_URL = 'kimi-work://open';
 
@@ -108,6 +110,22 @@ export function desktopCandidates(
   return [path.posix.join(config, 'kimi-desktop')];
 }
 
+/**
+ * The environment the program search uses: the global `kimiDir` setting
+ * (Kimi Code's home) stands in for $KIMI_CODE_HOME when it is set.
+ */
+function searchEnv(
+  request: NewSessionRequest,
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  const dir = request.config?.kimiDir;
+  if (typeof dir !== 'string' || !dir.trim() || !request.home) return env;
+  return {
+    ...env,
+    KIMI_CODE_HOME: kimiCodeHome(request.config, env, request.home),
+  };
+}
+
 /** A launcher; the exported one checks the real file system. */
 export function createKimiLauncher(
   deps: KimiLauncherDeps = {}
@@ -138,7 +156,7 @@ export function createKimiLauncher(
     },
 
     target(request: NewSessionRequest): LaunchTarget {
-      const env = deps.env ?? process.env;
+      const env = searchEnv(request, deps.env ?? process.env);
       const { target, cliMode } = launchOptions(request.data);
       const terminal = (program: string): LaunchTarget => ({
         kind: 'terminal',

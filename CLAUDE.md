@@ -124,10 +124,10 @@ npm run test:session          # Session Status tests (tsc -> .test-build/, node 
 npm run test:newsession       # New Session key tests (launcher stubbed; never opens a link)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run test:providers        # provider layer: kit, generic key groups, launchers, manifest ids
-npm run test:kimi-usage       # Kimi usage source (tsc -> .test-build-kimi-usage/)
-npm run test:kimi-session     # Kimi sessions + New Session launcher
-npm run test:gemini-usage     # Gemini usage source
-npm run test:gemini-session   # Gemini sessions + New Session launcher
+npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kimi Work context (fetch stubbed)
+npm run test:kimi-session     # Kimi Code CLI + Kimi Work sessions, Kimi New Session launcher
+npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Code Assist quota (fetch stubbed)
+npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
 npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
@@ -199,6 +199,34 @@ outside the repository with `assert` changed to `with` in
   `~/.claude/projects`, live status in `~/.claude/sessions`),
   `src/newSession.ts` (builds the `claude://code/new` link). Adapters in
   `src/providers/claude/`.
+- Kimi (`src/providers/kimi/`): `paths.ts` (Kimi Code home, desktop data
+  folder). Usage: `usage.ts` (`usageSource`, `missingText`), `usageConfig.ts`
+  (endpoint and login slot like the CLI: env, `config.toml`, region marker),
+  `usageAuth.ts` (token file, refresh under the CLI's `oauth/<slot>.lock`,
+  atomic 0600 write-back; off with `kimiRefreshLogin: false`), `usageApi.ts`
+  (`/usages`, both response formats), `usageContext.ts` (Kimi Work context
+  fill from the desktop app). Sessions: `sessionSource.ts` (one source for all
+  Kimi keys: watchers, poll, merge, notices per `source` setting),
+  `sessionCli.ts` + `sessionWire.ts` + `sessionTail.ts` (Kimi Code
+  `state.json` and `wire.jsonl` journals), `sessionDesktop.ts` (Kimi Work
+  stores, daemon state, sqlite titles via `node:sqlite`, read-only),
+  `sessionFs.ts`, `session.ts` (`sessionProvider`). `newSession.ts`: terminal
+  running `kimi` or `kimi-work://open`.
+- Gemini (`src/providers/gemini/`): `paths.ts` (Gemini home, `geminiPath`).
+  Usage: `usage.ts` (`usageSource`: metrics, caching, keep-last), `usageCreds.ts`
+  (`oauth_creds.json` read-only, in-memory refresh), `usageCli.ts` (finds the
+  CLI and reads its public OAuth client at runtime; nothing in the repo),
+  `usageApi.ts` (Code Assist `loadCodeAssist` / `retrieveUserQuota`),
+  `usageMetrics.ts`, `usageText.ts` (`GeminiUsageError`, en/zh texts).
+  Sessions: `sessionMonitor.ts` (`<geminiHome>/tmp/*/chats`, dedupe, CLI to
+  session mapping), `sessionParse.ts` (JSON and JSONL session files, states),
+  `sessionProcs.ts` (`ps`/`lsof` or `/proc` probe via `execFile`),
+  `session.ts`. New session: `newSession.ts` (Terminal running `gemini`, or
+  `googlegemini://newchat`), `sessionCli.ts` (finds the `gemini` program).
+- Key-group hooks a provider may use: `UsageSource.missingText` (text for a
+  metric the fetch did not return), `SessionSource.notice(data)` (per key
+  settings), `NewSessionRequest.config` (global settings), and a launcher's
+  `ProviderError` with `extra.keyText` (its title replaces the error face).
 - Rendering: `src/render.ts` (usage and message faces, `drawMark`),
   `src/sessionView.ts` (view model, en/zh-CN), `src/sessionRender.ts`,
   `src/newSessionRender.ts`, `src/clawd.ts`, `src/fonts.ts`.

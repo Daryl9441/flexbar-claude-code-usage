@@ -25,14 +25,16 @@ import { renderNewSessionKey } from './newSessionRender';
 import { Launcher, openUrl } from './openUrl';
 import { CLAUDE_BRAND } from './providers/claude/brand';
 import { claudeNewSessionLauncher } from './providers/claude/newSession';
-import { brandMark, keyCid, pick } from './providers/kit';
+import { ProviderError, brandMark, keyCid, pick } from './providers/kit';
 import {
   Brand,
   Key,
   KeyGroup,
   LaunchTarget,
+  Localized,
   NewSessionLauncher,
   NewSessionRequest,
+  PluginConfig,
 } from './providers/types';
 
 export const NEW_SESSION_CID = keyCid('claude', 'newsession');
@@ -100,6 +102,8 @@ export type NewSessionKeyDeps = {
   isOffline: (serialNumber: string) => boolean;
   keyWidth: (key: Key) => number;
   bgColor: (key: Key) => string | undefined;
+  /** Global plugin settings, handed to the launcher with each press */
+  loadConfig?: () => Promise<PluginConfig | null | undefined>;
   logger?: Logger | null;
   /** Whose sessions the keys open (default: Claude) */
   provider?: NewSessionKeyProvider;
@@ -119,7 +123,21 @@ export type NewSessionKeyDeps = {
   timings?: Partial<NewSessionTimings>;
 };
 
-type Feedback = { state: 'opening' | 'error'; timer: NodeJS.Timeout };
+type Feedback = {
+  state: 'opening' | 'error';
+  timer: NodeJS.Timeout;
+  /** The launcher's own error title (ProviderError keyText), if any */
+  title?: Localized;
+};
+
+/** The error-face title a launcher attached to its error, or undefined. */
+function launchErrorTitle(error: unknown): Localized | undefined {
+  if (!(error instanceof ProviderError)) return undefined;
+  const text = error.extra.keyText;
+  if (!text) return undefined;
+  if ('title' in text) return { en: text.title, zh: text.title };
+  return { en: text.en.title, zh: text.zh.title };
+}
 
 export class NewSessionKeys implements KeyGroup {
   readonly cid: string;
@@ -216,12 +234,15 @@ export class NewSessionKeys implements KeyGroup {
       const home = this.deps.home;
       const data = (pressed?.data ?? {}) as Record<string, unknown>;
       const settings = newSessionSettings(data, home);
+      const config =
+        (await this.deps.loadConfig?.().catch(() => null)) ?? undefined;
       const request: NewSessionRequest = {
         data,
         rawFolder: settings.folder,
         folder: resolveFolder(settings.folder, home),
         home,
         platform: this.deps.platform ?? process.platform,
+        config: config ?? {},
       };
       // async, so a launcher that throws still shows "Opening…" first
       const target = await (async () =>
@@ -234,7 +255,12 @@ export class NewSessionKeys implements KeyGroup {
       this.deps.logger?.warn?.(
         `New Session key: could not open ${appName}: ${text.slice(0, 200)}`
       );
-      this.showFeedback(id, 'error', this.timings.errorMs);
+      this.showFeedback(
+        id,
+        'error',
+        this.timings.errorMs,
+        launchErrorTitle(error)
+      );
       return false;
     }
   }
@@ -279,7 +305,8 @@ export class NewSessionKeys implements KeyGroup {
   private showFeedback(
     id: string,
     state: Feedback['state'],
-    durationMs: number
+    durationMs: number,
+    title?: Localized
   ) {
     const previous = this.feedback.get(id);
     if (previous) clearTimeout(previous.timer);
@@ -289,7 +316,7 @@ export class NewSessionKeys implements KeyGroup {
       void this.redraw();
     }, durationMs);
     timer.unref?.();
-    this.feedback.set(id, { state, timer });
+    this.feedback.set(id, { state, timer, ...(title ? { title } : {}) });
     void this.redraw();
   }
 
@@ -317,12 +344,13 @@ export class NewSessionKeys implements KeyGroup {
   /** The image inputs for a key now; equal views give equal images. */
   private viewFor(serialNumber: string, key: Key) {
     const id = `${serialNumber}#${key.uid}`;
-    const state: NewSessionState = this.feedback.get(id)?.state ?? 'ready';
-    const view = buildNewSessionView(
-      state,
-      newSessionSettings(key?.data, this.deps.home),
-      this.strings
-    );
+    const feedback = this.feedback.get(id);
+    const state: NewSessionState = feedback?.state ?? 'ready';
+    const settings = newSessionSettings(key?.data, this.deps.home);
+    const view = buildNewSessionView(state, settings, this.strings);
+    if (state === 'error' && feedback?.title) {
+      view.title = pick(feedback.title, settings.lang);
+    }
     const width = this.deps.keyWidth(key);
     const options = { bgColor: this.deps.bgColor(key), ...this.look };
     return {

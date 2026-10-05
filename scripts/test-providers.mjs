@@ -399,6 +399,44 @@ describe('UsageKeys', () => {
     });
   });
 
+  test('missingText words a metric the fetch did not return', async () => {
+    await withClock(NOW, async () => {
+      const asked = [];
+      const t = usageKeys({
+        defaultMetric: '',
+        fetch: async () => metrics,
+        missingText: (id, lang) => {
+          asked.push([id, lang]);
+          if (id === 'broken') throw new Error('boom');
+          if (id !== 'monthly') return null;
+          return lang === 'zh'
+            ? { title: '未登录', message: '请运行 kimi login' }
+            : { title: 'Not logged in', message: 'Run kimi login' };
+        },
+      });
+      try {
+        await t.keys.alive(SERIAL, [
+          t.key(1, { metric: 'monthly' }),
+          t.key(2, { metric: 'monthly', lang: 'zh' }),
+          t.key(3, { metric: 'extra' }),
+          t.key(4, { metric: 'broken' }),
+          t.key(5),
+        ]);
+        await t.settle();
+        assert.equal(t.last(1), message('Not logged in', 'Run kimi login'));
+        assert.equal(t.last(2), message('未登录', '请运行 kimi login'));
+        // null and a throwing hook keep the generic face
+        assert.equal(t.last(3), message('Kimi Code', 'No data for this limit'));
+        assert.equal(t.last(4), message('Kimi Code', 'No data for this limit'));
+        // never asked for a metric that is there
+        assert.equal(t.last(5), await meter(metrics[0]));
+        assert.ok(asked.every(([id]) => id !== '5h'));
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
   test('errors show the code text; Loading… before the first result', async () => {
     let fail = new Kit.ProviderError('not-installed', 'no Kimi Code home');
     const t = usageKeys({
@@ -572,7 +610,10 @@ describe('SessionKeys with another provider', () => {
             seen.listData = data;
             return running;
           },
-          notice: () => notice,
+          notice: data => {
+            seen.noticeData = data;
+            return notice;
+          },
         };
       },
       describe: async (filter, _config, data) => ({
@@ -669,6 +710,7 @@ describe('SessionKeys with another provider', () => {
       // the key's settings reach the source and the settings page reply
       assert.deepEqual(seen.statusData, key.data);
       assert.deepEqual(seen.listData, key.data);
+      assert.deepEqual(seen.noticeData, key.data, 'notice() gets the key settings');
       assert.deepEqual(
         await keys.message({
           data: 'session-status',
@@ -725,11 +767,11 @@ describe('SessionKeys with another provider', () => {
 // --- new session keys ----------------------------------------------------------
 
 describe('NewSessionKeys with another provider', () => {
-  function newSessionKeys(target, strings) {
+  function newSessionKeys(target, strings, hostOverrides = {}) {
     const cid = Kit.keyCid('kimi', 'newsession');
     const calls = [];
     const views = [];
-    const h = host();
+    const h = host(hostOverrides);
     const keys = new NK.NewSessionKeys({
       ...h.deps,
       provider: {
@@ -778,6 +820,7 @@ describe('NewSessionKeys with another provider', () => {
       folder: '/Users/you/work/demo',
       home: HOME,
       platform: 'darwin',
+      config: {},
     });
     // the face uses Kimi's look and default texts
     assert.deepEqual(t.views[0], {
@@ -807,6 +850,60 @@ describe('NewSessionKeys with another provider', () => {
     );
     assert.deepEqual(t.calls, []);
     assert.match(t.h.warnings.join('\n'), /could not open Kimi: no kimi binary/);
+  });
+
+  test('a launcher error with its own key text names the problem', async () => {
+    const t = newSessionKeys(request => {
+      const keyText =
+        request.data.kind === 'one'
+          ? { title: 'Gemini CLI not found', message: 'Install it' }
+          : {
+              en: { title: 'Folder not found', message: '' },
+              zh: { title: '未找到文件夹', message: '' },
+            };
+      throw new Kit.ProviderError('not-installed', 'missing', { keyText });
+    });
+    await t.keys.alive(SERIAL, [t.key(1, { kind: 'one' }), t.key(2, { lang: 'zh' })]);
+    assert.equal(await t.keys.press(SERIAL, t.key(1, { kind: 'one' })), false);
+    assert.equal(await t.keys.press(SERIAL, t.key(2, { lang: 'zh' })), false);
+    await t.h.settle();
+    const titles = t.views.map(v => v.title);
+    assert.ok(titles.includes('Gemini CLI not found'), titles.join(' | '));
+    assert.ok(titles.includes('未找到文件夹'), titles.join(' | '));
+    // back to the normal face once the error has been shown
+    await sleep(20);
+    await t.h.settle();
+    assert.deepEqual(t.views.slice(-2).map(v => v.title).sort(), ['New Session', '新建会话']);
+  });
+
+  test('the launcher gets the global settings with each press', async () => {
+    const requests = [];
+    const t = newSessionKeys(
+      request => {
+        requests.push(request);
+        return { kind: 'url', url: 'kimi-work://open' };
+      },
+      undefined,
+      { loadConfig: async () => ({ kimiDir: '~/kimi-home', geminiPath: '/opt/gemini' }) }
+    );
+    await t.keys.alive(SERIAL, [t.key(1)]);
+    assert.equal(await t.keys.press(SERIAL, t.key(1)), true);
+    assert.deepEqual(requests[0].config, {
+      kimiDir: '~/kimi-home',
+      geminiPath: '/opt/gemini',
+    });
+    // a config that cannot be loaded is an empty one, not a failed press
+    const failing = newSessionKeys(
+      request => {
+        requests.push(request);
+        return { kind: 'url', url: 'kimi-work://open' };
+      },
+      undefined,
+      { loadConfig: async () => { throw new Error('no config'); } }
+    );
+    await failing.keys.alive(SERIAL, [failing.key(1)]);
+    assert.equal(await failing.keys.press(SERIAL, failing.key(1)), true);
+    assert.deepEqual(requests[1].config, {});
   });
 
   test('default texts name the provider', () => {

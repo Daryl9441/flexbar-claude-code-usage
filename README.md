@@ -4,6 +4,8 @@ Display your [Claude Code](https://claude.com/claude-code) usage limits live on 
 
 Each key shows one usage limit as a meter: the current percentage, a progress bar that shifts from green through orange (75%) to red (100%) as usage increases, the time until the limit resets, and optionally Clawd, the Claude Code crab.
 
+The same three key types (usage meter, Session Status, New Session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work) and [Gemini](#gemini-keys) (Gemini CLI). They appear in FlexDesigner's key library under "AI Coding Usage", nine keys in all.
+
 ![Session meter](docs/media/render-v4-session.png)
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
 ![Per-model meter](docs/media/render-v4-model-full.png)
@@ -71,6 +73,80 @@ A third key opens a new Claude Code session in the Claude desktop app with one t
 
 The key shows "Opening…" briefly after a tap, or "Claude app not found" if no app handles the link (macOS and Linux; on Windows the system shows its own "get an app" prompt instead); taps within a second of each other count once. Keys 100 px wide or narrower show just the icon. The link is handed to the system opener (`open` on macOS, the URL protocol handler on Windows, `xdg-open` on Linux) directly, without a shell.
 
+## Kimi keys
+
+Three keys show Moonshot AI's Kimi Code CLI and the Kimi desktop app's Kimi Work. They look like the Claude keys and carry the Kimi mark (turn it off with **Show Kimi mark**).
+
+**Kimi Usage** shows one Kimi Code plan limit as a meter. It uses the Kimi Code CLI's own login (`~/.kimi-code/credentials/`) and asks the CLI's quota endpoint (`api.kimi.com/coding/v1/usages`, or `api.kimi.ai` for the global service, picked like the CLI does from its environment, `config.toml` and region marker). One request serves every Kimi Usage key, at most one every 30 seconds, with the same rate-limit lockout as Claude.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Usage limit | Default | 5-hour, weekly, monthly, monthly (Kimi Code share), extra usage (booster), or the Kimi Work context. Default shows the 5-hour limit when the plan reports it |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show time until reset | on | Show the countdown until the limit resets |
+| Show Kimi mark | on | Show the Kimi mark next to the meter |
+
+The **Kimi Work context** limit needs no login: it is how full the context window of the running (or latest) Kimi Work task is, read from the Kimi desktop app's data on this computer. On a computer with only the desktop app, it is the only limit available.
+
+When the Kimi Code login has expired, the key refreshes it with the CLI's own protocol: it takes the CLI's refresh lock, refreshes once and writes the new token pair back to the CLI's credential file. Turn off **Refresh an expired Kimi Code login** in the plugin settings to keep the key read-only; it then asks you to run `kimi` instead.
+
+**Kimi Sessions** works like the Claude Session Status key (same states, `+N`, press for the running list). It merges Kimi Code CLI sessions (`~/.kimi-code/sessions`) with the desktop app's Kimi Work tasks. Questions and approvals from Kimi Code 1.5 journals are known, not guessed; a sub-agent waiting for you shows on its parent session. Unread Kimi Work results stay "Done" for up to 12 hours; archived tasks are hidden.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Sessions from | Kimi Code and Kimi Work | Both, only Kimi Work (the Kimi app), or only Kimi Code (CLI) |
+| Include scheduled tasks | off | Also show Kimi Work's scheduled tasks |
+| Project filter | empty | Part of the Kimi Code project path or the Kimi Work project |
+| Idle after | 15 min | When a finished session counts as idle |
+| Key text language, Show project name, Show Kimi mark | | As on the Claude key |
+
+**Kimi New Session** opens Kimi Code in a terminal window, or Kimi Work in the Kimi app (`kimi-work://open`, which takes no folder).
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Open in | Automatic | Automatic: Kimi Code in a terminal when a folder is set and the CLI is installed, else the Kimi app, else Kimi Code in your home folder. Or always Kimi Work, or always Kimi Code |
+| Kimi Code mode | New session | New session, continue the last session (`--continue`), or plan mode (`--plan`) |
+| Project folder | empty | Where Kimi Code starts (empty: your home folder) |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+
+Requirements: the Kimi Code CLI logged in (`kimi login`) with a Kimi Code plan for plan limits, and/or the Kimi desktop app for Kimi Work. The legacy Python `kimi-cli` (`~/.kimi`) is not read.
+
+## Gemini keys
+
+Three keys show Google's [Gemini CLI](https://github.com/google-gemini/gemini-cli), with the Gemini mark (turn it off with **Show Gemini mark**).
+
+**Gemini Usage** shows Gemini CLI quota as a meter: how much of a model's daily request quota is used. It reads the Gemini CLI login (`~/.gemini/oauth_creds.json`) without ever writing to it: an expired access token is refreshed in memory only, with the OAuth client of the Gemini CLI installed on this computer. It then asks Gemini Code Assist (`cloudcode-pa.googleapis.com`) for the account's tier (at most hourly) and per-model quota (each poll, at most once every 30 seconds).
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Usage limit | Default | Default: the model with the least quota left (its name is on the chip). Pro or Flash: the most used model of that family. Auto: Pro and Flash together. Or any single model the account reports |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show time until reset | on | Show the countdown until the quota resets |
+| Show Gemini mark | on | Show the Gemini mark next to the meter |
+
+Only Gemini CLI's "Login with Google" on a **Gemini Code Assist Standard or Enterprise** subscription reports quota. Google reports none for personal Google accounts (Code Assist for individuals, Google AI Pro and Ultra), API-key logins or Vertex AI; the key then says so ("Not supported", "No quota") instead of a meter. If your organization's account needs a Google Cloud project, enter it as **Gemini Cloud project** in the plugin settings (or set `GOOGLE_CLOUD_PROJECT`). A short network or server error keeps the last meter for up to 30 minutes.
+
+**Gemini Sessions** works like the Claude Session Status key. It reads the session files Gemini CLI writes to `~/.gemini/tmp/<project>/chats/` (both the JSON and the newer JSONL format) and names projects by their folder. With **Follow running Gemini CLIs** on (the default), it also reads the process list every 10 seconds (`ps` and `lsof` on macOS, `/proc` on Linux; not on Windows) to tell running sessions from stopped ones, to see tools running, and to show a freshly started CLI as "New session". Gemini CLI does not record pending approvals, so **Approval?** is a guess (a reply with no text and no tool running for 10 seconds).
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Follow running Gemini CLIs | on | Read the process list; off judges from the session files only |
+| Project filter, Idle after, Key text language, Show project name, Show Gemini mark | | As on the Claude key |
+
+**Gemini New Session** opens a terminal window running the Gemini CLI in the key's folder: on macOS a temporary `.command` script (it deletes itself) opened in Terminal, on Windows a `cmd` window, on Linux `x-terminal-emulator`. Every argument is passed as-is, never through a shell string.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Open in | Terminal (Gemini CLI) | Or a new chat in the Gemini app (`googlegemini://newchat`; no folder, not a CLI session) |
+| Approval mode | Ask (default) | Ask, auto-approve edits, approve everything (YOLO), or plan (read-only) |
+| Resume latest session | off | Start with `--resume latest` |
+| Project folder | empty | Where the CLI starts (empty: your home folder) |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+
+A failed tap says why on the key: "Folder not found", "Gemini CLI not found" or "Gemini app not found". The CLI is found through the **Gemini CLI program** setting, else `PATH` and the usual install folders (Homebrew, npm, Volta, Bun, pnpm, nvm).
+
+Requirements: [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed (and, for the usage key, logged in with Google on a Code Assist Standard or Enterprise account).
+
 ## How it works
 
 The plugin reads the OAuth token that Claude Code stores on your machine (`~/.claude/.credentials.json`, or the Keychain on macOS) and polls the same usage endpoint that Claude Code's own `/usage` command uses. Usage polling costs no tokens and nothing is sent anywhere except to `api.anthropic.com`.
@@ -90,6 +166,9 @@ Requirements:
 - Tokens are never logged or shown on a key; error messages are redacted before they reach the FlexDesigner log or the settings page. A refreshed token pair is written back only to the credential store it came from.
 - The Session Status key reads transcripts and session status locally and sends nothing anywhere.
 - The New Session key only hands a `claude://` link to your system's opener and sends nothing anywhere; its log messages leave out the project folder.
+- Kimi Usage sends the Kimi Code login only to Kimi's own endpoints (the quota endpoint and, when refreshing, `auth.kimi.com` / `auth.kimi.ai`). With login refresh on, it rewrites the Kimi Code CLI's credential file under the CLI's own lock; with it off, it writes nothing. The Kimi desktop app's credentials are never read.
+- Gemini Usage sends the Gemini CLI login only to Google (`oauth2.googleapis.com` to refresh the access token in memory, `cloudcode-pa.googleapis.com` for the quota) and never writes to `~/.gemini`.
+- The Kimi and Gemini Sessions keys only read local files (and, for Gemini, the process list); they write nothing and send nothing anywhere. Session titles and prompts never reach the log.
 - No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
 
 ## Installation
@@ -103,10 +182,16 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Setting | Default | Description |
 | --- | --- | --- |
 | Credentials file | auto-detect | Override path to `.credentials.json` (useful with `CLAUDE_CONFIG_DIR`) |
-| Refresh interval | 180 s | How often usage is polled (minimum 60 s) |
+| Refresh interval | 180 s | How often usage is polled, for every provider (minimum 60 s) |
 | Claude Code folder | auto-detect | Override `~/.claude` for Session Status keys |
+| Kimi Code folder | auto-detect | Override `$KIMI_CODE_HOME` or `~/.kimi-code` (login, sessions, `bin/kimi`) |
+| Kimi desktop app data folder | auto-detect | Override the Kimi app's data folder (`~/Library/Application Support/kimi-desktop` on macOS) |
+| Refresh an expired Kimi Code login | on | Let Kimi Usage refresh and write back an expired Kimi Code login; off keeps it read-only |
+| Gemini CLI folder | auto-detect | Override `$GEMINI_CLI_HOME/.gemini` or `~/.gemini` |
+| Gemini CLI program | auto-detect | Path to the `gemini` program, if it is not found on `PATH` or the usual install folders |
+| Gemini Cloud project | empty | Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota (default `$GOOGLE_CLOUD_PROJECT`) |
 
-**Per key:**
+**Per key** (Claude Usage; the Kimi and Gemini keys are described above):
 
 | Setting | Default | Description |
 | --- | --- | --- |

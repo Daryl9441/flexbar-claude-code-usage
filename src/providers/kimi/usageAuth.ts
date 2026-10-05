@@ -43,17 +43,10 @@ import { KimiEndpoint, isSafeUrl } from './usageConfig';
 /**
  * Kimi Code's public OAuth client id (MoonshotAI/kimi-code,
  * packages/oauth/src/constants.ts): it ships in every Kimi Code install, the
- * client has no secret, and the id alone grants nothing. Joined from parts
- * only until the integrator adds it to .privacy-allowlist (requested in the
- * hand-back, like Claude's client id); then make it one literal again.
+ * client has no secret, and the id alone grants nothing (allowlisted in
+ * .privacy-allowlist, like Claude's client id).
  */
-export const KIMI_CODE_CLIENT_ID = [
-  '17e5f671',
-  'd194',
-  '4dfb',
-  '9706',
-  '5516cb48c098',
-].join('-');
+export const KIMI_CODE_CLIENT_ID = '17e5f671-d194-4dfb-9706-5516cb48c098';
 
 /** Refresh this long before the stored expiry */
 const EXPIRY_MARGIN_MS = 60_000;

@@ -9,6 +9,12 @@
 # no secret, and the id alone grants nothing.
 ^9d1c250a-e61b-44d9-88ed-5944d1962f5e$
 
+# Kimi Code's OAuth client id (src/providers/kimi/usageAuth.ts, refresh_token
+# grant). Public: it is in MoonshotAI/kimi-code packages/oauth/src/constants.ts
+# (KIMI_CODE_FLOW_CONFIG.clientId) and ships in every Kimi Code install; the
+# client has no secret, and the id alone grants nothing.
+^17e5f671-d194-4dfb-9706-5516cb48c098$
+
 # Synthetic home directories in the Session Status test fixtures
 # (scripts/test-session.mjs): "dev" and "x" are made-up accounts, also in
 # Claude Code's encoded project folder names (-Users-dev-work-alpha).

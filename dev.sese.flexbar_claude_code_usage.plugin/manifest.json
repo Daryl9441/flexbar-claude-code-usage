@@ -151,7 +151,9 @@
                     "projectFilter": "",
                     "idleMinutes": 15,
                     "showProject": true,
-                    "showMark": true
+                    "showMark": true,
+                    "source": "auto",
+                    "includeAutomations": false
                 }
             },
             {
@@ -172,7 +174,9 @@
                     "width": 120
                 },
                 "data": {
-                    "folder": ""
+                    "folder": "",
+                    "target": "auto",
+                    "cliMode": "new"
                 }
             },
             {
@@ -219,7 +223,8 @@
                     "projectFilter": "",
                     "idleMinutes": 15,
                     "showProject": true,
-                    "showMark": true
+                    "showMark": true,
+                    "liveDetection": true
                 }
             },
             {
@@ -240,7 +245,10 @@
                     "width": 120
                 },
                 "data": {
-                    "folder": ""
+                    "folder": "",
+                    "target": "terminal-cli",
+                    "resume": false,
+                    "approvalMode": "default"
                 }
             }
         ]
@@ -273,7 +281,10 @@
                 "KimiDesktopDir": "Kimi desktop app data folder (optional)",
                 "KimiRefreshLogin": "Refresh an expired Kimi Code login",
                 "GeminiDir": "Gemini CLI folder (optional)",
-                "GeminiPath": "Gemini CLI program (optional)"
+                "GeminiPath": "Gemini CLI program (optional)",
+                "GeminiCloudProject": "Gemini Cloud project (optional)",
+                "KimiRefreshLoginHint": "On: an expired Kimi Code login is refreshed under the Kimi Code CLI’s own lock, which rewrites ~/.kimi-code/credentials/<slot>.json. Off: the key only reads it and asks you to run kimi.",
+                "GeminiCloudProjectHint": "Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota; empty uses $GOOGLE_CLOUD_PROJECT."
             },
             "Session": {
                 "Title": "Claude Sessions",
@@ -311,52 +322,92 @@
             },
             "KimiUsage": {
                 "Title": "Kimi Usage",
-                "Tip": "Shows a Kimi Code usage limit as a live meter",
+                "Tip": "Shows a Kimi usage limit (Kimi Code plan, or the Kimi Work context) as a live meter",
                 "UI": {
                     "metric": "Usage limit",
-                    "metricDefault": "Default",
+                    "metricDefault": "Default (5-hour limit when available)",
                     "showResetTime": "Show time until reset",
                     "showMark": "Show Kimi mark",
                     "checking": "Checking…",
                     "connected": "Connected",
-                    "notAvailable": "Not available: {error}"
+                    "notAvailable": "Not available: {error}",
+                    "metric5h": "5-hour limit",
+                    "metricWeekly": "Weekly limit",
+                    "metricMonthly": "Monthly limit",
+                    "metricMonthlyCode": "Monthly limit, Kimi Code share",
+                    "metricExtra": "Extra usage (booster)",
+                    "metricContext": "Context window of the current Kimi Work task",
+                    "lang": "Key language",
+                    "contextHint": "Read from the Kimi desktop app on this computer: how full the running (or latest) Kimi Work task's context window is. No login needed.",
+                    "contextOnly": "Only the Kimi Work context is available. Log in with Kimi Code (run kimi login) for plan limits.",
+                    "errorNotInstalled": "Neither Kimi Code nor the Kimi desktop app was found on this computer.",
+                    "errorNotConfigured": "No Kimi usage data yet. Log in with Kimi Code (run kimi login) for plan limits.",
+                    "errorNoCredentials": "Kimi Code is not logged in. Run kimi login in a terminal.",
+                    "errorUnauthorized": "The Kimi Code login has expired. Run kimi login (or kimi, to refresh it) in a terminal.",
+                    "errorUnsupported": "This login reports no Kimi Code plan usage.",
+                    "errorRateLimited": "Rate limited by Kimi. The key retries later.",
+                    "errorNetwork": "Kimi could not be reached. Check your connection."
                 }
             },
             "KimiSession": {
                 "Title": "Kimi Sessions",
-                "Tip": "Shows whether your latest Kimi Code session is working, done, or waiting for you; press to list running sessions",
+                "Tip": "Shows whether your latest Kimi Code session or Kimi Work task is working, done, or waiting for you; press to list running sessions",
                 "UI": {
                     "projectFilter": "Project filter",
-                    "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
+                    "projectFilterHint": "Part of the Kimi Code project path or the Kimi Work project; leave empty for the latest session",
                     "idleMinutes": "Idle after (minutes)",
                     "lang": "Key text language",
                     "showProject": "Show project name",
                     "showMark": "Show Kimi mark",
                     "checking": "Looking for sessions…",
                     "found": "Now showing: {project} — {state}",
-                    "notFound": "No Kimi Code session found in {dir}"
+                    "notFound": "No Kimi session found in {dir}",
+                    "source": "Sessions from",
+                    "sourceAuto": "Kimi Code and Kimi Work",
+                    "sourceDesktop": "Kimi Work (Kimi app)",
+                    "sourceCli": "Kimi Code (CLI)",
+                    "includeAutomations": "Include scheduled tasks"
                 }
             },
             "KimiNewSession": {
                 "Title": "Kimi New Session",
-                "Tip": "Opens a new Kimi Code session",
+                "Tip": "Opens a new Kimi Code session in a terminal, or Kimi Work in the Kimi app",
                 "UI": {
-                    "folder": "Project folder (optional)",
-                    "folderHint": "Absolute path or ~/…; leave empty for your home folder",
-                    "lang": "Key text language"
+                    "folder": "Project folder (Kimi Code)",
+                    "folderHint": "Absolute path or ~/…; Kimi Code starts there (empty: your home folder). The Kimi app takes no folder",
+                    "lang": "Key text language",
+                    "target": "Open in",
+                    "targetAuto": "Automatic",
+                    "targetDesktop": "Kimi Work (Kimi app)",
+                    "targetCli": "Kimi Code in a terminal",
+                    "cliMode": "Kimi Code mode",
+                    "cliModeNew": "New session",
+                    "cliModeContinue": "Continue the last session",
+                    "cliModePlan": "Plan mode"
                 }
             },
             "GeminiUsage": {
                 "Title": "Gemini Usage",
-                "Tip": "Shows a Gemini CLI usage limit as a live meter",
+                "Tip": "Shows your Gemini CLI quota (Gemini Code Assist Standard or Enterprise) as a live meter",
                 "UI": {
                     "metric": "Usage limit",
-                    "metricDefault": "Default",
+                    "metricDefault": "Default (most used model)",
                     "showResetTime": "Show time until reset",
                     "showMark": "Show Gemini mark",
                     "checking": "Checking…",
                     "connected": "Connected",
-                    "notAvailable": "Not available: {error}"
+                    "notAvailable": "Not available: {error}",
+                    "metricPro": "Pro (most used Pro model)",
+                    "metricFlash": "Flash (most used Flash model)",
+                    "metricPooled": "Auto (Pro and Flash together)",
+                    "metricModel": "Model: {name}",
+                    "connectedTier": "Connected — {tier}",
+                    "hintCli": "Install Gemini CLI, or set its program and folder in the plugin settings.",
+                    "hintRelogin": "Run gemini in a terminal and choose “Login with Google”.",
+                    "hintPersonal": "Since 18 June 2026 Google no longer serves Gemini CLI quota to personal Google accounts (Code Assist for individuals, Google AI Pro and Ultra). Only Gemini Code Assist Standard and Enterprise report quota.",
+                    "hintLogin": "Only Gemini CLI's “Login with Google” reports quota. API key and Vertex AI logins have none.",
+                    "hintProject": "Enter your Google Cloud project ID under “Gemini Cloud project” in the plugin settings.",
+                    "lang": "Key text language"
                 }
             },
             "GeminiSession": {
@@ -371,16 +422,29 @@
                     "showMark": "Show Gemini mark",
                     "checking": "Looking for sessions…",
                     "found": "Now showing: {project} — {state}",
-                    "notFound": "No Gemini CLI session found in {dir}"
+                    "notFound": "No Gemini CLI session found in {dir}",
+                    "liveDetection": "Follow running Gemini CLIs",
+                    "liveDetectionHint": "Reads the process list (ps, lsof) every 10 s to tell running sessions from stopped ones; off: judge from the session files only"
                 }
             },
             "GeminiNewSession": {
                 "Title": "Gemini New Session",
-                "Tip": "Opens a new Gemini CLI session",
+                "Tip": "Opens a new Gemini CLI session in Terminal",
                 "UI": {
                     "folder": "Project folder (optional)",
                     "folderHint": "Absolute path or ~/…; leave empty for your home folder",
-                    "lang": "Key text language"
+                    "lang": "Key text language",
+                    "target": "Open in",
+                    "targetTerminal": "Terminal (Gemini CLI)",
+                    "targetApp": "Gemini app (new chat)",
+                    "approvalMode": "Approval mode",
+                    "approvalDefault": "Ask (default)",
+                    "approvalAutoEdit": "Auto-approve edits",
+                    "approvalYolo": "Approve everything (YOLO)",
+                    "approvalPlan": "Plan (read-only)",
+                    "resume": "Resume latest session",
+                    "terminalHint": "Opens Terminal and runs the Gemini CLI in the folder.",
+                    "appHint": "Opens a new chat in the Gemini app: no project folder, not a CLI session."
                 }
             }
         },
@@ -411,7 +475,10 @@
                 "KimiDesktopDir": "Kimi 桌面版数据目录（可选）",
                 "KimiRefreshLogin": "自动刷新过期的 Kimi Code 登录",
                 "GeminiDir": "Gemini CLI 目录（可选）",
-                "GeminiPath": "Gemini CLI 程序（可选）"
+                "GeminiPath": "Gemini CLI 程序（可选）",
+                "GeminiCloudProject": "Gemini Cloud 项目（可选）",
+                "KimiRefreshLoginHint": "开启：在 Kimi Code CLI 自己的锁下刷新过期的 Kimi Code 登录，会改写 ~/.kimi-code/credentials/<slot>.json。关闭：按键只读取登录信息，过期时提示你运行 kimi。",
+                "GeminiCloudProjectHint": "Gemini Code Assist 标准版或企业版配额使用的 Google Cloud 项目 ID；留空则使用 $GOOGLE_CLOUD_PROJECT。"
             },
             "Session": {
                 "Title": "Claude 会话",
@@ -449,52 +516,92 @@
             },
             "KimiUsage": {
                 "Title": "Kimi 用量",
-                "Tip": "以实时仪表显示 Kimi Code 的用量限制",
+                "Tip": "以实时仪表显示 Kimi 用量限制（Kimi Code 套餐，或 Kimi Work 上下文）",
                 "UI": {
                     "metric": "用量限制",
-                    "metricDefault": "默认",
+                    "metricDefault": "默认（优先 5 小时限额）",
                     "showResetTime": "显示距重置的时间",
                     "showMark": "显示 Kimi 标志",
                     "checking": "正在检查…",
                     "connected": "已连接",
-                    "notAvailable": "不可用：{error}"
+                    "notAvailable": "不可用：{error}",
+                    "metric5h": "5 小时限额",
+                    "metricWeekly": "每周限额",
+                    "metricMonthly": "每月限额",
+                    "metricMonthlyCode": "每月限额（Kimi Code 部分）",
+                    "metricExtra": "加油包用量",
+                    "metricContext": "当前 Kimi Work 任务的上下文窗口",
+                    "lang": "按键语言",
+                    "contextHint": "读取本机 Kimi 桌面版的数据：正在运行（或最近）的 Kimi Work 任务的上下文窗口占用。无需登录。",
+                    "contextOnly": "仅能获取 Kimi Work 上下文。登录 Kimi Code（运行 kimi login）即可显示套餐限额。",
+                    "errorNotInstalled": "本机未找到 Kimi Code 或 Kimi 桌面版。",
+                    "errorNotConfigured": "暂无 Kimi 用量数据。登录 Kimi Code（运行 kimi login）即可显示套餐限额。",
+                    "errorNoCredentials": "Kimi Code 未登录。请在终端运行 kimi login。",
+                    "errorUnauthorized": "Kimi Code 登录已过期。请在终端运行 kimi login（或运行 kimi 以刷新）。",
+                    "errorUnsupported": "此账号没有 Kimi Code 套餐用量。",
+                    "errorRateLimited": "Kimi 请求受限，按键稍后自动重试。",
+                    "errorNetwork": "无法连接 Kimi，请检查网络连接。"
                 }
             },
             "KimiSession": {
                 "Title": "Kimi 会话",
-                "Tip": "显示最新的 Kimi Code 会话是在进行中、已完成，还是在等你；按下可列出运行中的会话",
+                "Tip": "显示最新的 Kimi Code 会话或 Kimi Work 任务是在进行中、已完成，还是在等你；按下可列出运行中的会话",
                 "UI": {
                     "projectFilter": "项目筛选",
-                    "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
+                    "projectFilterHint": "Kimi Code 项目路径或 Kimi Work 项目名的一部分；留空则显示最新的会话",
                     "idleMinutes": "多久后视为空闲（分钟）",
                     "lang": "按键文字语言",
                     "showProject": "显示项目名",
                     "showMark": "显示 Kimi 标志",
                     "checking": "正在查找会话…",
                     "found": "当前显示：{project} — {state}",
-                    "notFound": "在 {dir} 中没有找到 Kimi Code 会话"
+                    "notFound": "在 {dir} 中没有找到 Kimi 会话",
+                    "source": "会话来源",
+                    "sourceAuto": "Kimi Code 和 Kimi Work",
+                    "sourceDesktop": "Kimi Work（Kimi App）",
+                    "sourceCli": "Kimi Code（命令行）",
+                    "includeAutomations": "包含定时任务"
                 }
             },
             "KimiNewSession": {
                 "Title": "Kimi 新建会话",
-                "Tip": "打开新的 Kimi Code 会话",
+                "Tip": "在终端中打开新的 Kimi Code 会话，或在 Kimi App 中打开 Kimi Work",
                 "UI": {
-                    "folder": "项目文件夹（可选）",
-                    "folderHint": "绝对路径或 ~/…；留空则使用主目录",
-                    "lang": "按键文字语言"
+                    "folder": "项目文件夹（Kimi Code）",
+                    "folderHint": "绝对路径或 ~/…；Kimi Code 在此启动（留空则为主目录）。Kimi App 不支持指定文件夹",
+                    "lang": "按键文字语言",
+                    "target": "打开方式",
+                    "targetAuto": "自动",
+                    "targetDesktop": "Kimi Work（Kimi App）",
+                    "targetCli": "在终端中运行 Kimi Code",
+                    "cliMode": "Kimi Code 模式",
+                    "cliModeNew": "新会话",
+                    "cliModeContinue": "继续上次会话",
+                    "cliModePlan": "计划模式"
                 }
             },
             "GeminiUsage": {
                 "Title": "Gemini 用量",
-                "Tip": "以实时仪表显示 Gemini CLI 的用量限制",
+                "Tip": "以实时仪表显示 Gemini CLI 配额（Gemini Code Assist 标准版或企业版）",
                 "UI": {
                     "metric": "用量限制",
-                    "metricDefault": "默认",
+                    "metricDefault": "默认（用量最高的模型）",
                     "showResetTime": "显示距重置的时间",
                     "showMark": "显示 Gemini 标志",
                     "checking": "正在检查…",
                     "connected": "已连接",
-                    "notAvailable": "不可用：{error}"
+                    "notAvailable": "不可用：{error}",
+                    "metricPro": "Pro（用量最高的 Pro 模型）",
+                    "metricFlash": "Flash（用量最高的 Flash 模型）",
+                    "metricPooled": "自动（Pro 与 Flash 合计）",
+                    "metricModel": "模型：{name}",
+                    "connectedTier": "已连接 — {tier}",
+                    "hintCli": "请安装 Gemini CLI，或在插件设置中填写它的程序和目录。",
+                    "hintRelogin": "请在终端运行 gemini，并选择 “Login with Google” 登录。",
+                    "hintPersonal": "自 2026 年 6 月 18 日起，Google 不再为个人 Google 账号（Code Assist 个人版、Google AI Pro 和 Ultra）提供 Gemini CLI 配额。只有 Gemini Code Assist 标准版和企业版会返回配额。",
+                    "hintLogin": "只有 Gemini CLI 的 “Login with Google” 登录会返回配额，API Key 和 Vertex AI 登录没有配额信息。",
+                    "hintProject": "请在插件设置的 “Gemini Cloud 项目” 中填写 Google Cloud 项目 ID。",
+                    "lang": "按键文字语言"
                 }
             },
             "GeminiSession": {
@@ -509,16 +616,29 @@
                     "showMark": "显示 Gemini 标志",
                     "checking": "正在查找会话…",
                     "found": "当前显示：{project} — {state}",
-                    "notFound": "在 {dir} 中没有找到 Gemini CLI 会话"
+                    "notFound": "在 {dir} 中没有找到 Gemini CLI 会话",
+                    "liveDetection": "跟踪运行中的 Gemini CLI",
+                    "liveDetectionHint": "每 10 秒读取进程列表（ps、lsof），以区分运行中和已停止的会话；关闭后仅根据会话文件判断"
                 }
             },
             "GeminiNewSession": {
                 "Title": "Gemini 新建会话",
-                "Tip": "打开新的 Gemini CLI 会话",
+                "Tip": "在终端中打开新的 Gemini CLI 会话",
                 "UI": {
                     "folder": "项目文件夹（可选）",
                     "folderHint": "绝对路径或 ~/…；留空则使用主目录",
-                    "lang": "按键文字语言"
+                    "lang": "按键文字语言",
+                    "target": "打开方式",
+                    "targetTerminal": "终端（Gemini CLI）",
+                    "targetApp": "Gemini App（新对话）",
+                    "approvalMode": "审批模式",
+                    "approvalDefault": "询问（默认）",
+                    "approvalAutoEdit": "自动批准编辑",
+                    "approvalYolo": "全部自动批准（YOLO）",
+                    "approvalPlan": "计划（只读）",
+                    "resume": "恢复最近的会话",
+                    "terminalHint": "打开终端并在该文件夹中运行 Gemini CLI。",
+                    "appHint": "在 Gemini App 中打开新对话：没有项目文件夹，不是 CLI 会话。"
                 }
             }
         }

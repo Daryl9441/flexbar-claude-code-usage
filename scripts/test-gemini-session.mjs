@@ -970,4 +970,43 @@ describe('Gemini New Session launcher', () => {
     assert.equal(NS.newSessionLauncher.appName, 'Gemini CLI');
     await keys.dead(SERIAL, []);
   });
+
+  test('the error face names the problem; the launcher sees the global settings', async () => {
+    const cid = Kit.keyCid('gemini', 'newsession');
+    const hooks = drawHooks();
+    const titles = [];
+    const seen = [];
+    const keys = new NewSessionKeys({
+      ...hooks.deps,
+      loadConfig: async () => ({ geminiPath: '/opt/gemini/bin/gemini' }),
+      provider: {
+        cid,
+        brand: GEMINI_BRAND,
+        launcher: launcher({
+          isDirectory: () => true,
+          findCli: (request, config) => {
+            seen.push(config.geminiPath);
+            return null;
+          },
+        }),
+      },
+      launch: async () => assert.fail('nothing may open'),
+      run: async () => assert.fail('nothing may run'),
+      terminal: async () => assert.fail('no terminal'),
+      render: (width, view) => {
+        titles.push(view.title);
+        return 'data:image/png;base64,';
+      },
+      home: HOME,
+      platform: 'darwin',
+      timings: { openingMs: 5, errorMs: 50 },
+    });
+    const key = { uid: 1, cid, width: 120, data: { lang: 'zh' } };
+    await keys.alive(SERIAL, [key]);
+    assert.equal(await keys.press(SERIAL, key), false);
+    await hooks.settle();
+    assert.deepEqual(seen, ['/opt/gemini/bin/gemini']);
+    assert.ok(titles.includes('未找到 Gemini CLI'), titles.join(' | '));
+    await keys.dead(SERIAL, []);
+  });
 });
