@@ -1,9 +1,12 @@
 /**
  * Runtime helpers shared by the key groups and the providers: key ids,
- * the provider error type and its key-face texts, mark settings, and
- * builders for session statuses, running-list entries and notices.
- * Pure (no fs, no canvas, no network).
+ * folder settings, the provider error type and its key-face texts, mark
+ * settings, and builders for session statuses, running-list entries and
+ * notices. Pure (no fs, no canvas, no network).
  */
+import os from 'node:os';
+import path from 'node:path';
+
 import { safeErrorMessage } from '../redact';
 import { RunningGroup, runningGroup } from '../session';
 import { ViewTone } from '../sessionView';
@@ -39,6 +42,37 @@ export function keyCid(provider: ProviderId, kind: KeyKind): string {
 
 export function pick(text: Localized | string, lang: Lang): string {
   return typeof text === 'string' ? text : text[lang];
+}
+
+// --- folders -------------------------------------------------------------------
+
+/** `~` expansion for user-entered paths (quotes around a pasted path dropped). */
+export function expandHome(input: string, home: string = os.homedir()): string {
+  let p = input.trim();
+  if (/^(["']).+\1$/.test(p)) p = p.slice(1, -1).trim();
+  if (p === '~') return home;
+  if (p.startsWith('~/') || p.startsWith('~\\'))
+    return path.join(home, p.slice(2));
+  return p;
+}
+
+/**
+ * A folder setting: the user's override (absolute, ~ expanded), else the
+ * environment variable's value, else the fallback. Empty strings count as
+ * not set.
+ */
+export function resolveDir(
+  override: unknown,
+  envValue: string | undefined,
+  fallback: string,
+  home: string = os.homedir()
+): string {
+  for (const value of [override, envValue]) {
+    if (typeof value === 'string' && value.trim()) {
+      return path.resolve(home, expandHome(value, home));
+    }
+  }
+  return fallback;
 }
 
 // --- errors ------------------------------------------------------------------

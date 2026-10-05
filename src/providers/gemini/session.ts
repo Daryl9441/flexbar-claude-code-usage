@@ -9,8 +9,8 @@
  *
  * Contract (see ../types.ts SessionProvider/SessionSource and
  * architecture.md):
- * - location(config): the folder sessions are read from (config.geminiDir
- *   overrides the default); keys restart the source when it changes.
+ * - location(config): the folder sessions are read from (geminiHome() in
+ *   ./paths.ts); keys restart the source when it changes.
  * - create(): a SessionSource that watches/polls read-only, calls onChange()
  *   after every refresh (at least once after start()), and answers
  *   getStatus() with a SessionStatus (build it with makeStatus() from
@@ -25,10 +25,11 @@ import { staticSessionSource, unavailableNotice } from '../kit';
 import { SessionDescription, SessionProvider } from '../types';
 
 import { GEMINI_BRAND } from './brand';
+import { geminiHome } from './paths';
 
 export const sessionProvider: SessionProvider = {
-  // TODO(gemini-session): resolve the Gemini data folder (config.geminiDir first)
-  location: () => '',
+  // the Gemini CLI home (./paths.ts); a change restarts the source
+  location: config => geminiHome(config),
 
   // TODO(gemini-session): return a real SessionSource
   create: options =>

@@ -28,6 +28,8 @@ const V = req('sessionView.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
 const { GEMINI_BRAND } = req('providers/gemini/brand.js');
 const { CLAUDE_BRAND } = req('providers/claude/brand.js');
+const KimiPaths = req('providers/kimi/paths.js');
+const GeminiPaths = req('providers/gemini/paths.js');
 
 globalThis.fetch = async () => {
   throw new Error('network is disabled in tests');
@@ -257,6 +259,62 @@ describe('provider kit', () => {
     source.stop();
     await source.rescan();
     assert.equal(changes, 1);
+  });
+});
+
+// --- data folders --------------------------------------------------------------
+
+describe('data folders', () => {
+  test('expandHome and resolveDir', () => {
+    assert.equal(Kit.expandHome('~', HOME), HOME);
+    assert.equal(Kit.expandHome('~/a b', HOME), '/Users/you/a b');
+    assert.equal(Kit.expandHome(' "~/q" ', HOME), '/Users/you/q');
+    assert.equal(Kit.expandHome('/abs', HOME), '/abs');
+    assert.equal(Kit.resolveDir('~/x', '/env', '/fb', HOME), '/Users/you/x');
+    assert.equal(Kit.resolveDir('  ', '/env', '/fb', HOME), '/env');
+    assert.equal(Kit.resolveDir(undefined, '', '/fb', HOME), '/fb');
+    assert.equal(Kit.resolveDir('rel', undefined, '/fb', HOME), '/Users/you/rel');
+  });
+
+  test('Kimi: setting, then environment, then the default', () => {
+    assert.equal(KimiPaths.kimiCodeHome({}, {}, HOME), '/Users/you/.kimi-code');
+    assert.equal(
+      KimiPaths.kimiCodeHome({}, { KIMI_CODE_HOME: '/opt/kc' }, HOME),
+      '/opt/kc'
+    );
+    assert.equal(
+      KimiPaths.kimiCodeHome({ kimiDir: '~/k' }, { KIMI_CODE_HOME: '/opt/kc' }, HOME),
+      '/Users/you/k'
+    );
+    assert.equal(
+      KimiPaths.kimiDesktopDir({}, 'darwin', {}, HOME),
+      '/Users/you/Library/Application Support/kimi-desktop'
+    );
+    assert.equal(
+      KimiPaths.kimiDesktopDir({}, 'linux', {}, HOME),
+      '/Users/you/.config/kimi-desktop'
+    );
+    assert.equal(
+      KimiPaths.kimiDesktopDir({ kimiDesktopDir: '~/kd' }, 'darwin', {}, HOME),
+      '/Users/you/kd'
+    );
+  });
+
+  test('Gemini: setting, then $GEMINI_CLI_HOME/.gemini, then ~/.gemini', () => {
+    assert.equal(GeminiPaths.geminiHome({}, {}, HOME), '/Users/you/.gemini');
+    assert.equal(
+      GeminiPaths.geminiHome({}, { GEMINI_CLI_HOME: '/srv/g' }, HOME),
+      '/srv/g/.gemini'
+    );
+    assert.equal(
+      GeminiPaths.geminiHome({ geminiDir: '~/g' }, { GEMINI_CLI_HOME: '/srv/g' }, HOME),
+      '/Users/you/g'
+    );
+    assert.equal(GeminiPaths.geminiPathSetting({}, HOME), null);
+    assert.equal(
+      GeminiPaths.geminiPathSetting({ geminiPath: '~/bin/gemini' }, HOME),
+      '/Users/you/bin/gemini'
+    );
   });
 });
 

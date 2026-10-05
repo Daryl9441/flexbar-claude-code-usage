@@ -7,7 +7,8 @@
  * outside src/providers/kimi/, ui/kimi_usage.vue and
  * scripts/test-kimi-usage.mjs.
  *
- * Contract (see ../types.ts UsageSource and architecture.md):
+ * Data folders: kimiCodeHome() / kimiDesktopDir() in ./paths.ts (shared, do not
+ * re-implement). Contract (see ../types.ts UsageSource and architecture.md):
  * - fetch(config) returns every limit as { id, label, percent, resetsAt };
  *   ids are stored in the key's `metric` setting, labels go on the chip.
  * - Throw ProviderError (../kit.ts) with a fitting code: 'not-installed',

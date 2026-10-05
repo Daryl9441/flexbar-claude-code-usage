@@ -9,7 +9,8 @@
  *   { kind: 'terminal', command: ['gemini'], cwd: request.folder }  (CLI)
  *   { kind: 'command', file: '/abs/path', args: […] }
  * The key group opens it through execFile (never a shell) and tests stub the
- * opener. Throw ProviderError('not-installed', …) when Gemini is missing.
+ * opener. Data folders: geminiHome() / geminiPathSetting() in ./paths.ts. Throw
+ * ProviderError('not-installed', …) when Gemini is missing.
  */
 import { ProviderError } from '../kit';
 import { LaunchTarget, NewSessionLauncher, NewSessionRequest } from '../types';

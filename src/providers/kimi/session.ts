@@ -9,8 +9,9 @@
  *
  * Contract (see ../types.ts SessionProvider/SessionSource and
  * architecture.md):
- * - location(config): the folder sessions are read from (config.kimiDir
- *   overrides the default); keys restart the source when it changes.
+ * - location(config): what sessions are read from (./paths.ts resolves the
+ *   Kimi Code home and the desktop data folder); keys restart the source
+ *   when it changes.
  * - create(): a SessionSource that watches/polls read-only, calls onChange()
  *   after every refresh (at least once after start()), and answers
  *   getStatus() with a SessionStatus (build it with makeStatus() from
@@ -21,14 +22,18 @@
  * Never write to Kimi's files; never log titles, prompts or paths beyond
  * what the existing Claude code logs.
  */
+import path from 'node:path';
+
 import { staticSessionSource, unavailableNotice } from '../kit';
 import { SessionDescription, SessionProvider } from '../types';
 
 import { KIMI_BRAND } from './brand';
+import { kimiCodeHome, kimiDesktopDir } from './paths';
 
 export const sessionProvider: SessionProvider = {
-  // TODO(kimi-session): resolve the Kimi data folder (config.kimiDir first)
-  location: () => '',
+  // both data roots (./paths.ts): a change of either restarts the source
+  location: config =>
+    [kimiCodeHome(config), kimiDesktopDir(config)].join(path.delimiter),
 
   // TODO(kimi-session): return a real SessionSource
   create: options =>
