@@ -71,7 +71,11 @@ repository owner requires this without exception.
    works too: `export PRIVACY_DENYLIST=~/.config/privacy-denylist`. Leave out
    your public GitHub user name; it is in every commit. The session ids of the
    transcripts on your machine (file names in `~/.claude/projects`) are denied
-   automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off.
+   automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off. A git worktree
+   has its own root, so the scanner and hooks there do not see the main
+   clone's `.privacy-denylist.local`: export `PRIVACY_DENYLIST` (pointing at
+   the main clone's file, or a file outside the repository) before running
+   checks or committing in a worktree.
 
 **Accepted exception (owner decision, 2026-10-05):** the fork's earliest own
 commits (527603b, 62195b6, ccd6975, 2b57e20, 3689257, 2319505, and e1752e4 on
@@ -120,6 +124,7 @@ npx eslint "src/**/*.ts"      # lint + Prettier (npm run format fixes)
 npx tsc --noEmit -p .         # type check
 npm run test:session          # Session Status tests (tsc -> .test-build/, node --test)
 npm run test:newsession       # New Session key tests (launcher stubbed; never opens a link)
+npm run test:usage            # Usage Meter tests: remaining %, dual-key layout (tsc -> .test-build/, node --test)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
@@ -137,9 +142,10 @@ npm run check:privacy:all     # privacy scan of every local branch and origin, m
 ## Rendering keys
 
 Key images are 60 px tall PNGs drawn with `@napi-rs/canvas` (`src/render.ts`,
-`src/sessionRender.ts`, fonts in `src/fonts.ts`). For results identical to the
-device, render with FlexDesigner's own runtime instead of your local Node:
-compile the needed `src/*.ts` (include `src/fonts.ts`) to CommonJS with
+`src/usageDualRender.ts`, `src/sessionRender.ts`, fonts in `src/fonts.ts`).
+For results identical to the device, render with FlexDesigner's own runtime
+instead of your local Node: compile the needed `src/*.ts` (include
+`src/fonts.ts`) to CommonJS with
 `tsc --outDir <tmp> --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node`,
 then run a script that writes PNGs to a temp directory:
 
@@ -170,8 +176,10 @@ outside the repository with `assert` changed to `with` in
   `~/.claude/.credentials.json`, macOS Keychain), refreshes them and writes the
   new pair back. `src/api.ts`: usage endpoint client (`UsageError`).
   `src/redact.ts`: credential redaction for logs and key text.
-- Usage meter key: `src/usage.ts`, `src/render.ts`, `src/clawd.ts`,
-  `src/fonts.ts`, `src/types.ts`.
+- Usage meter key: `src/usage.ts`, `src/render.ts` (one limit, used %),
+  `src/usageDualRender.ts` (the default 5h + 7d remaining face; `dualLayout`
+  places it and is what the tests check), `src/clawd.ts`, `src/fonts.ts`,
+  `src/types.ts`.
 - Session Status key: `src/session.ts` (transcript parser, status derivation),
   `src/sessionSource.ts` (`SessionMonitor`: transcripts in `~/.claude/projects`,
   live status in `~/.claude/sessions`), `src/sessionView.ts` (view model,

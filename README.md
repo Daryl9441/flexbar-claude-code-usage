@@ -116,11 +116,13 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Usage limit | 5 hours + weekly (remaining) | 5 hours + weekly (remaining), Session (5 h), Weekly (all models), or Weekly (per model) |
+| Usage limit | 5 hours + weekly (remaining) | 5 hours + weekly (remaining), or one limit as used: Session (5 hours), Weekly (all models), or Weekly (per model) |
 | Show time until reset | on | Show the countdown until the limit resets |
-| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter (single-limit meters only) |
+| Show Clawd | off | Show Clawd, the Claude Code crab, next to the meter (single-limit meters on keys from about 170 px) |
 
-**5 hours + weekly (remaining)** shows the 5-hour window in the top row (`5h`) and the weekly window, all models, in the bottom row (`7d`). The number is what is left, 100% minus what you have used: green while plenty is left, orange as it runs low, red when almost nothing is left. The bar empties like a battery. From about 130 px the time until each limit resets (↻) appears above its bar, and from about 225 px in a column of its own; on narrower keys it is shown only for a limit that has run out. Keys narrower than about 100 px leave out the bars. New keys are 120 px wide; widen a key that shows a single limit to see the chip naming the limit.
+**5 hours + weekly (remaining)** shows the 5-hour window in the top row (`5h`) and the weekly window, all models, in the bottom row (`7d`). The number is what is left, 100% minus what you have used: green while plenty is left, orange as it runs low, red when almost nothing is left. The gauge is a battery that empties as you use the limit; next to a full battery the number reads `100`, without the `%`. From about 135 px the time until each limit resets (↻) appears above its battery, and from about 225 px in a column of its own. Between about 97 and 135 px only a limit that has run out shows it, in place of its empty battery and where it fits: any countdown fits from about 113 px, so the default 120 px key always shows it. Keys narrower than about 97 px leave out the batteries and the countdowns.
+
+New keys are 120 px wide. At that width a single-limit meter names its limit with a short `5h` or `7d` chip; on wider keys the chip says Session or Weekly.
 
 In the single-limit meters the countdown sits next to the percentage; on narrow keys with Clawd enabled it moves below the progress bar. A custom background color set in the key's style editor is used as the key background in every mode.
 
