@@ -73,6 +73,14 @@ repository owner requires this without exception.
    transcripts on your machine (file names in `~/.claude/projects`) are denied
    automatically; `PRIVACY_LOCAL_SESSIONS=0` turns that off.
 
+**Accepted exception (owner decision, 2026-10-05):** the fork's earliest own
+commits (527603b, 62195b6, ccd6975, 2b57e20, 3689257, 2319505, and e1752e4 on
+the local `diag/stripes`) carry the owner's personal git identity. The owner
+chose to keep them as they are: do not rewrite or force-push them. History
+scans (`check:privacy:history`, `check:privacy:all`) will keep listing them;
+the pre-push hook and CI only scan new commits, so they don't block pushes.
+New commits use the noreply identity.
+
 **If private data was already committed or pushed:**
 
 1. A credential: revoke or rotate it first (log in to Claude Code again,
