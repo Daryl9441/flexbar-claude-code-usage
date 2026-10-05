@@ -1,0 +1,23 @@
+# Values verified to be PUBLIC, so scripts/check-privacy.mjs does not report
+# them. One JavaScript regular expression per line, tested against the matched
+# text (a leading "(?i)" makes it case-insensitive). Every entry needs a comment
+# saying why the value is public. Never add a real token, key, personal email
+# address, local path or serial number here: remove the data instead.
+
+# Claude Code's OAuth client id (src/credentials.ts, refresh_token grant). It is
+# a public client id that ships inside every Claude Code install; the client has
+# no secret, and the id alone grants nothing.
+^9d1c250a-e61b-44d9-88ed-5944d1962f5e$
+
+# Synthetic home directories in the Session Status test fixtures
+# (scripts/test-session.mjs): "dev" and "x" are made-up accounts.
+^/Users/(?:dev|x)$
+
+# Contact address inside the npm registry's deprecation notice for old glob
+# versions, copied verbatim into package-lock.json by npm. It is published by
+# the glob maintainer in public registry metadata; it is not ours.
+^i@izs\.me$
+
+# GitHub's committer address for commits made in its web UI (e.g. merging a
+# pull request); it belongs to GitHub, not to a person.
+^noreply@github\.com$

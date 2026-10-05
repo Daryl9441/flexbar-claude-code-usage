@@ -1,6 +1,7 @@
 import { logger, plugin } from '@eniac/flexdesigner';
 
 import { UsageError, fetchUsage } from './api';
+import { safeErrorMessage } from './redact';
 import { renderMessageKey, renderUsageKey } from './render';
 import { SESSION_CID, SessionKeys } from './sessionKey';
 import { Config, Metric, UsageData } from './types';
@@ -73,7 +74,7 @@ function errorKeyText(error: unknown): KeyText {
         return { title: 'Network error', message: 'Check your connection' };
     }
   }
-  return { title: 'Claude Code', message: `${error}` };
+  return { title: 'Claude Code', message: safeErrorMessage(error) };
 }
 
 /**
@@ -267,7 +268,7 @@ async function doRefresh() {
     clearLock();
   } catch (error) {
     lastError = errorKeyText(error);
-    logger?.error('Failed to fetch Claude usage:', error);
+    logger?.error(`Failed to fetch Claude usage: ${safeErrorMessage(error)}`);
     if (error instanceof UsageError && error.code === 'rate-limited') {
       setLock(error.retryAfterSeconds ?? DEFAULT_LOCKOUT_SECONDS);
     } else {
@@ -397,7 +398,8 @@ plugin.on('ui.message', async payload => {
         weekly: weekly?.percent ?? null,
       };
     } catch (error) {
-      const message = error instanceof UsageError ? error.message : `${error}`;
+      const message =
+        error instanceof UsageError ? error.message : safeErrorMessage(error);
       return { success: false, error: message };
     }
   }

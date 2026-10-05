@@ -1,0 +1,14 @@
+#!/bin/sh
+# Blocks a commit whose staged changes contain tokens, API keys, personal
+# email addresses, local paths or other private data, or whose author or
+# committer identity is not the GitHub noreply address.
+# Activate once per clone with: npm run setup:hooks
+root=$(git rev-parse --show-toplevel) || exit 1
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "pre-commit: node not found; the privacy check cannot run." >&2
+    echo "Install Node >= 18 (or fix PATH for your git client) and commit again." >&2
+    exit 1
+fi
+
+exec node "$root/scripts/check-privacy.mjs" --staged </dev/null
