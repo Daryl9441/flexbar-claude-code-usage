@@ -24,6 +24,9 @@ export type KeyKind = 'usage' | 'session' | 'newsession';
 export type Key = any;
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/** A key's settings (key.data), as its settings page stores them. */
+export type KeyData = Record<string, unknown>;
+
 /**
  * Global plugin settings (ui/global_config.vue). Providers read their own
  * optional fields; unknown fields are passed through untouched.
@@ -137,8 +140,11 @@ export interface UsageSource {
    * blip) instead of the error face (default: false, like Claude).
    */
   keepLastOnError?(error: unknown): boolean;
-  /** Settings UI reply (default: fetch and list the metrics) */
-  describe?(config: PluginConfig): Promise<UsageDescription>;
+  /**
+   * Settings UI reply (default: fetch and list the metrics). `data` is the
+   * key's settings when its page sends them (`settings` in the message).
+   */
+  describe?(config: PluginConfig, data?: KeyData): Promise<UsageDescription>;
 }
 
 // --- session status ------------------------------------------------------------
@@ -180,14 +186,27 @@ export interface SessionSource {
   setFilters(filters: string[]): void;
   /** Largest idle threshold of the alive keys, in ms (running-list window). */
   setRunningWindow(ms: number): void;
-  /** The session a key with this filter shows at `now`. */
-  getStatus(filter: string, now: number, idleMs: number): SessionPick;
+  /**
+   * The session a key with this filter shows at `now`. `data` is the key's
+   * settings (key.data) for provider-specific options; Claude ignores it.
+   */
+  getStatus(
+    filter: string,
+    now: number,
+    idleMs: number,
+    data?: KeyData
+  ): SessionPick;
   /**
    * Running sessions for the press list, ordered (sortRunning). Only
    * status.title / status.project, group and at are used; build entries
    * with runningItem() (./kit.ts) when there is no full status.
    */
-  listRunning(filter: string, now: number, idleMs: number): RunningSession[];
+  listRunning(
+    filter: string,
+    now: number,
+    idleMs: number,
+    data?: KeyData
+  ): RunningSession[];
   /** Why there is nothing to show (not installed, not set up), or null. */
   notice?(): SessionNotice | null;
 }
@@ -212,8 +231,15 @@ export interface SessionProvider {
   location(config: PluginConfig): string;
   /** A new source; nothing may run before start(). */
   create(options: SessionSourceOptions): SessionSource;
-  /** What a key with this filter would show now (one-off scan). */
-  describe(filter: string, config: PluginConfig): Promise<SessionDescription>;
+  /**
+   * What a key with this filter would show now (one-off scan). `data` is
+   * the key's settings when its page sends them (`settings` in the message).
+   */
+  describe(
+    filter: string,
+    config: PluginConfig,
+    data?: KeyData
+  ): Promise<SessionDescription>;
 }
 
 // --- new session -------------------------------------------------------------
@@ -272,6 +298,8 @@ export type UiMessage = {
   data?: unknown;
   /** Key the message is about; legacy Claude messages have none */
   cid?: unknown;
+  /** The key's settings (modelValue.data), sent by the provider pages */
+  settings?: unknown;
   [key: string]: unknown;
 };
 

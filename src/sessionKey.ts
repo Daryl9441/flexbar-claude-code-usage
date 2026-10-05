@@ -11,6 +11,7 @@ import { keyCid, markOptions, staticSessionSource } from './providers/kit';
 import {
   Brand,
   Key,
+  KeyData,
   KeyGroup,
   KeyHost,
   PluginConfig,
@@ -189,14 +190,20 @@ export class SessionKeys implements KeyGroup {
   /** Settings UI: 'session-status' asks what a key with a filter shows. */
   async message(payload: UiMessage): Promise<unknown> {
     if (payload.data !== 'session-status') return undefined;
-    return this.describe(`${payload.filter ?? ''}`);
+    const settings = payload.settings;
+    return this.describe(
+      `${payload.filter ?? ''}`,
+      settings && typeof settings === 'object'
+        ? (settings as KeyData)
+        : undefined
+    );
   }
 
   /** For the key settings page: what a key with this filter would show. */
-  async describe(filter: string): Promise<SessionDescription> {
+  async describe(filter: string, data?: KeyData): Promise<SessionDescription> {
     const config = (await this.deps.loadConfig().catch(() => null)) ?? {};
     try {
-      return await this.provider.sessions.describe(filter, config);
+      return await this.provider.sessions.describe(filter, config, data);
     } catch (error) {
       this.warn('describe failed', error);
       return {
@@ -315,22 +322,27 @@ export class SessionKeys implements KeyGroup {
   private listPagesFor(key: Key, now: number): number {
     if (!this.monitor || !this.ready) return 1;
     const { filter, idleMs } = settingsOf(key, this.brand);
-    const count = this.running(filter, now, idleMs).length;
+    const count = this.running(filter, now, idleMs, key?.data ?? {}).length;
     return listPages(count, this.deps.keyWidth(key));
   }
 
-  private running(filter: string, now: number, idleMs: number) {
+  private running(filter: string, now: number, idleMs: number, data: KeyData) {
     try {
-      return this.monitor?.listRunning(filter, now, idleMs) ?? [];
+      return this.monitor?.listRunning(filter, now, idleMs, data) ?? [];
     } catch {
       return [];
     }
   }
 
-  private pick(filter: string, now: number, idleMs: number): SessionPick {
+  private pick(
+    filter: string,
+    now: number,
+    idleMs: number,
+    data: KeyData
+  ): SessionPick {
     try {
       return (
-        this.monitor?.getStatus(filter, now, idleMs) ?? {
+        this.monitor?.getStatus(filter, now, idleMs, data) ?? {
           status: null,
           others: 0,
         }
@@ -361,7 +373,7 @@ export class SessionKeys implements KeyGroup {
 
     if (page !== null && this.monitor && this.ready) {
       const list = buildListView(
-        this.running(settings.filter, now, settings.idleMs),
+        this.running(settings.filter, now, settings.idleMs, key?.data ?? {}),
         { lang: settings.lang, width, page }
       );
       return {
@@ -378,7 +390,8 @@ export class SessionKeys implements KeyGroup {
       const { status, others } = this.pick(
         settings.filter,
         now,
-        settings.idleMs
+        settings.idleMs,
+        key?.data ?? {}
       );
       const notice = status ? null : this.notice();
       view = notice

@@ -77,6 +77,7 @@ export default {
             try {
                 const response = await this.$fd.sendToBackend({
                     data: "usage-status",
+                    settings: this.modelValue.data,
                     cid: "dev.sese.flexbar_claude_code_usage.gemini_usage",
                 });
                 if (response && response.success) {

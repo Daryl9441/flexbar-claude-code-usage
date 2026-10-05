@@ -526,11 +526,19 @@ describe('UsageKeys', () => {
     const own = usageKeys({
       defaultMetric: '',
       fetch: async () => metrics,
-      describe: async config => ({ success: true, saw: config.kimiDir }),
+      describe: async (config, data) => ({
+        success: true,
+        saw: config.kimiDir,
+        data,
+      }),
     });
     assert.deepEqual(
-      await own.keys.message({ data: 'usage-status', config: { kimiDir: '~/k' } }),
-      { success: true, saw: '~/k' }
+      await own.keys.message({
+        data: 'usage-status',
+        config: { kimiDir: '~/k' },
+        settings: { metric: 'weekly' },
+      }),
+      { success: true, saw: '~/k', data: { metric: 'weekly' } }
     );
   });
 });
@@ -556,12 +564,18 @@ describe('SessionKeys with another provider', () => {
           rescan: async () => options.onChange(),
           setFilters: filters => (seen.filters = filters),
           setRunningWindow: ms => (seen.window = ms),
-          getStatus: () => ({ status, others: 0 }),
-          listRunning: () => running,
+          getStatus: (_f, _n, _i, data) => {
+            seen.statusData = data;
+            return { status, others: 0 };
+          },
+          listRunning: (_f, _n, _i, data) => {
+            seen.listData = data;
+            return running;
+          },
           notice: () => notice,
         };
       },
-      describe: async filter => ({
+      describe: async (filter, _config, data) => ({
         success: false,
         projectsDir: null,
         state: null,
@@ -569,6 +583,7 @@ describe('SessionKeys with another provider', () => {
         title: null,
         others: 0,
         filter,
+        data,
       }),
     };
     const h = host();
@@ -651,8 +666,15 @@ describe('SessionKeys with another provider', () => {
           {}
         )
       );
+      // the key's settings reach the source and the settings page reply
+      assert.deepEqual(seen.statusData, key.data);
+      assert.deepEqual(seen.listData, key.data);
       assert.deepEqual(
-        await keys.message({ data: 'session-status', filter: 'x' }),
+        await keys.message({
+          data: 'session-status',
+          filter: 'x',
+          settings: { source: 'cli' },
+        }),
         {
           success: false,
           projectsDir: null,
@@ -661,6 +683,7 @@ describe('SessionKeys with another provider', () => {
           title: null,
           others: 0,
           filter: 'x',
+          data: { source: 'cli' },
         }
       );
     } finally {

@@ -14,6 +14,7 @@ import {
 import {
   Brand,
   Key,
+  KeyData,
   KeyGroup,
   KeyHost,
   KeyText,
@@ -167,7 +168,13 @@ export class UsageKeys implements KeyGroup {
       {};
     if (this.source.describe) {
       try {
-        return await this.source.describe(config);
+        const settings = payload.settings;
+        return await this.source.describe(
+          config,
+          settings && typeof settings === 'object'
+            ? (settings as KeyData)
+            : undefined
+        );
       } catch (error) {
         return { success: false, error: this.logText(error) };
       }

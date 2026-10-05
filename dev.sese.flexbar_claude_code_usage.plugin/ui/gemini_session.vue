@@ -103,6 +103,7 @@ export default {
                     data: "session-status",
                     cid: "dev.sese.flexbar_claude_code_usage.gemini_session",
                     filter: this.modelValue.data.projectFilter || "",
+                    settings: this.modelValue.data,
                 });
                 const lang = this.modelValue.data.lang === "zh" ? "zh" : "en";
                 if (response && response.success) {
