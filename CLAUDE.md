@@ -59,6 +59,7 @@ npm run build                 # rollup: src/plugin.ts -> dev.sese.flexbar_claude
 npx eslint "src/**/*.ts"      # lint + Prettier (npm run format fixes)
 npx tsc --noEmit -p .         # type check
 npm run test:session          # Session Status tests (tsc -> .test-build/, node --test)
+npm run test:newsession       # New Session key tests (launcher stubbed; never opens a link)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
@@ -113,7 +114,13 @@ outside the repository with `assert` changed to `with` in
 - Session Status key: `src/session.ts` (transcript parser, status derivation),
   `src/sessionSource.ts` (`SessionMonitor`: transcripts in `~/.claude/projects`,
   live status in `~/.claude/sessions`), `src/sessionView.ts` (view model,
-  en/zh-CN), `src/sessionRender.ts`, `src/sessionKey.ts`.
+  en/zh-CN), `src/sessionRender.ts`, `src/sessionKey.ts` (a press lists the
+  running sessions, paged by `ListPager`).
+- New Session key: `src/newSession.ts` (builds the `claude://code/new` link),
+  `src/openUrl.ts` (hands it to the system opener via `execFile`, no shell;
+  errors drop the query so folder paths never reach the log),
+  `src/newSessionRender.ts`, `src/newSessionKey.ts`. Tests stub the launcher:
+  never open a `claude://` link or start the Claude app from a test.
 - `dev.sese.flexbar_claude_code_usage.plugin/`: `manifest.json` (keys, `local`
   strings for `en` and `zh-CN`), `ui/*.vue` key settings (file name = last
   segment of the key's cid), resources. `backend/` is build output.

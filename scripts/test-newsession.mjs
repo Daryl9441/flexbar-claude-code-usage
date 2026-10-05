@@ -21,7 +21,7 @@ const { loadImage } = require('@napi-rs/canvas');
 
 const HOME = '/Users/you';
 const CID = 'dev.sese.flexbar_claude_code_usage.newsession';
-const SERIAL = 'DEVICE-1';
+const SERIAL = 'FAKE-DEVICE-1';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const folderOf = url => new URL(url).searchParams.get('folder');
 
