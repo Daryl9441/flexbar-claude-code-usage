@@ -793,7 +793,7 @@ describe('diffs and identities', () => {
 
   test('redact never returns the whole value', () => {
     assert.equal(redact('short'), '*****');
-    assert.equal(redact(SAMPLES.ghp), `ghp_…(${SAMPLES.ghp.length} chars)`);
+    assert.equal(redact(SAMPLES.ghp), `****…(${SAMPLES.ghp.length} chars)`);
   });
 });
 

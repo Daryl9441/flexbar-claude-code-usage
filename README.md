@@ -69,7 +69,7 @@ A third key opens a new Claude Code session in the Claude desktop app with one t
 | Project folder | empty | Folder to start the session in: an absolute path or `~/…` (relative paths start from your home folder). Empty lets the app choose |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
 
-The key shows "Opening…" briefly after a tap, or "Claude app not found" if no app handles the link; taps within a second of each other count once. Keys 100 px wide or narrower show just the icon. The link is handed to the system opener (`open` on macOS, the URL protocol handler on Windows, `xdg-open` on Linux) directly, without a shell.
+The key shows "Opening…" briefly after a tap, or "Claude app not found" if no app handles the link (macOS and Linux; on Windows the system shows its own "get an app" prompt instead); taps within a second of each other count once. Keys 100 px wide or narrower show just the icon. The link is handed to the system opener (`open` on macOS, the URL protocol handler on Windows, `xdg-open` on Linux) directly, without a shell.
 
 ## How it works
 

@@ -82,7 +82,7 @@ repository owner requires this without exception.
    with `git filter-repo`. Remove extra worktrees first (`git worktree list`).
    For a personal address in commit metadata, use a mailmap file kept outside
    the repository, with lines like
-   `<name> <id>+<user>@users.noreply.github.com> <personal address>`:
+   `Your Name <ID+USER@users.noreply.github.com> <personal@example.com>`:
 
    ```sh
    git filter-repo --force --mailmap ~/private.mailmap \

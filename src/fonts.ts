@@ -37,6 +37,10 @@ export const FONT = [
   // Broad coverage and symbols
   '"Arial Unicode MS"',
   '"Segoe UI Symbol"',
+  // Emoji in session titles
+  '"Apple Color Emoji"',
+  '"Segoe UI Emoji"',
+  '"Noto Color Emoji"',
   `"${BUNDLED_CJK_ALIAS}"`,
   'sans-serif',
 ].join(', ');

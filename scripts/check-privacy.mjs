@@ -491,8 +491,9 @@ function loadLocalSessionIds() {
 /** Masks a match so output never repeats the secret itself. */
 export function redact(value) {
   const v = String(value);
+  // Never echo any part of a match: CI logs of a public repo are public too
   if (v.length <= 8) return '*'.repeat(v.length);
-  return `${v.slice(0, 4)}…(${v.length} chars)`;
+  return `****…(${v.length} chars)`;
 }
 
 function finding(rule, text, ctx, extra = {}) {
@@ -735,7 +736,9 @@ export function scanDiff(diffText, ctx = {}) {
     if (!inHunk) {
       // "+++ b/path" for text, "Binary files a/x and b/path differ" for binary
       const binary = BINARY_LINE.exec(line);
-      const target = line.startsWith('+++ ') ? line.slice(4) : binary?.[1];
+      const target = line.startsWith('+++ ')
+        ? line.slice(4).replace(/\t$/, '')
+        : binary?.[1];
       if (target !== undefined) {
         const unquoted = unquoteGitPath(target);
         file = unquoted === '/dev/null' ? null : unquoted.replace(/^b\//, '');
