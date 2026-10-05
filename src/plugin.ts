@@ -14,10 +14,18 @@ const MIN_FETCH_GAP_MS = 30_000;
 // Fallback lockout when a 429 comes without a Retry-After header
 const DEFAULT_LOCKOUT_SECONDS = 300;
 
+// Key widths FlexDesigner can report; images are always KEY_HEIGHT (60) tall
+const MIN_KEY_WIDTH = 60;
+const DEFAULT_KEY_WIDTH = 240;
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Key = any;
 
 const aliveKeys = new Map<string, Key[]>();
+// Devices reported disconnected: drawing to them only produces rejections
+const offlineDevices = new Set<string>();
+// All draws go through this chain so they reach FlexDesigner one at a time
+let drawChain: Promise<void> = Promise.resolve();
 
 let config: Config | null = null;
 let lastUsage: UsageData | null = null;
@@ -39,8 +47,22 @@ async function getConfigCached(): Promise<Config> {
   return config;
 }
 
+/**
+ * The pixel width of the key on the device. FlexDesigner sends it as
+ * `key.width` (mirrored in `key.style.width`) with every plugin.alive and
+ * plugin.data payload; the image we send must be exactly this wide, so it is
+ * rounded to whole pixels (a fractional canvas width gets truncated).
+ */
 function keyWidth(key: Key): number {
-  return key.width || key.style?.width || 240;
+  const width = Number(key?.width || key?.style?.width || DEFAULT_KEY_WIDTH);
+  if (!Number.isFinite(width)) return DEFAULT_KEY_WIDTH;
+  return Math.max(MIN_KEY_WIDTH, Math.round(width));
+}
+
+/** Shortens SDK errors, whose messages can embed the whole base64 image. */
+function describeError(error: unknown): string {
+  const text = error instanceof Error ? error.message : `${error}`;
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }
 
 // FlexDesigner default background colors, which we replace with our own theme
@@ -53,51 +75,84 @@ function userBgColor(key: Key): string | undefined {
   return bgColor;
 }
 
-async function drawKey(serialNumber: string, key: Key) {
-  let image: string;
+async function renderKey(key: Key): Promise<string> {
+  const width = keyWidth(key);
 
   if (lockedUntil && Date.now() < lockedUntil) {
     const lift = formatTimeUntilReset(new Date(lockedUntil).toISOString());
-    image = renderMessageKey(
-      keyWidth(key),
+    return renderMessageKey(
+      width,
       'Rate limited',
       `Usage data returns in ${lift}`
     );
-  } else if (lastUsage) {
+  }
+
+  if (lastUsage) {
     const metric: Metric = key.data?.metric || 'session';
     const snapshot = getMetricSnapshot(lastUsage, metric);
-    image = snapshot
-      ? await renderUsageKey(keyWidth(key), snapshot, {
+    return snapshot
+      ? renderUsageKey(width, snapshot, {
           showResetTime: key.data?.showResetTime !== false,
           showClawd: key.data?.showClawd === true,
           bgColor: userBgColor(key),
         })
-      : renderMessageKey(
-          keyWidth(key),
-          'Claude Code',
-          'No data for this limit'
-        );
-  } else {
-    image = renderMessageKey(
-      keyWidth(key),
-      'Claude Code',
-      lastError ?? 'Loading…'
-    );
+      : renderMessageKey(width, 'Claude Code', 'No data for this limit');
   }
 
+  return renderMessageKey(width, 'Claude Code', lastError ?? 'Loading…');
+}
+
+/** The current copy of a key, or null once it is dead or its device is gone. */
+function aliveKey(serialNumber: string, uid: unknown): Key | null {
+  if (offlineDevices.has(serialNumber)) return null;
+  return aliveKeys.get(serialNumber)?.find(key => key.uid === uid) ?? null;
+}
+
+/**
+ * Sends one key image and waits for FlexDesigner's acknowledgement.
+ * plugin.draw returns a promise that rejects when the device is gone or the
+ * key is no longer alive; left unhandled, that rejection terminates the
+ * plugin process, so every failure is caught and logged here.
+ */
+async function drawKey(serialNumber: string, uid: unknown) {
+  const key = aliveKey(serialNumber, uid);
+  if (!key) return;
   try {
-    plugin.draw(serialNumber, key, 'base64', image);
+    const image = await renderKey(key);
+    // The image covers the whole key: keep FlexDesigner from layering the
+    // key's default icon/title/emoji over it, like ENIAC's own
+    // flexbar-ai-dashboard plugin does before its base64 draws
+    const target = {
+      ...key,
+      style: {
+        ...key.style,
+        showIcon: false,
+        showTitle: false,
+        showEmoji: false,
+      },
+    };
+    await plugin.draw(serialNumber, target, 'base64', image);
   } catch (error) {
-    logger?.error('Error drawing key:', error);
+    logger?.warn(`Could not draw key ${uid}: ${describeError(error)}`);
   }
 }
 
-async function drawAll() {
-  for (const [serialNumber, keys] of aliveKeys) {
-    for (const key of keys) {
-      await drawKey(serialNumber, key);
+/**
+ * Redraws every alive key. Passes are queued so overlapping triggers (poll,
+ * key press, page load, rate-limit ticker) never interleave their draws, and
+ * each key is looked up again right before it is drawn.
+ */
+function drawAll(): Promise<void> {
+  const pass = drawChain.then(async () => {
+    const targets = [...aliveKeys].flatMap(([serialNumber, keys]) =>
+      keys.map(key => [serialNumber, key.uid] as const)
+    );
+    for (const [serialNumber, uid] of targets) {
+      await drawKey(serialNumber, uid);
     }
-  }
+  });
+  drawChain = pass.catch(() => undefined);
+  return drawChain;
 }
 
 function clearLock() {
@@ -182,26 +237,80 @@ function ensurePolling(restart = false) {
 }
 
 /**
- * Called when a plugin key is loaded onto a device page
+ * Called when plugin keys are loaded onto a device page (page switch, profile
+ * upload, device reconnect). The payload lists every alive key of this plugin
+ * on the device, with FlexDesigner's current uid and width for each.
  */
 plugin.on('plugin.alive', async payload => {
-  const keys = payload.keys.filter((key: Key) => key.cid === USAGE_CID);
-  aliveKeys.set(payload.serialNumber, keys);
-  if (keys.length === 0) return;
+  const serialNumber: string | undefined = payload?.serialNumber;
+  if (!serialNumber) return;
+  const keys: Key[] = (payload.keys ?? []).filter(
+    (key: Key) => key?.cid === USAGE_CID
+  );
+  offlineDevices.delete(serialNumber);
+  if (keys.length === 0) {
+    aliveKeys.delete(serialNumber);
+    return;
+  }
+  aliveKeys.set(serialNumber, keys);
+  logger?.info(
+    `Usage keys alive on ${serialNumber}: ` +
+      keys.map(key => `uid=${key.uid} width=${keyWidth(key)}`).join(', ')
+  );
 
   ensurePolling();
-  if (lastUsage) {
-    await drawAll();
+  // Always paint right away (cached data, error or "Loading…"), so the key
+  // never keeps showing whatever the device had before
+  await drawAll();
+  if (!lastUsage) await refresh();
+});
+
+/**
+ * Called when plugin keys leave the device page. Their uids are reassigned
+ * by the next profile upload, so drawing to them must stop immediately.
+ */
+plugin.on('plugin.dead', payload => {
+  const serialNumber: string | undefined = payload?.serialNumber;
+  if (!serialNumber) return;
+  const dead = new Set((payload.keys ?? []).map((key: Key) => key?.uid));
+  const remaining =
+    dead.size === 0
+      ? []
+      : (aliveKeys.get(serialNumber) ?? []).filter(key => !dead.has(key.uid));
+  if (remaining.length > 0) {
+    aliveKeys.set(serialNumber, remaining);
   } else {
-    await refresh();
+    aliveKeys.delete(serialNumber);
   }
 });
 
 /**
- * Called when the user presses a key: force an immediate refresh
+ * Called when a device connects or disconnects. While it is gone, draws are
+ * skipped; FlexDesigner sends plugin.alive again once it is back.
+ */
+plugin.on('device.status', devices => {
+  if (!Array.isArray(devices)) return;
+  for (const device of devices) {
+    if (!device?.serialNumber) continue;
+    if (device.status === 'disconnected') {
+      offlineDevices.add(device.serialNumber);
+    } else if (device.status === 'connected') {
+      offlineDevices.delete(device.serialNumber);
+    }
+  }
+});
+
+/**
+ * Called when the user presses a key: force an immediate refresh. The payload
+ * carries the key as FlexDesigner currently knows it, so keep that copy (its
+ * width may have changed since plugin.alive).
  */
 plugin.on('plugin.data', async payload => {
-  if (payload.data?.key?.cid !== USAGE_CID) return;
+  const pressed: Key = payload?.data?.key;
+  if (pressed?.cid !== USAGE_CID) return;
+  const keys = aliveKeys.get(payload.serialNumber);
+  const index = keys?.findIndex(key => key.uid === pressed.uid) ?? -1;
+  if (keys && index >= 0) keys[index] = pressed;
   await refresh();
 });
 
