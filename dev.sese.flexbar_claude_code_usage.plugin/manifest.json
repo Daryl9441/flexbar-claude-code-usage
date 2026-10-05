@@ -114,15 +114,15 @@
             "PluginName": "Claude Code Usage",
             "Usage": {
                 "Title": "Usage Meter",
-                "Tip": "Shows how much of your Claude Code 5-hour and weekly limits is left, or one usage limit as a live meter",
+                "Tip": "Shows how much of your Claude Code 5-hour and weekly limits is left, or how much of one usage limit is used, as a live meter",
                 "UI": {
                     "metric": "Usage limit",
                     "metricDual": "5 hours + weekly (remaining)",
-                    "metricSession": "Session (5 hours)",
-                    "metricWeekly": "Weekly (all models)",
-                    "metricWeeklyModel": "Weekly (per model)",
+                    "metricSession": "Session (5 hours, used)",
+                    "metricWeekly": "Weekly (all models, used)",
+                    "metricWeeklyModel": "Weekly (per model, used)",
                     "showResetTime": "Show time until reset",
-                    "showClawd": "Show Clawd"
+                    "showClawd": "Show Clawd (keys from 170 px)"
                 }
             },
             "Config": {
@@ -130,7 +130,7 @@
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
-                "Connected": "Connected — session {session}%, week {weekly}%",
+                "Connected": "Connected — session {session}% used, week {weekly}% used",
                 "Disconnected": "Disconnected",
                 "Saved": "Config updated",
                 "ClaudeDir": "Claude Code folder for Session Status keys (optional)"
@@ -174,15 +174,15 @@
             "PluginName": "Claude Code 用量",
             "Usage": {
                 "Title": "用量仪表",
-                "Tip": "显示 Claude Code 5 小时和每周用量限制还剩多少，或以实时仪表显示单个用量限制",
+                "Tip": "显示 Claude Code 5 小时和每周用量限制还剩多少，或以实时仪表显示单个用量限制已用多少",
                 "UI": {
                     "metric": "用量限制",
                     "metricDual": "5 小时 + 每周（剩余）",
-                    "metricSession": "会话（5 小时）",
-                    "metricWeekly": "每周（所有模型）",
-                    "metricWeeklyModel": "每周（按模型）",
+                    "metricSession": "会话（5 小时，已用）",
+                    "metricWeekly": "每周（所有模型，已用）",
+                    "metricWeeklyModel": "每周（按模型，已用）",
                     "showResetTime": "显示距重置的时间",
-                    "showClawd": "显示 Clawd"
+                    "showClawd": "显示 Clawd（按键宽 170 px 起）"
                 }
             },
             "Config": {
@@ -190,7 +190,7 @@
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
-                "Connected": "已连接 — 会话 {session}%，本周 {weekly}%",
+                "Connected": "已连接 — 会话已用 {session}%，本周已用 {weekly}%",
                 "Disconnected": "未连接",
                 "Saved": "配置已更新",
                 "ClaudeDir": "会话状态按键使用的 Claude Code 目录（可选）"

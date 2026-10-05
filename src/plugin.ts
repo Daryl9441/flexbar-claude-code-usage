@@ -131,7 +131,7 @@ async function renderKey(key: Key): Promise<string> {
             showResetTime: key.data?.showResetTime !== false,
             bgColor: userBgColor(key),
           })
-        : renderMessageKey(width, 'Claude Code', 'No data for this limit');
+        : renderMessageKey(width, 'Claude Code', 'No data for these limits');
     }
     const snapshot = getMetricSnapshot(lastUsage, metric);
     return snapshot
