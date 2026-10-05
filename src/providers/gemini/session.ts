@@ -1,54 +1,112 @@
 /**
- * Gemini session status source.
+ * Gemini session status source: Gemini CLI session files under
+ * `<geminiHome>/tmp/<project>/chats/` (./sessionMonitor.ts, read-only), the
+ * status derived from them (./sessionParse.ts), and the running CLIs from
+ * the process table (./sessionProcs.ts) for "is it still running" and "is a
+ * tool running". Gemini CLI records a reply only when it ends and a tool
+ * call only once it finished, so an approval wait is a guess ("Approval?").
  *
- * OWNER: the gemini-session implementer (worktree feat/mp-gemini-session), who
- * also owns ./newSession.ts. Add helpers as src/providers/gemini/session*.ts;
- * do not edit index.ts, brand.ts, ../types.ts, ../kit.ts or anything
- * outside src/providers/gemini/, ui/gemini_session.vue, ui/gemini_newsession.vue
- * and scripts/test-gemini-session.mjs.
+ * Key settings (key.data): projectFilter, idleMinutes, showProject,
+ * showMark, lang, liveDetection (default on: ps + lsof every 10 s while the
+ * key is shown; off: from the files alone).
  *
- * Contract (see ../types.ts SessionProvider/SessionSource and
- * architecture.md):
- * - location(config): the folder sessions are read from (geminiHome() in
- *   ./paths.ts); keys restart the source when it changes.
- * - create(): a SessionSource that watches/polls read-only, calls onChange()
- *   after every refresh (at least once after start()), and answers
- *   getStatus() with a SessionStatus (build it with makeStatus() from
- *   ../kit.ts) and listRunning() with runningItem() entries.
- * - notice(): unavailableNotice('not-installed' | 'not-configured', brand)
- *   while there is nothing to read, else null.
- * - describe(): one-off scan for the settings page.
- * Never write to Gemini's files; never log titles, prompts or paths beyond
- * what the existing Claude code logs.
+ * OWNER: the gemini-session implementer, who also owns ./newSession.ts.
  */
-import { staticSessionSource, unavailableNotice } from '../kit';
-import { SessionDescription, SessionProvider } from '../types';
+import path from 'node:path';
 
-import { GEMINI_BRAND } from './brand';
-import { geminiHome } from './paths';
+import {
+  KeyData,
+  PluginConfig,
+  SessionDescription,
+  SessionProvider,
+} from '../types';
 
-export const sessionProvider: SessionProvider = {
-  // the Gemini CLI home (./paths.ts); a change restarts the source
-  location: config => geminiHome(config),
+import { geminiHome, geminiPathSetting } from './paths';
+import { findGeminiCli } from './sessionCli';
+import { GeminiSessionMonitor } from './sessionMonitor';
+import { ProcessProbe, createProcessProbe } from './sessionProcs';
 
-  // TODO(gemini-session): return a real SessionSource
-  create: options =>
-    staticSessionSource(
-      options,
-      unavailableNotice('not-configured', GEMINI_BRAND)
-    ),
+/** Idle threshold of the settings page's one-off check by default */
+const DESCRIBE_IDLE_MS = 15 * 60_000;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async describe(filter, config): Promise<SessionDescription> {
-    // TODO(gemini-session): scan once and report what a key with this filter shows
-    return {
-      success: false,
-      projectsDir: null,
-      state: null,
-      project: null,
-      title: null,
-      others: 0,
-      notice: unavailableNotice('not-configured', GEMINI_BRAND),
-    };
-  },
+export type GeminiSessionDeps = {
+  /** Running CLIs (default: ps + lsof on this computer) */
+  probe?: () => ProcessProbe | null;
+  /** Whether the Gemini CLI is installed (default: search for it) */
+  cliInstalled?: (config: PluginConfig) => boolean;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  home?: string;
 };
+
+function idleMsOf(data: KeyData | undefined): number {
+  const minutes = Number(data?.idleMinutes);
+  return Number.isFinite(minutes) && minutes > 0
+    ? minutes * 60_000
+    : DESCRIBE_IDLE_MS;
+}
+
+/** A Gemini session provider; the dependencies exist for tests. */
+export function createGeminiSessionProvider(
+  deps: GeminiSessionDeps = {}
+): SessionProvider {
+  const platform = deps.platform ?? process.platform;
+  const probe = deps.probe ?? (() => createProcessProbe({ platform }));
+  const cliInstalled =
+    deps.cliInstalled ??
+    ((config: PluginConfig) =>
+      findGeminiCli({
+        setting: geminiPathSetting(config, deps.home),
+        home: deps.home,
+        platform,
+        env: deps.env,
+      }) !== null);
+  const homeOf = (config: PluginConfig | null | undefined) =>
+    geminiHome(config, deps.env ?? process.env, deps.home);
+
+  return {
+    // the Gemini CLI home (./paths.ts); a change restarts the source
+    location: config => homeOf(config),
+
+    create: ({ location, config, onChange, logger }) =>
+      new GeminiSessionMonitor({
+        home: location,
+        onChange,
+        logger,
+        probe: probe(),
+        cliInstalled: () => cliInstalled(config ?? {}),
+        platform,
+      }),
+
+    async describe(filter, config, data): Promise<SessionDescription> {
+      const monitor = new GeminiSessionMonitor({
+        home: homeOf(config),
+        onChange: () => undefined,
+        probe: data?.liveDetection === false ? null : probe(),
+        cliInstalled: () => cliInstalled(config ?? {}),
+        platform,
+        watch: false,
+      });
+      monitor.setFilters([filter]);
+      await monitor.rescan();
+      monitor.stop();
+      const { status, others } = monitor.getStatus(
+        filter,
+        Date.now(),
+        idleMsOf(data),
+        data
+      );
+      return {
+        success: !!status,
+        projectsDir: path.join(homeOf(config), 'tmp'),
+        state: status?.state ?? null,
+        project: status?.project ?? null,
+        title: status?.title ?? null,
+        others,
+        notice: status ? null : monitor.notice(),
+      };
+    },
+  };
+}
+
+export const sessionProvider: SessionProvider = createGeminiSessionProvider();
