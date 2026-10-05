@@ -1,6 +1,7 @@
 import { logger, plugin } from '@eniac/flexdesigner';
 
 import { UsageError, fetchUsage } from './api';
+import { NEW_SESSION_CID, NewSessionKeys } from './newSessionKey';
 import { safeErrorMessage } from './redact';
 import { renderMessageKey, renderUsageKey } from './render';
 import { SESSION_CID, SessionKeys } from './sessionKey';
@@ -208,6 +209,16 @@ const sessionKeys = new SessionKeys({
   logger,
 });
 
+// New Session keys: open the Claude app's new Claude Code session page
+const newSessionKeys = new NewSessionKeys({
+  enqueue: queueDraw,
+  send: sendImage,
+  isOffline: serialNumber => offlineDevices.has(serialNumber),
+  keyWidth,
+  bgColor: userBgColor,
+  logger,
+});
+
 function clearLock() {
   lockedUntil = null;
   if (lockTicker) {
@@ -302,6 +313,7 @@ plugin.on('plugin.alive', async payload => {
   );
   offlineDevices.delete(serialNumber);
   void sessionKeys.alive(serialNumber, payload.keys ?? []);
+  void newSessionKeys.alive(serialNumber, payload.keys ?? []);
   if (keys.length === 0) {
     aliveKeys.delete(serialNumber);
     return;
@@ -327,6 +339,7 @@ plugin.on('plugin.dead', payload => {
   const serialNumber: string | undefined = payload?.serialNumber;
   if (!serialNumber) return;
   void sessionKeys.dead(serialNumber, payload.keys ?? []);
+  void newSessionKeys.dead(serialNumber, payload.keys ?? []);
   const dead = new Set((payload.keys ?? []).map((key: Key) => key?.uid));
   const remaining =
     dead.size === 0
@@ -364,6 +377,10 @@ plugin.on('plugin.data', async payload => {
   const pressed: Key = payload?.data?.key;
   if (pressed?.cid === SESSION_CID) {
     await sessionKeys.press(payload.serialNumber, pressed);
+    return;
+  }
+  if (pressed?.cid === NEW_SESSION_CID) {
+    await newSessionKeys.press(payload.serialNumber, pressed);
     return;
   }
   if (pressed?.cid !== USAGE_CID) return;

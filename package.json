@@ -13,6 +13,7 @@
         "plugin:install": "flexcli plugin install --path ./dev.sese.flexbar_claude_code_usage.flexplugin --force",
         "format": "eslint --fix \"src/**/*.ts\"",
         "test:session": "tsc --outDir .test-build --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/session.ts src/sessionSource.ts src/sessionView.ts src/sessionRender.ts src/sessionKey.ts && node --test scripts/test-session.mjs",
+        "test:newsession": "tsc --outDir .test-build --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/newSession.ts src/newSessionKey.ts src/newSessionRender.ts src/openUrl.ts && node --test scripts/test-newsession.mjs",
         "test:privacy": "tsc --outDir .test-build --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/redact.ts && node --test scripts/test-privacy.mjs",
         "check:privacy": "node scripts/check-privacy.mjs",
         "check:privacy:history": "node scripts/check-privacy.mjs --history",

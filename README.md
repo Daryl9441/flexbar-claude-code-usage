@@ -60,6 +60,17 @@ The key reads the session transcripts Claude Code writes to `~/.claude/projects`
 
 If your Claude Code data is not in `~/.claude`, set the folder in the plugin settings.
 
+## New Session key
+
+A third key opens a new Claude Code session in the Claude desktop app with one tap — the same page as the app's own "New Claude Code Session" Dock menu item. It uses the app's `claude://code/new` link, so the [Claude desktop app](https://claude.com/download) must be installed.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Project folder | empty | Folder to start the session in: an absolute path or `~/…` (relative paths start from your home folder). Empty lets the app choose |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+
+The key shows "Opening…" briefly after a tap, or "Claude app not found" if no app handles the link; taps within a second of each other count once. Keys 100 px wide or narrower show just the icon. The link is handed to the system opener (`open` on macOS, the URL protocol handler on Windows, `xdg-open` on Linux) directly, without a shell.
+
 ## How it works
 
 The plugin reads the OAuth token that Claude Code stores on your machine (`~/.claude/.credentials.json`, or the Keychain on macOS) and polls the same usage endpoint that Claude Code's own `/usage` command uses. Usage polling costs no tokens and nothing is sent anywhere except to `api.anthropic.com`.
