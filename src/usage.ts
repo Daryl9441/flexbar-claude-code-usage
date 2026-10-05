@@ -68,6 +68,32 @@ export function getMetricSnapshot(
   return null;
 }
 
+/**
+ * What is left of a limit, in percent: 100 minus the used percentage, clamped
+ * to 0..100 and rounded. Null for a missing window or a non-numeric value.
+ */
+export function remainingPercent(
+  snapshot: MetricSnapshot | null | undefined
+): number | null {
+  if (!snapshot) return null;
+  const used = Number(snapshot.percent);
+  if (!Number.isFinite(used)) return null;
+  return Math.round(100 - Math.max(0, Math.min(100, used)));
+}
+
+export type DualSnapshot = {
+  session: MetricSnapshot | null;
+  weekly: MetricSnapshot | null;
+};
+
+/** The two limits of the dual key: the 5-hour session and weekly windows. */
+export function getDualSnapshot(usage: UsageData): DualSnapshot {
+  return {
+    session: getMetricSnapshot(usage, 'session'),
+    weekly: getMetricSnapshot(usage, 'weekly'),
+  };
+}
+
 /** Formats the remaining time until a reset as a compact "3h 12m" string. */
 export function formatTimeUntilReset(resetsAt: string | null): string {
   if (!resetsAt) return '';

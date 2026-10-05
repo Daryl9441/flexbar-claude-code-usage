@@ -5,8 +5,14 @@ import { NEW_SESSION_CID, NewSessionKeys } from './newSessionKey';
 import { safeErrorMessage } from './redact';
 import { renderMessageKey, renderUsageKey } from './render';
 import { SESSION_CID, SessionKeys } from './sessionKey';
-import { Config, Metric, UsageData } from './types';
-import { formatTimeUntilReset, getMetricSnapshot } from './usage';
+import { Config, KeyMetric, UsageData } from './types';
+import {
+  formatTimeUntilReset,
+  getDualSnapshot,
+  getMetricSnapshot,
+  remainingPercent,
+} from './usage';
+import { renderDualUsageKey } from './usageDualRender';
 
 const USAGE_CID = 'dev.sese.flexbar_claude_code_usage.usage';
 const DEFAULT_POLL_INTERVAL = 180;
@@ -115,7 +121,18 @@ async function renderKey(key: Key): Promise<string> {
   }
 
   if (lastUsage) {
-    const metric: Metric = key.data?.metric || 'session';
+    const metric: KeyMetric = key.data?.metric || 'dual';
+    if (metric === 'dual') {
+      const { session, weekly } = getDualSnapshot(lastUsage);
+      const hasData =
+        remainingPercent(session) !== null || remainingPercent(weekly) !== null;
+      return hasData
+        ? renderDualUsageKey(width, session, weekly, {
+            showResetTime: key.data?.showResetTime !== false,
+            bgColor: userBgColor(key),
+          })
+        : renderMessageKey(width, 'Claude Code', 'No data for this limit');
+    }
     const snapshot = getMetricSnapshot(lastUsage, metric);
     return snapshot
       ? renderUsageKey(width, snapshot, {
