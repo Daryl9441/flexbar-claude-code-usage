@@ -17,6 +17,33 @@
         <v-row>
             <v-col cols="6">
                 <v-select
+                    v-model="modelValue.data.target"
+                    :items="targetOptions"
+                    :label="$t('KimiNewSession.UI.target')"
+                    item-title="title"
+                    item-value="value"
+                    hide-details
+                    outlined
+                    class="mx-2"
+                ></v-select>
+            </v-col>
+            <v-col cols="6">
+                <v-select
+                    v-model="modelValue.data.cliMode"
+                    :items="cliModeOptions"
+                    :label="$t('KimiNewSession.UI.cliMode')"
+                    :disabled="modelValue.data.target === 'desktop'"
+                    item-title="title"
+                    item-value="value"
+                    hide-details
+                    outlined
+                    class="mx-2"
+                ></v-select>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="6">
+                <v-select
                     v-model="modelValue.data.lang"
                     :items="langOptions"
                     :label="$t('KimiNewSession.UI.lang')"
@@ -48,10 +75,26 @@ export default {
                 { title: "简体中文", value: "zh" },
             ];
         },
+        targetOptions() {
+            return [
+                { title: this.$t("KimiNewSession.UI.targetAuto"), value: "auto" },
+                { title: this.$t("KimiNewSession.UI.targetDesktop"), value: "desktop" },
+                { title: this.$t("KimiNewSession.UI.targetCli"), value: "cli" },
+            ];
+        },
+        cliModeOptions() {
+            return [
+                { title: this.$t("KimiNewSession.UI.cliModeNew"), value: "new" },
+                { title: this.$t("KimiNewSession.UI.cliModeContinue"), value: "continue" },
+                { title: this.$t("KimiNewSession.UI.cliModePlan"), value: "plan" },
+            ];
+        },
     },
     mounted() {
         const data = this.modelValue.data;
         if (data.folder === undefined || data.folder === null) data.folder = "";
+        if (data.target === undefined) data.target = "auto";
+        if (data.cliMode === undefined) data.cliMode = "new";
         // key text follows the FlexDesigner language until changed here
         if (data.lang === undefined) {
             const locale = String(this.$i18n.locale || "");
