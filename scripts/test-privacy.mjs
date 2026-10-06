@@ -812,6 +812,11 @@ describe('diffs and identities', () => {
       () => parseAcceptedCommits(`${sha1}\n${'g'.repeat(40)}`),
       /line 2/
     );
+    // one digit too many is neither a SHA-1 nor a SHA-256 id
+    assert.throws(
+      () => parseAcceptedCommits(`${sha1}0`),
+      /line 1: expected a full/
+    );
     assert.equal(parseAcceptedCommits('# nothing accepted\n').size, 0);
   });
 
@@ -1004,6 +1009,61 @@ describe('CLI and hooks in a scratch repository', () => {
       );
       assert.match(report.scanned, /identity accepted for 1/);
       assert.ok(!result.stdout.includes(SAMPLES.email));
+
+      // listing one commit leaves every other identity checked
+      fs.writeFileSync(file, `${clean}\n`);
+      const other = JSON.parse(
+        run(['--history', `${clean}..HEAD`, '--json']).stdout
+      );
+      assert.deepEqual(
+        other.findings.map(f => f.field ?? `${f.file}:${f.line}`),
+        ['author-email', 'committer-email', 'config.ts:2']
+      );
+
+      // the message of an accepted commit is still scanned
+      const side = git(
+        [
+          'commit-tree',
+          `${leaky}^{tree}`,
+          '-p',
+          leaky,
+          '-m',
+          `chore: note\n\nping ${SAMPLES.ghp}`,
+        ],
+        SAMPLES.email
+      );
+      fs.writeFileSync(file, `${leaky}\n${side}\n`);
+      const message = JSON.parse(
+        run(['--history', `${clean}..${side}`, '--json']).stdout
+      );
+      assert.deepEqual(
+        message.findings.map(f => [
+          f.commit,
+          f.field ?? `${f.file}:${f.line}`,
+          f.rule,
+        ]),
+        [
+          [side.slice(0, 12), 'message', 'github-token'],
+          [leaky.slice(0, 12), 'config.ts:2', 'credential-assignment'],
+        ]
+      );
+      assert.match(message.scanned, /identity accepted for 2/);
+
+      // a symlink could name a file the scanned commits never show
+      fs.rmSync(file);
+      let linked = false;
+      try {
+        fs.symlinkSync(path.join('.git', 'refs', 'heads', 'main'), file);
+        linked = true;
+      } catch {
+        // no symlink support on this system
+      }
+      if (linked) {
+        const link = run(['--history', `${clean}..HEAD`]);
+        assert.equal(link.status, 2);
+        assert.match(link.stderr, /must be a regular file/);
+        fs.rmSync(file);
+      }
 
       // an abbreviated id is refused instead of silently matching
       fs.writeFileSync(file, `${leaky.slice(0, 12)}\n`);

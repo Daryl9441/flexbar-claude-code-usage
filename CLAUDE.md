@@ -58,7 +58,9 @@ repository owner requires this without exception.
    scans the staged changes (binary files included) and the commit identity,
    pre-push scans every new commit including author/committer and the binary
    files it adds. CI (`.github/workflows/privacy.yml`) runs the same checks on
-   every push and pull request.
+   every push and pull request. The only identities exempt from these checks
+   are the owner-accepted commits in `.privacy-accepted-commits` (see
+   "Accepted exception" below).
 6. `.privacy-allowlist` is only for values verified to be public (e.g. Claude
    Code's public OAuth client id) or obviously synthetic, each with a comment
    saying why. When a check fails, remove the data instead of allowlisting it.
@@ -86,11 +88,15 @@ chose to keep them as they are: do not rewrite or force-push them. They are
 listed by full commit id in `.privacy-accepted-commits` (owner decision,
 2026-10-06), so `--history` scans (`check:privacy:history`,
 `check:privacy:all`, the pre-push hook and CI) skip their author/committer
-identity check only; their messages and changes are still scanned. Without
+identity check only (the author/committer email, and a denylist match in the
+author/committer name); their messages and changes are still scanned. Without
 that file they would block pushes: the pre-push hook re-checks commits that
 are only on other branches of the destination remote, and CI scans
-`before..after` of each push. Add an entry there only on the owner's explicit
-decision; new commits use the noreply identity.
+`before..after` of each push. The hook reads the scanner and this file from
+the checkout you push from, so push from a checkout that contains them (an
+older branch such as `feat/session-status` does not). The file must be a
+regular file (a symlink is refused, as for `.privacy-allowlist`). Add an entry
+only on the owner's explicit decision; new commits use the noreply identity.
 
 **If private data was already committed or pushed:**
 

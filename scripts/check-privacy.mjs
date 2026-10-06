@@ -870,18 +870,31 @@ function gitOk(args, cwd) {
   }
 }
 
+/**
+ * Reads a committed config file of the scanner, or null when it is absent.
+ * It must be a regular file: a symlink could point at a file the scanned
+ * commit does not show in its diff (e.g. a loose ref holding its own id).
+ */
+function readConfigFile(root, name) {
+  const file = path.join(root, name);
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) throw new Error(`${name} must be a regular file`);
+  return fs.readFileSync(file, 'utf8');
+}
+
 function loadAllowlist(root) {
-  const file = path.join(root, '.privacy-allowlist');
-  return fs.existsSync(file)
-    ? parseAllowlist(fs.readFileSync(file, 'utf8'))
-    : [];
+  const text = readConfigFile(root, '.privacy-allowlist');
+  return text === null ? [] : parseAllowlist(text);
 }
 
 function loadAcceptedCommits(root) {
-  const file = path.join(root, '.privacy-accepted-commits');
-  return fs.existsSync(file)
-    ? parseAcceptedCommits(fs.readFileSync(file, 'utf8'))
-    : new Set();
+  const text = readConfigFile(root, '.privacy-accepted-commits');
+  return text === null ? new Set() : parseAcceptedCommits(text);
 }
 
 /** Every file in the index, read from the working tree. */
