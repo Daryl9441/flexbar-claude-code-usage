@@ -1,35 +1,302 @@
 /**
- * Antigravity New Session key: what a press opens.
+ * Antigravity New Session key: what a press opens, by the key's `target`:
  *
- * OWNER: the antigravity-session implementer (see ./session.ts for the file
- * rules).
+ * - 'terminal-cli': a terminal window running `agy` in the key's folder (a
+ *   new CLI conversation; the kind the Session key follows), with fixed
+ *   presets only: resume (`--continue`), mode (`--mode accept-edits` /
+ *   `--mode plan` / `--dangerously-skip-permissions`), sandbox (`--sandbox`);
+ * - 'app': the desktop app (`open -b com.google.antigravity`: launches it,
+ *   or shows and focuses its window). Antigravity has no link or command
+ *   for "new conversation", so the key only brings the app up; ⌘N there
+ *   starts one;
+ * - 'ide': the IDE with the key's folder (`open -b
+ *   com.google.antigravity-ide <folder>`);
+ * - 'auto' (default): agy when it is installed, else the app, else the IDE.
  *
- * Contract (see ../types.ts NewSessionLauncher and architecture.md): return
- * a LaunchTarget built from the key's settings, e.g.
- *   { kind: 'terminal', command: [agy], cwd: request.folder }   (agy CLI)
- *   { kind: 'command', file: '/usr/bin/open', args: [...] }      (desktop app)
- *   { kind: 'url', url: '…' }                                    (a deep link)
- * The key group opens it through execFile (never a shell) and tests stub the
- * opener. Folders and the CLI setting: ./paths.ts. Throw
- * ProviderError('not-installed', …) when Antigravity is missing (a custom
- * title goes in extra.keyText).
+ * Everything goes through execFile (src/launch.ts), never a shell, and no
+ * folder ends up in a URL. The terminal is opened by the key group (on
+ * macOS a self-deleting `.command` script in which every word is quoted).
+ *
+ * Key settings (key.data): target, folder ('' = home folder), resume, mode
+ * ('default' | 'accept-edits' | 'plan' | 'skip-permissions'), sandbox, lang.
+ *
+ * OWNER: the antigravity-session implementer (see ./session.ts).
  */
+import fs from 'node:fs';
+import os from 'node:os';
+
 import { ProviderError } from '../kit';
-import { LaunchTarget, NewSessionLauncher, NewSessionRequest } from '../types';
+import {
+  KeyText,
+  Lang,
+  LaunchTarget,
+  NewSessionLauncher,
+  NewSessionRequest,
+  PluginConfig,
+} from '../types';
 
-export const newSessionLauncher: NewSessionLauncher = {
-  appName: 'Antigravity',
-  // TODO(antigravity-session): key-face texts, e.g.
-  // error: { en: 'Antigravity not found', zh: '未找到 Antigravity' }
-  strings: {},
+import { antigravityPathSetting } from './paths';
+import { BUNDLE_IDS, bundleInstalled, findAgy } from './sessionCli';
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  target(request: NewSessionRequest): LaunchTarget {
-    // TODO(antigravity-session): open a new Antigravity session (agy in
-    // request.folder, or the desktop app)
-    throw new ProviderError(
-      'not-configured',
-      'Antigravity new session is not available yet'
-    );
-  },
+export type AntigravityTarget = 'auto' | 'terminal-cli' | 'app' | 'ide';
+
+const TARGETS = new Set<AntigravityTarget>([
+  'auto',
+  'terminal-cli',
+  'app',
+  'ide',
+]);
+
+const MODE_ARGS: Readonly<Record<string, string[]>> = {
+  'accept-edits': ['--mode', 'accept-edits'],
+  plan: ['--mode', 'plan'],
+  'skip-permissions': ['--dangerously-skip-permissions'],
 };
+
+/** The agy arguments for the key's presets (no free text gets through). */
+export function agyArgs(
+  data: Record<string, unknown> | null | undefined
+): string[] {
+  const args: string[] = [];
+  if (data?.resume === true) args.push('--continue');
+  const mode = typeof data?.mode === 'string' ? data.mode : '';
+  if (Object.prototype.hasOwnProperty.call(MODE_ARGS, mode)) {
+    args.push(...MODE_ARGS[mode]);
+  }
+  if (data?.sandbox === true) args.push('--sandbox');
+  return args;
+}
+
+export function targetOf(
+  data: Record<string, unknown> | null | undefined
+): AntigravityTarget {
+  const value = data?.target;
+  return typeof value === 'string' && TARGETS.has(value as AntigravityTarget)
+    ? (value as AntigravityTarget)
+    : 'auto';
+}
+
+function keyText(en: string, zh: string): Record<Lang, KeyText> {
+  return { en: { title: en, message: '' }, zh: { title: zh, message: '' } };
+}
+
+/** Key-face titles of the failures. */
+export const LAUNCH_ERRORS = {
+  folder: keyText('Folder not found', '未找到文件夹'),
+  cli: keyText('agy not found', '未找到 agy'),
+  // short: the face's badge already shows the Antigravity mark
+  app: keyText('App not found', '未找到 App'),
+  ide: keyText('IDE not found', '未找到 IDE'),
+  none: keyText('Antigravity not found', '未找到 Antigravity'),
+};
+
+export type AntigravityLauncherDeps = {
+  /** Whether a path is an existing folder */
+  isDirectory?: (dir: string) => boolean;
+  /** The agy program, or null when not installed */
+  findCli?: (request: NewSessionRequest, config: PluginConfig) => string | null;
+  /** Whether the desktop app / IDE is installed (macOS) */
+  appInstalled?: (product: 'app' | 'ide', home: string) => boolean;
+};
+
+function defaultIsDirectory(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** The global settings the key group passes with the request. */
+function configOf(request: NewSessionRequest): PluginConfig {
+  const config = request.config;
+  return config && typeof config === 'object' ? config : {};
+}
+
+const OPEN = '/usr/bin/open';
+/** How long the subtitle's look for agy and the apps is reused */
+const AUTO_GUESS_MS = 60_000;
+
+/** An Antigravity launcher; the dependencies exist for tests. */
+export function createAntigravityLauncher(
+  deps: AntigravityLauncherDeps = {}
+): NewSessionLauncher {
+  const isDirectory = deps.isDirectory ?? defaultIsDirectory;
+  const appInstalled =
+    deps.appInstalled ??
+    ((product: 'app' | 'ide', home: string) => bundleInstalled(product, home));
+  const findCli =
+    deps.findCli ??
+    ((request: NewSessionRequest, config: PluginConfig) => {
+      const home = request.home ?? os.homedir();
+      return findAgy({
+        setting: antigravityPathSetting(config, home),
+        home,
+        platform: request.platform,
+      });
+    });
+
+  const checkFolder = (folder: string | null) => {
+    if (folder && !isDirectory(folder)) {
+      // the message goes to the log: no folder path in it
+      throw new ProviderError('not-configured', 'Folder not found', {
+        keyText: LAUNCH_ERRORS.folder,
+      });
+    }
+  };
+
+  const terminal = (request: NewSessionRequest, cli: string): LaunchTarget => ({
+    kind: 'terminal',
+    command: [cli, ...agyArgs(request.data)],
+    cwd: request.folder ?? request.home ?? os.homedir(),
+  });
+
+  const app = (): LaunchTarget => ({
+    kind: 'command',
+    file: OPEN,
+    args: ['-b', BUNDLE_IDS.app],
+  });
+
+  const ide = (request: NewSessionRequest): LaunchTarget => ({
+    kind: 'command',
+    file: OPEN,
+    args: ['-b', BUNDLE_IDS.ide, ...(request.folder ? [request.folder] : [])],
+  });
+
+  /** What 'auto' opened at the last press (with the global settings) */
+  let autoChoice: Exclude<AntigravityTarget, 'auto'> | null = null;
+  /** What 'auto' would open, looked up without the settings (cached) */
+  let autoGuess: {
+    at: number;
+    value: Exclude<AntigravityTarget, 'auto'> | null;
+  } | null = null;
+
+  /** What a press of an 'auto' key opens, for its subtitle. */
+  const autoTarget = (): Exclude<AntigravityTarget, 'auto'> | null => {
+    if (autoChoice) return autoChoice;
+    const now = Date.now();
+    if (autoGuess && now - autoGuess.at < AUTO_GUESS_MS) return autoGuess.value;
+    let value: Exclude<AntigravityTarget, 'auto'> | null = null;
+    try {
+      const home = os.homedir();
+      const platform = process.platform;
+      const probe: NewSessionRequest = {
+        data: {},
+        rawFolder: '',
+        folder: null,
+        home,
+        platform,
+        config: {},
+      };
+      if (findCli(probe, {})) value = 'terminal-cli';
+      else if (platform === 'darwin' && appInstalled('app', home))
+        value = 'app';
+      else if (platform === 'darwin' && appInstalled('ide', home))
+        value = 'ide';
+    } catch {
+      value = null;
+    }
+    autoGuess = { at: now, value };
+    return value;
+  };
+
+  const subtitleOf = (
+    target: AntigravityTarget,
+    folderName: string | null
+  ): string | null => {
+    switch (target) {
+      case 'app':
+        return 'App · ⌘N';
+      case 'ide':
+        return folderName ?? 'IDE';
+      case 'terminal-cli':
+        return folderName;
+      default: {
+        const resolved = autoTarget();
+        return resolved ? subtitleOf(resolved, folderName) : folderName;
+      }
+    }
+  };
+
+  return {
+    appName: 'Antigravity',
+    needsConfig: true,
+    strings: {
+      error: { en: 'Cannot open Antigravity', zh: '无法打开 Antigravity' },
+    },
+
+    /**
+     * The app takes no folder (and opens no conversation by itself): say
+     * where to press ⌘N instead of the folder. An 'auto' key names what a
+     * press opens.
+     */
+    subtitle: (data, folderName) => subtitleOf(targetOf(data), folderName),
+
+    target(request: NewSessionRequest): LaunchTarget {
+      const home = request.home ?? os.homedir();
+      const mac = request.platform === 'darwin';
+      const target = targetOf(request.data);
+      switch (target) {
+        case 'app':
+          if (!mac || !appInstalled('app', home)) {
+            throw new ProviderError(
+              'not-installed',
+              'Antigravity app not found',
+              {
+                keyText: LAUNCH_ERRORS.app,
+              }
+            );
+          }
+          return app();
+        case 'ide':
+          if (!mac || !appInstalled('ide', home)) {
+            throw new ProviderError(
+              'not-installed',
+              'Antigravity IDE not found',
+              {
+                keyText: LAUNCH_ERRORS.ide,
+              }
+            );
+          }
+          checkFolder(request.folder);
+          return ide(request);
+        case 'terminal-cli': {
+          checkFolder(request.folder);
+          const cli = findCli(request, configOf(request));
+          if (!cli) {
+            throw new ProviderError('not-installed', 'agy not found', {
+              keyText: LAUNCH_ERRORS.cli,
+            });
+          }
+          return terminal(request, cli);
+        }
+        default: {
+          // auto: the CLI opens a real new conversation in the folder; the
+          // app and the IDE only come up
+          autoChoice = null;
+          const cli = findCli(request, configOf(request));
+          if (cli) {
+            autoChoice = 'terminal-cli';
+            checkFolder(request.folder);
+            return terminal(request, cli);
+          }
+          if (mac && appInstalled('app', home)) {
+            autoChoice = 'app';
+            return app();
+          }
+          if (mac && appInstalled('ide', home)) {
+            autoChoice = 'ide';
+            checkFolder(request.folder);
+            return ide(request);
+          }
+          throw new ProviderError('not-installed', 'Antigravity not found', {
+            keyText: LAUNCH_ERRORS.none,
+          });
+        }
+      }
+    },
+  };
+}
+
+export const newSessionLauncher: NewSessionLauncher =
+  createAntigravityLauncher();

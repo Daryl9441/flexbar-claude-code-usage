@@ -2,6 +2,22 @@
     <v-container>
         <v-row>
             <v-col cols="12">
+                <v-select
+                    v-model="modelValue.data.source"
+                    :items="sourceOptions"
+                    :label="$t('AntigravitySession.UI.source')"
+                    :hint="$t('AntigravitySession.UI.sourceHint')"
+                    persistent-hint
+                    item-title="title"
+                    item-value="value"
+                    outlined
+                    class="mx-2"
+                    @update:model-value="scheduleCheck"
+                ></v-select>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="12">
                 <v-text-field
                     v-model="modelValue.data.projectFilter"
                     :label="$t('AntigravitySession.UI.projectFilter')"
@@ -61,6 +77,17 @@
         </v-row>
         <v-row>
             <v-col cols="12">
+                <v-switch
+                    v-model="modelValue.data.showProgress"
+                    :label="$t('AntigravitySession.UI.showProgress')"
+                    :hint="$t('AntigravitySession.UI.showProgressHint')"
+                    persistent-hint
+                    class="mx-2"
+                ></v-switch>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
             </v-col>
         </v-row>
@@ -70,8 +97,9 @@
 <script>
 // Antigravity Sessions key settings. The backend
 // (src/providers/antigravity/session.ts) answers 'session-status' with what
-// a key with this filter shows, or a notice. OWNER: the antigravity-session
-// implementer.
+// a key with these settings shows, or a notice. source: auto (the app, the
+// IDE and the agy CLI together), app, ide or cli. OWNER: the
+// antigravity-session implementer.
 const CID = "dev.sese.flexbar_claude_code_usage.antigravity_session";
 
 export default {
@@ -93,6 +121,14 @@ export default {
             return [
                 { title: "English", value: "en" },
                 { title: "简体中文", value: "zh" },
+            ];
+        },
+        sourceOptions() {
+            return [
+                { title: this.$t("AntigravitySession.UI.sourceAuto"), value: "auto" },
+                { title: this.$t("AntigravitySession.UI.sourceApp"), value: "app" },
+                { title: this.$t("AntigravitySession.UI.sourceIde"), value: "ide" },
+                { title: this.$t("AntigravitySession.UI.sourceCli"), value: "cli" },
             ];
         },
     },
@@ -132,10 +168,12 @@ export default {
     },
     mounted() {
         const data = this.modelValue.data;
+        if (data.source === undefined) data.source = "auto";
         if (data.projectFilter === undefined) data.projectFilter = "";
         if (data.idleMinutes === undefined) data.idleMinutes = 15;
         if (data.showProject === undefined) data.showProject = true;
         if (data.showMark === undefined) data.showMark = true;
+        if (data.showProgress === undefined) data.showProgress = true;
         // key text follows the FlexDesigner language until changed here
         if (data.lang === undefined) {
             const locale = String(this.$i18n.locale || "");
