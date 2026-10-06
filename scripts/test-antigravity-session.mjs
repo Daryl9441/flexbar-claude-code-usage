@@ -54,6 +54,8 @@ const Sum = req('providers/antigravity/sessionSummary.js');
 const Proto = req('providers/antigravity/sessionProto.js');
 const Procs = req('providers/antigravity/sessionProcs.js');
 const Rpc = req('providers/antigravity/sessionRpc.js');
+const LS = req('providers/antigravity/languageServer.js');
+const UsageProcs = req('providers/antigravity/usageProcess.js');
 const Db = req('providers/antigravity/sessionDb.js');
 const Cli = req('providers/antigravity/sessionCli.js');
 const Kit = req('providers/kit.js');
@@ -488,6 +490,82 @@ describe('loopback RPC', () => {
       throw new Error('blocked');
     });
     assert.deepEqual(await throwing(1, '/x', {}, '{}'), { error: 'failed' });
+  });
+});
+
+describe('shared language-server code (usage and session keys)', () => {
+  const APP = '/Applications/Antigravity.app/Contents/Resources/bin/language_server';
+  const IDE =
+    '/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm';
+
+  test('both keys read the same servers, tokens and reserved ports from a command line', () => {
+    const lines = [
+      `${APP} --csrf_token ${TOKEN} --app_data_dir antigravity --https_server_port 50999`,
+      `${IDE} --extension_server_csrf_token ${EXT_TOKEN} --csrf_token=${TOKEN2} --extension_server_port 50001 --app_data_dir antigravity-ide --lsp_port 50002`,
+      `/usr/bin/grep ${APP} --csrf_token ${TOKEN} --app_data_dir antigravity`,
+      `/Applications/Windsurf.app/Contents/Resources/bin/language_server --csrf_token ${TOKEN} --app_data_dir antigravity`,
+      `${APP} --csrf_token ${TOKEN} --app_data_dir antigravity-cli`,
+      `${APP} --app_data_dir antigravity`,
+    ];
+    const shared = lines.map(line => LS.parseServerCommand(line));
+    assert.deepEqual(shared.slice(2), [null, null, null, null]);
+    assert.deepEqual(shared[0], { product: 'app', token: TOKEN, skipPorts: [50999] });
+    assert.deepEqual(shared[1], { product: 'ide', token: TOKEN2, skipPorts: [50002, 50001] });
+    lines.forEach((line, i) => {
+      const session = Procs.inspectServer(line);
+      const usage = UsageProcs.parseServerCommand(7, line);
+      assert.equal(session?.product ?? null, shared[i]?.product ?? null);
+      assert.equal(usage?.product ?? null, shared[i]?.product ?? null);
+      if (shared[i]) {
+        assert.equal(session.token.reveal(), usage.token);
+        assert.deepEqual(session.exclude, usage.skipPorts);
+      }
+    });
+  });
+
+  test('requests go to the service path with the token in its header only; TLS answers are recognised', () => {
+    assert.equal(LS.rpcPath('GetUserStatus'), '/exa.language_server_pb.LanguageServerService/GetUserStatus');
+    const headers = LS.rpcHeaders(TOKEN);
+    assert.equal(headers['x-codeium-csrf-token'], TOKEN);
+    assert.equal(Object.values(headers).filter(v => v.includes(TOKEN)).length, 1);
+    assert.equal(LS.isTlsPortReply(400, 'Client sent an HTTP request to an HTTPS server.\n'), true);
+    assert.equal(LS.isTlsPortReply(400, '{"code":"invalid_argument"}'), false);
+    assert.equal(LS.isTlsPortReply(200, 'Client sent an HTTP request to an HTTPS server.'), false);
+  });
+
+  test('the shared transport refuses bad ports, caps the answer and gives up at the deadline', async () => {
+    const base = { path: '/x', headers: {}, body: '{}', timeoutMs: 30, maxBytes: 8 };
+    let called = 0;
+    const never = () => {
+      called++;
+      const req = { on: () => req, destroy: () => undefined, end: () => undefined };
+      return req;
+    };
+    assert.deepEqual(await LS.postLoopback({ ...base, port: 0 }, never), { error: 'failed', code: 'EBADPORT' });
+    assert.deepEqual(await LS.postLoopback({ ...base, port: 70000 }, never), { error: 'failed', code: 'EBADPORT' });
+    assert.equal(called, 0, 'no request for a bad port');
+    // a server that never answers: the deadline ends it
+    assert.deepEqual(await LS.postLoopback({ ...base, port: 50111 }, never), { error: 'timeout' });
+    // an answer larger than maxBytes is dropped
+    let destroyed = false;
+    const big = (options, onResponse) => {
+      const req = {
+        on: () => req,
+        destroy: () => {
+          destroyed = true;
+        },
+        end: () => {
+          const handlers = {};
+          const res = { statusCode: 200, headers: {}, on: (event, fn) => ((handlers[event] = fn), res) };
+          onResponse(res);
+          handlers.data(Buffer.from('0123456789'));
+          handlers.end();
+        },
+      };
+      return req;
+    };
+    assert.deepEqual(await LS.postLoopback({ ...base, port: 50111 }, big), { error: 'too-large' });
+    assert.ok(destroyed);
   });
 });
 

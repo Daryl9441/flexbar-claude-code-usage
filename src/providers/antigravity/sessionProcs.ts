@@ -9,7 +9,9 @@
  * - interactive `agy` CLIs (subcommands and the background updater left
  *   out), with their working folder (`lsof -d cwd`, once per process).
  *
- * The CSRF token is a credential (it controls the agent): it lives only in
+ * The command-line and port parsing is shared with the usage key
+ * (./languageServer.ts). The CSRF token is a credential (it controls the
+ * agent): it lives only in
  * a CsrfToken object that never prints it, is sent only in a request header
  * to 127.0.0.1 ports of the same process (./sessionRpc.ts), and never on a
  * command line. Command lines can hold prompts (`agy -p "…"`): they are
@@ -19,7 +21,16 @@ import { execFile } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
 import { inspect } from 'node:util';
 
+import {
+  flagValue,
+  loopbackPorts,
+  parseLsofNames,
+  parseServerCommand,
+  toolPaths,
+} from './languageServer';
 import type { AntigravityProduct } from './paths';
+
+export { flagValue, loopbackPorts, parseLsofNames };
 
 /** A language server's CSRF token: readable only through reveal(). */
 export class CsrfToken {
@@ -114,45 +125,21 @@ export function parsePs(stdout: string, now: number): PsRow[] {
   return rows;
 }
 
-/** The value of `--name value` or `--name=value` (a whole flag only). */
-export function flagValue(command: string, name: string): string | null {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = new RegExp(`(?:^|\\s)--${escaped}(?:=|\\s+)(\\S+)`).exec(command);
-  return m ? m[1] : null;
-}
-
-/** The executable of a language server (its folder may contain spaces). */
-const LS_RE =
-  /(?:^|[\\/])language_server(?:_(?:macos|linux|windows)_[a-z0-9]+)?(?:\.exe)?(?=\s|$)/;
-
-const TOKEN_RE = /^[A-Za-z0-9._~-]{8,256}$/;
-
 /** A language server process of the app or the IDE, without its ports. */
-export function inspectServer(
-  command: string
-): { product: LanguageServer['product']; token: CsrfToken } | null {
-  const m = LS_RE.exec(command);
-  if (!m) return null;
-  // the flags after the executable
-  const args = command.slice(m.index + m[0].length);
-  const dataDir = flagValue(args, 'app_data_dir');
-  const product =
-    dataDir === 'antigravity'
-      ? 'app'
-      : dataDir === 'antigravity-ide'
-        ? 'ide'
-        : null;
-  if (!product) return null;
-  const token = flagValue(args, 'csrf_token');
-  if (!token || !TOKEN_RE.test(token)) return null;
-  return { product, token: new CsrfToken(token) };
-}
-
-/** Ports a language server listens on that are not its session RPC. */
-export function excludedPorts(command: string): number[] {
-  return ['lsp_port', 'extension_server_port']
-    .map(name => Number(flagValue(command, name)))
-    .filter(n => Number.isInteger(n) && n > 0);
+export function inspectServer(command: string): {
+  product: LanguageServer['product'];
+  token: CsrfToken;
+  /** Ports its flags reserve for something else (LSP, extension server) */
+  exclude: number[];
+} | null {
+  const server = parseServerCommand(command);
+  return server
+    ? {
+        product: server.product,
+        token: new CsrfToken(server.token),
+        exclude: server.skipPorts,
+      }
+    : null;
 }
 
 /** agy subcommands that are not a conversation */
@@ -197,36 +184,6 @@ export function isAgySession(command: string): boolean {
       w === '-h' ||
       w === '--version'
   );
-}
-
-/** `lsof -F` output: pid → names (`n` lines). */
-export function parseLsofNames(stdout: string): Map<number, string[]> {
-  const out = new Map<number, string[]>();
-  let pid: number | null = null;
-  for (const line of stdout.split('\n')) {
-    if (line.startsWith('p')) {
-      const n = Number(line.slice(1));
-      pid = Number.isInteger(n) && n > 0 ? n : null;
-    } else if (line.startsWith('n') && pid !== null) {
-      out.set(pid, [...(out.get(pid) ?? []), line.slice(1)]);
-    }
-  }
-  return out;
-}
-
-/** Loopback listener ports (127.0.0.1 / localhost) from lsof names, highest first. */
-export function loopbackPorts(
-  names: string[],
-  exclude: number[] = []
-): number[] {
-  const ports = new Set<number>();
-  for (const name of names) {
-    const m = /^(?:127\.0\.0\.1|localhost):(\d+)$/.exec(name.trim());
-    if (!m) continue;
-    const port = Number(m[1]);
-    if (port > 0 && port < 65536 && !exclude.includes(port)) ports.add(port);
-  }
-  return [...ports].sort((a, b) => b - a);
 }
 
 /** Runs a program without a shell; resolves with its output, even on failure. */
@@ -307,7 +264,7 @@ export function createProcessProbe(
         return null;
       }
     });
-  const lsofPath = platform === 'darwin' ? '/usr/sbin/lsof' : 'lsof';
+  const lsofPath = toolPaths(platform).lsof;
   const portCache = new Map<number, Cached<number[]>>();
   const cwdCache = new Map<number, Cached<string>>();
   const fresh = <T>(cache: Map<number, Cached<T>>, pid: number, at: number) => {
@@ -321,10 +278,11 @@ export function createProcessProbe(
     },
 
     async snapshot() {
+      const psPath = toolPaths(platform).ps;
       const ps =
         platform === 'darwin'
-          ? await run('/bin/ps', ['-axww', '-o', 'pid=,uid=,etime=,command='])
-          : await run('ps', ['-e', '-ww', '-o', 'pid=,uid=,etime=,args=']);
+          ? await run(psPath, ['-axww', '-o', 'pid=,uid=,etime=,command='])
+          : await run(psPath, ['-e', '-ww', '-o', 'pid=,uid=,etime=,args=']);
       if (!ps.ok && !ps.stdout) return null;
       const servers: (LanguageServer & { exclude: number[] })[] = [];
       const clis: AgyProcess[] = [];
@@ -337,7 +295,6 @@ export function createProcessProbe(
             startedAt: row.startedAt,
             ...server,
             ports: null,
-            exclude: excludedPorts(row.command),
           });
         } else if (isAgySession(row.command)) {
           clis.push({ pid: row.pid, startedAt: row.startedAt, cwd: null });

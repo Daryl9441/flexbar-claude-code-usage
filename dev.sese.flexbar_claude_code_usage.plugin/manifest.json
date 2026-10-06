@@ -292,10 +292,12 @@
                     "width": 240
                 },
                 "data": {
+                    "source": "auto",
                     "projectFilter": "",
                     "idleMinutes": 15,
                     "showProject": true,
-                    "showMark": true
+                    "showMark": true,
+                    "showProgress": true
                 }
             },
             {
@@ -316,7 +318,11 @@
                     "width": 120
                 },
                 "data": {
-                    "folder": ""
+                    "target": "auto",
+                    "folder": "",
+                    "mode": "default",
+                    "resume": false,
+                    "sandbox": false
                 }
             }
         ]
@@ -542,21 +548,55 @@
             },
             "AntigravityUsage": {
                 "Title": "Antigravity Usage",
-                "Tip": "Shows an Antigravity usage limit (model quota) as a live meter",
+                "Tip": "Shows your Antigravity model quota (5-hour and weekly limits) as a live meter, read from the running Antigravity app or IDE",
                 "UI": {
                     "metric": "Usage limit",
-                    "metricDefault": "Default",
+                    "metricDefault": "Default (least left of any limit)",
                     "lang": "Key text language",
                     "showResetTime": "Show time until reset",
                     "showMark": "Show Antigravity mark",
                     "checking": "Checking…",
                     "connected": "Connected",
-                    "notAvailable": "Not available: {error}"
+                    "notAvailable": "Not available: {error}",
+                    "connectedVia": "Connected via {server}",
+                    "connectedTier": "Connected via {server} — {tier}",
+                    "serverApp": "the Antigravity app",
+                    "serverIde": "the Antigravity IDE",
+                    "choiceGroup": "{group}: least left",
+                    "choiceBucket": "{group}: {window}",
+                    "choiceDual": "{group}: 5-hour and weekly (two rows)",
+                    "choiceModel": "Model: {name}",
+                    "window5h": "5-hour limit",
+                    "windowDaily": "daily limit",
+                    "windowWeekly": "weekly limit",
+                    "windowMonthly": "monthly limit",
+                    "groupLine": "{group}: {limits}",
+                    "limitLeft": "{window} {left}% left",
+                    "limitAmount": "{window} {amount} left",
+                    "limitOff": "{window} off",
+                    "limitUnknown": "{window} unknown",
+                    "problemNotInstalled": "Antigravity was not found on this computer.",
+                    "problemCliOnly": "Only the agy CLI was found. Its quota can only be read through the Antigravity app or IDE.",
+                    "problemNotRunning": "Neither the Antigravity app nor the Antigravity IDE is running.",
+                    "problemSignedOut": "Antigravity is not signed in.",
+                    "problemNoQuota": "Antigravity has reported no quota yet.",
+                    "problemOldVersion": "This Antigravity version does not report quota.",
+                    "problemUnreachable": "Antigravity is running but does not answer.",
+                    "problemUnsupportedOs": "The usage key needs macOS or Linux.",
+                    "errorNetwork": "Antigravity could not reach Google. The key retries at the next refresh.",
+                    "errorHttp": "Antigravity returned an error. The key retries at the next refresh.",
+                    "errorParse": "Antigravity sent an answer the key does not understand.",
+                    "errorRateLimited": "Rate limited. The key retries later.",
+                    "hintInstall": "Install the Antigravity app (or IDE) and sign in.",
+                    "hintOpen": "Open the Antigravity app or IDE. On macOS the app can keep running in the menu bar with its windows closed.",
+                    "hintCliOnly": "Install the Antigravity app or IDE and keep one of them open; the key reads the quota from it.",
+                    "hintSignIn": "Open Antigravity and sign in with your Google account.",
+                    "hintUpdate": "Update Antigravity to the latest version."
                 }
             },
             "AntigravitySession": {
                 "Title": "Antigravity Sessions",
-                "Tip": "Shows whether your latest Antigravity session (desktop app or agy CLI) is working, done, or waiting for you; press to list running sessions",
+                "Tip": "Shows whether your latest Antigravity conversation (desktop app, IDE or agy CLI) is working, done, or waiting for you; press to list running conversations",
                 "UI": {
                     "projectFilter": "Project filter",
                     "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
@@ -566,16 +606,41 @@
                     "showMark": "Show Antigravity mark",
                     "checking": "Looking for sessions…",
                     "found": "Now showing: {project} — {state}",
-                    "notFound": "No Antigravity session found in {dir}"
+                    "notFound": "No Antigravity conversation found in {dir}",
+                    "source": "Follow",
+                    "sourceHint": "The app and the IDE report live status while they run; agy conversations come from its summary database and the running agy processes",
+                    "sourceAuto": "All (app, IDE and CLI)",
+                    "sourceApp": "Antigravity app",
+                    "sourceIde": "Antigravity IDE",
+                    "sourceCli": "Antigravity CLI (agy)",
+                    "showProgress": "Show task progress",
+                    "showProgressHint": "From the checklist in the conversation's task.md artifact"
                 }
             },
             "AntigravityNewSession": {
                 "Title": "Antigravity New Session",
-                "Tip": "Opens a new Antigravity session",
+                "Tip": "Opens a new Antigravity conversation: agy in Terminal, or brings up the Antigravity app or IDE",
                 "UI": {
                     "folder": "Project folder (optional)",
                     "folderHint": "Absolute path or ~/…; leave empty for your home folder",
-                    "lang": "Key text language"
+                    "lang": "Key text language",
+                    "target": "Open in",
+                    "targetAuto": "Automatic (agy if installed, else the app)",
+                    "targetTerminal": "Terminal (agy CLI)",
+                    "targetApp": "Antigravity app",
+                    "targetIde": "Antigravity IDE (folder)",
+                    "mode": "Permissions",
+                    "modeDefault": "Ask for review (default)",
+                    "modeAcceptEdits": "Auto-approve edits",
+                    "modePlan": "Plan (no changes)",
+                    "modeSkip": "Skip all permissions (dangerous)",
+                    "skipWarning": "agy runs every command and edit without asking",
+                    "resume": "Continue the latest conversation",
+                    "sandbox": "Terminal sandbox",
+                    "terminalHint": "Opens Terminal and runs agy in the folder: a new conversation.",
+                    "appHint": "Brings up the Antigravity app (starting it if needed). Antigravity has no link for a new conversation: press ⌘N in the app.",
+                    "ideHint": "Opens the folder in the Antigravity IDE; start a conversation in its agent panel.",
+                    "autoHint": "Runs agy in Terminal when it is installed; otherwise brings up the Antigravity app (⌘N for a new conversation) or opens the folder in the IDE."
                 }
             }
         },
@@ -799,21 +864,55 @@
             },
             "AntigravityUsage": {
                 "Title": "Antigravity 用量",
-                "Tip": "以实时仪表显示 Antigravity 的用量限制（模型配额）",
+                "Tip": "以实时仪表显示 Antigravity 模型配额（5 小时与每周限制），数据来自正在运行的 Antigravity 应用或 IDE",
                 "UI": {
                     "metric": "用量限制",
-                    "metricDefault": "默认",
+                    "metricDefault": "默认（剩余最少的限制）",
                     "lang": "按键文字语言",
                     "showResetTime": "显示距重置的时间",
                     "showMark": "显示 Antigravity 标志",
                     "checking": "正在检查…",
                     "connected": "已连接",
-                    "notAvailable": "不可用：{error}"
+                    "notAvailable": "不可用：{error}",
+                    "connectedVia": "已连接（{server}）",
+                    "connectedTier": "已连接（{server}）— {tier}",
+                    "serverApp": "Antigravity 应用",
+                    "serverIde": "Antigravity IDE",
+                    "choiceGroup": "{group}：剩余最少",
+                    "choiceBucket": "{group}：{window}",
+                    "choiceDual": "{group}：5 小时与每周（两行）",
+                    "choiceModel": "模型：{name}",
+                    "window5h": "5 小时限制",
+                    "windowDaily": "每日限制",
+                    "windowWeekly": "每周限制",
+                    "windowMonthly": "每月限制",
+                    "groupLine": "{group}：{limits}",
+                    "limitLeft": "{window}剩余 {left}%",
+                    "limitAmount": "{window}剩余 {amount}",
+                    "limitOff": "{window}未启用",
+                    "limitUnknown": "{window}未知",
+                    "problemNotInstalled": "本机未找到 Antigravity。",
+                    "problemCliOnly": "只找到 agy CLI。配额只能通过 Antigravity 应用或 IDE 读取。",
+                    "problemNotRunning": "Antigravity 应用和 Antigravity IDE 都未运行。",
+                    "problemSignedOut": "Antigravity 未登录。",
+                    "problemNoQuota": "Antigravity 暂未返回配额。",
+                    "problemOldVersion": "此版本的 Antigravity 不提供配额信息。",
+                    "problemUnreachable": "Antigravity 正在运行，但没有响应。",
+                    "problemUnsupportedOs": "用量按键需要 macOS 或 Linux。",
+                    "errorNetwork": "Antigravity 无法连接 Google，按键会在下次刷新时重试。",
+                    "errorHttp": "Antigravity 返回错误，按键会在下次刷新时重试。",
+                    "errorParse": "Antigravity 返回了无法识别的数据。",
+                    "errorRateLimited": "请求受限，按键稍后自动重试。",
+                    "hintInstall": "请安装 Antigravity 应用（或 IDE）并登录。",
+                    "hintOpen": "请打开 Antigravity 应用或 IDE。在 macOS 上，关闭窗口后应用可以继续在菜单栏运行。",
+                    "hintCliOnly": "请安装 Antigravity 应用或 IDE 并保持其中一个打开，按键会从中读取配额。",
+                    "hintSignIn": "请打开 Antigravity 并用 Google 账号登录。",
+                    "hintUpdate": "请将 Antigravity 更新到最新版本。"
                 }
             },
             "AntigravitySession": {
                 "Title": "Antigravity 会话",
-                "Tip": "显示最新的 Antigravity 会话（桌面 App 或 agy CLI）是在进行中、已完成，还是在等你；按下可列出运行中的会话",
+                "Tip": "显示最新的 Antigravity 对话（桌面 App、IDE 或 agy CLI）是在进行中、已完成，还是在等你；按下可列出运行中的对话",
                 "UI": {
                     "projectFilter": "项目筛选",
                     "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
@@ -823,16 +922,41 @@
                     "showMark": "显示 Antigravity 标志",
                     "checking": "正在查找会话…",
                     "found": "当前显示：{project} — {state}",
-                    "notFound": "在 {dir} 中没有找到 Antigravity 会话"
+                    "notFound": "在 {dir} 中没有找到 Antigravity 对话",
+                    "source": "跟踪",
+                    "sourceHint": "App 和 IDE 运行时实时报告状态；agy 对话来自它的摘要数据库和正在运行的 agy 进程",
+                    "sourceAuto": "全部（App、IDE 和 CLI）",
+                    "sourceApp": "Antigravity App",
+                    "sourceIde": "Antigravity IDE",
+                    "sourceCli": "Antigravity CLI（agy）",
+                    "showProgress": "显示任务进度",
+                    "showProgressHint": "来自对话 task.md 产物中的清单"
                 }
             },
             "AntigravityNewSession": {
                 "Title": "Antigravity 新建会话",
-                "Tip": "打开新的 Antigravity 会话",
+                "Tip": "打开新的 Antigravity 对话：在终端中运行 agy，或打开 Antigravity App / IDE",
                 "UI": {
                     "folder": "项目文件夹（可选）",
                     "folderHint": "绝对路径或 ~/…；留空则使用主目录",
-                    "lang": "按键文字语言"
+                    "lang": "按键文字语言",
+                    "target": "打开方式",
+                    "targetAuto": "自动（已安装 agy 时用 agy，否则用 App）",
+                    "targetTerminal": "终端（agy CLI）",
+                    "targetApp": "Antigravity App",
+                    "targetIde": "Antigravity IDE（文件夹）",
+                    "mode": "权限模式",
+                    "modeDefault": "需审核（默认）",
+                    "modeAcceptEdits": "自动批准编辑",
+                    "modePlan": "计划（不做修改）",
+                    "modeSkip": "跳过所有权限确认（危险）",
+                    "skipWarning": "agy 会不经询问执行所有命令和编辑",
+                    "resume": "继续最近的对话",
+                    "sandbox": "终端沙箱",
+                    "terminalHint": "打开终端并在该文件夹中运行 agy：新的对话。",
+                    "appHint": "打开 Antigravity App（如未运行则启动）。Antigravity 没有新建对话的链接：请在 App 中按 ⌘N。",
+                    "ideHint": "在 Antigravity IDE 中打开该文件夹；在其智能体面板中开始对话。",
+                    "autoHint": "已安装 agy 时在终端中运行 agy；否则打开 Antigravity App（按 ⌘N 新建对话）或在 IDE 中打开该文件夹。"
                 }
             }
         }

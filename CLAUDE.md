@@ -5,7 +5,7 @@ plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
 `dev.sese.flexbar_claude_code_usage`), a fork of
 `Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
 status and new-session keys for Claude Code, Kimi, Gemini CLI and Google
-Antigravity (desktop app and the `agy` CLI).
+Antigravity (desktop app, IDE and the `agy` CLI).
 
 ## Privacy rules (mandatory)
 
@@ -145,8 +145,8 @@ npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kim
 npm run test:kimi-session     # Kimi Code CLI + Kimi Work sessions, Kimi New Session launcher
 npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Code Assist quota (fetch stubbed)
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
-npm run test:antigravity-usage    # Antigravity usage (network, local RPC and processes stubbed)
-npm run test:antigravity-session  # Antigravity sessions and New Session launcher (launchers, RPC, processes stubbed)
+npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
+npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
 npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
@@ -249,11 +249,28 @@ outside the repository with `assert` changed to `with` in
   the `antigravityDir` setting or `~/.gemini`, holding one data folder per
   product: `antigravity/` for the desktop app, `antigravity-cli/` for `agy`,
   `antigravity-ide/` for the IDE; `antigravityUserDataDir` for the Electron
-  user data; `antigravityPathSetting`; `installedProducts`). Usage:
-  `usage.ts` (`usageSource`) and `usage*.ts` helpers. Sessions: `session.ts`
-  (`sessionProvider`) and `session*.ts` helpers. New session:
-  `newSession.ts`. Tests block fetch, http/https, net and child_process: a
-  test never reaches a real Antigravity language server or process.
+  user data; `antigravityPathSetting`; `installedProducts`).
+  `languageServer.ts` is shared by both keys: the app's and the IDE's
+  language server from a `ps` command line (`--app_data_dir`, the
+  `--csrf_token` credential, reserved ports), `lsof` loopback ports, and the
+  127.0.0.1-only Connect-JSON POST (token in the `x-codeium-csrf-token`
+  header only). Usage: `usage.ts` (`usageSource`: app first, then IDE,
+  `RetrieveUserQuotaSummary`, forced refreshes, keep-last), `usageProcess.ts`
+  (`ps`/`lsof` discovery), `usageRpc.ts` (requests, `classifyReply`),
+  `usageMetrics.ts` (groups and buckets to metrics and dual views),
+  `usageFace.ts` (two-row group face), `usageText.ts`
+  (`AntigravityUsageError`, en/zh texts). Sessions: `session.ts`
+  (`sessionProvider`, `source` setting), `sessionMonitor.ts` (scheduling,
+  merge of app, IDE and CLI), `sessionProcs.ts` (`ProcessProbe`, `CsrfToken`
+  that never prints, `agy` processes and folders), `sessionRpc.ts`
+  (`GetAllCascadeTrajectories`), `sessionDb.ts` (`conversation_summaries.db`
+  read-only via `node:sqlite`, WAL copied to a temp folder),
+  `sessionProto.ts` (protobuf reader for `agy`'s `raw_summary`),
+  `sessionSummary.ts` (facts and states, `task.md` progress),
+  `sessionCli.ts` (`findAgy`, app bundle ids). New session: `newSession.ts`
+  (`target`: `agy` in Terminal with fixed presets, `open -b` for the app or
+  the IDE). Tests block fetch, http/https, net and child_process: a test
+  never reaches a real Antigravity language server or process.
 - Key-group hooks a provider may use: `UsageSource.missingText` (text for a
   metric the fetch did not return), `UsageSource.face` (a face of its own for
   a metric setting, e.g. Claude's 'dual'), `SessionSource.notice(data)` (per

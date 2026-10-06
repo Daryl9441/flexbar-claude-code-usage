@@ -2,15 +2,20 @@
  * Antigravity usage key: the loopback Connect-JSON client for a running
  * Antigravity language server (`exa.language_server_pb.LanguageServerService`).
  *
- * Requests go to http://127.0.0.1:<port> only, with the CSRF token in the
+ * Requests go to http://127.0.0.1:<port> only (the transport is shared with
+ * the session key: ./languageServer.ts), with the CSRF token in the
  * `x-codeium-csrf-token` header (never in a URL, a log line or an error),
  * a timeout and a cap on the answer's size. Answers are classified without
  * quoting them: a Connect error keeps only its code (its message may echo
  * request data) and whether it is about the CSRF token.
  */
-import http from 'node:http';
-
-const SERVICE = 'exa.language_server_pb.LanguageServerService';
+import {
+  LoopbackResult,
+  isTlsPortReply,
+  postLoopback,
+  rpcHeaders,
+  rpcPath,
+} from './languageServer';
 
 export type RpcRequest = {
   port: number;
@@ -70,12 +75,7 @@ export function classifyReply(reply: RawReply): RpcResult {
       ? { kind: 'ok', json }
       : { kind: 'parse' };
   }
-  if (
-    reply.status === 400 &&
-    /http request to an https server/i.test(reply.text.slice(0, 400))
-  ) {
-    return { kind: 'wrong-port' };
-  }
+  if (isTlsPortReply(reply.status, reply.text)) return { kind: 'wrong-port' };
   const json = parseJson(reply.text) as
     { code?: unknown; message?: unknown } | undefined;
   if (json && typeof json === 'object' && typeof json.code === 'string') {
@@ -107,76 +107,43 @@ export function describeTransport(error: unknown): string {
   return transportReason(error);
 }
 
+/** Why a post failed, as RpcTransportError reasons (credential-free). */
+function failureReason(result: Extract<LoopbackResult, { error: string }>) {
+  switch (result.error) {
+    case 'refused':
+      return 'ECONNREFUSED';
+    case 'timeout':
+      return 'timeout';
+    case 'too-large':
+      return 'answer too large';
+    default:
+      return result.code === 'EBADPORT'
+        ? 'bad port'
+        : (result.code ?? 'request failed');
+  }
+}
+
 /** The real transport: node:http to 127.0.0.1, no proxy, no keep-alive. */
-export const httpPost: RpcPost = request =>
-  new Promise((resolve, reject) => {
-    const { port, method } = request;
-    if (!Number.isInteger(port) || port <= 0 || port >= 65536) {
-      reject(new RpcTransportError('bad port'));
-      return;
-    }
-    if (!/^[A-Za-z]{1,80}$/.test(method)) {
-      reject(new RpcTransportError('bad method'));
-      return;
-    }
-    const payload = Buffer.from(JSON.stringify(request.body ?? {}));
-    let settled = false;
-    // set once the request exists; finish() only runs after that
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(deadline);
-      fn();
-    };
-    const req = http.request(
-      {
-        host: '127.0.0.1',
-        port,
-        method: 'POST',
-        path: `/${SERVICE}/${method}`,
-        agent: false,
-        timeout: request.timeoutMs,
-        headers: {
-          'content-type': 'application/json',
-          accept: 'application/json',
-          'connect-protocol-version': '1',
-          'x-codeium-csrf-token': request.token,
-          'content-length': payload.length,
-        },
-      },
-      res => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on('data', (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > request.maxBytes) {
-            req.destroy(new RpcTransportError('answer too large'));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        res.on('end', () =>
-          finish(() =>
-            resolve({
-              status: res.statusCode ?? 0,
-              contentType: String(res.headers['content-type'] ?? ''),
-              text: Buffer.concat(chunks).toString('utf8'),
-            })
-          )
-        );
-        res.on('error', error =>
-          finish(() => reject(new RpcTransportError(transportReason(error))))
-        );
-      }
-    );
-    // the socket timeout covers silence; this covers a slow trickle
-    const deadline = setTimeout(
-      () => req.destroy(new RpcTransportError('timeout')),
-      request.timeoutMs
-    );
-    req.on('timeout', () => req.destroy(new RpcTransportError('timeout')));
-    req.on('error', error =>
-      finish(() => reject(new RpcTransportError(transportReason(error))))
-    );
-    req.end(payload);
+export const httpPost: RpcPost = async request => {
+  const { port, method } = request;
+  if (!Number.isInteger(port) || port <= 0 || port >= 65536) {
+    throw new RpcTransportError('bad port');
+  }
+  if (!/^[A-Za-z]{1,80}$/.test(method)) {
+    throw new RpcTransportError('bad method');
+  }
+  const result = await postLoopback({
+    port,
+    path: rpcPath(method),
+    headers: rpcHeaders(request.token),
+    body: JSON.stringify(request.body ?? {}),
+    timeoutMs: request.timeoutMs,
+    maxBytes: request.maxBytes,
   });
+  if ('error' in result) throw new RpcTransportError(failureReason(result));
+  return {
+    status: result.status,
+    contentType: result.contentType,
+    text: result.body,
+  };
+};

@@ -3,7 +3,8 @@
  * Connect-JSON call, `LanguageServerService/GetAllCascadeTrajectories`
  * (every conversation's summary: status, waiting steps, title, workspace).
  *
- * Only ever to 127.0.0.1 (fixed here, not configurable), only to ports that
+ * Only ever to 127.0.0.1 (fixed in the transport shared with the usage key,
+ * ./languageServer.ts, not configurable), only to ports that
  * lsof lists for the same process as the token (./sessionProcs.ts), plain
  * HTTP with a timeout; the CSRF token goes in the `x-codeium-csrf-token`
  * header and nowhere else. Each server listens on an HTTPS port and a plain
@@ -14,10 +15,14 @@
  */
 import http from 'node:http';
 
+import {
+  isTlsPortReply,
+  postLoopback,
+  rpcHeaders,
+  rpcPath,
+} from './languageServer';
 import type { CsrfToken, LanguageServer } from './sessionProcs';
 
-const HOST = '127.0.0.1';
-const SERVICE = '/exa.language_server_pb.LanguageServerService/';
 const TIMEOUT_MS = 5_000;
 /** Larger answers are refused (thousands of conversations) */
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -39,59 +44,22 @@ type RequestFn = typeof http.request;
 
 /** The default POST over node:http (tests pass a fake `request`). */
 export function createPost(request: RequestFn = http.request): PostFn {
-  return (port, path, headers, body) =>
-    new Promise(resolve => {
-      let settled = false;
-      const done = (result: PostResult) => {
-        if (settled) return;
-        settled = true;
-        resolve(result);
-      };
-      try {
-        const payload = Buffer.from(body, 'utf8');
-        const req = request(
-          {
-            host: HOST,
-            port,
-            path,
-            method: 'POST',
-            agent: false,
-            timeout: TIMEOUT_MS,
-            headers: { ...headers, 'content-length': `${payload.length}` },
-          },
-          res => {
-            const chunks: Buffer[] = [];
-            let size = 0;
-            res.on('data', (chunk: Buffer) => {
-              size += chunk.length;
-              if (size > MAX_BODY_BYTES) {
-                done({ error: 'too-large' });
-                res.destroy();
-                return;
-              }
-              chunks.push(chunk);
-            });
-            res.on('end', () =>
-              done({
-                status: res.statusCode ?? 0,
-                body: Buffer.concat(chunks).toString('utf8'),
-              })
-            );
-            res.on('error', () => done({ error: 'failed' }));
-          }
-        );
-        req.on('timeout', () => {
-          done({ error: 'timeout' });
-          req.destroy();
-        });
-        req.on('error', (error: NodeJS.ErrnoException) =>
-          done({ error: error?.code === 'ECONNREFUSED' ? 'refused' : 'failed' })
-        );
-        req.end(payload);
-      } catch {
-        done({ error: 'failed' });
-      }
-    });
+  return async (port, path, headers, body) => {
+    const result = await postLoopback(
+      {
+        port,
+        path,
+        headers,
+        body,
+        timeoutMs: TIMEOUT_MS,
+        maxBytes: MAX_BODY_BYTES,
+      },
+      request
+    );
+    return 'error' in result
+      ? { error: result.error }
+      : { status: result.status, body: result.body };
+  };
 }
 
 export type RpcOutcome =
@@ -129,11 +97,6 @@ function connectCode(body: string): string | null {
   }
 }
 
-/** The answer of the HTTPS port to a plain HTTP request */
-function isTlsPort(status: number, body: string): boolean {
-  return status === 400 && /HTTPS server|TLS|tls/.test(body.slice(0, 200));
-}
-
 /**
  * GetAllCascadeTrajectories on one server: the remembered port first, then
  * the server's other loopback ports from the highest down.
@@ -153,11 +116,7 @@ export async function fetchTrajectories(
   if (order.length === 0) {
     return { ok: false, reason: 'unreachable', detail: 'no loopback port' };
   }
-  const headers = {
-    'content-type': 'application/json',
-    'connect-protocol-version': '1',
-    'x-codeium-csrf-token': server.token.reveal(),
-  };
+  const headers = rpcHeaders(server.token.reveal());
   let last: RpcOutcome = {
     ok: false,
     reason: 'unreachable',
@@ -166,7 +125,7 @@ export async function fetchTrajectories(
   for (const port of order) {
     const result = await post(
       port,
-      `${SERVICE}GetAllCascadeTrajectories`,
+      rpcPath('GetAllCascadeTrajectories'),
       headers,
       JSON.stringify({ excludeSubtrajectories: true })
     );
@@ -203,7 +162,7 @@ export async function fetchTrajectories(
             : {},
       };
     }
-    if (isTlsPort(result.status, result.body)) continue;
+    if (isTlsPortReply(result.status, result.body)) continue;
     const code = connectCode(result.body);
     if (result.status === 401 || result.status === 403) {
       return {
