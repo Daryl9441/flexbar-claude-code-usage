@@ -101,6 +101,28 @@
                             outlined
                         ></v-text-field>
                     </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">Antigravity</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.antigravityDir"
+                            :label="$t('Config.AntigravityDir')"
+                            :hint="$t('Config.AntigravityDirHint')"
+                            placeholder="~/.gemini"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.antigravityPath"
+                            :label="$t('Config.AntigravityPath')"
+                            placeholder="~/.local/bin/agy"
+                            outlined
+                            hide-details
+                        ></v-text-field>
+                    </v-col>
                 </v-row>
             </v-card-text>
             <v-card-actions>

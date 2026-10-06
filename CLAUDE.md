@@ -4,7 +4,8 @@ Guide for coding agents working on this repository: the **AI Coding Usage**
 plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
 `dev.sese.flexbar_claude_code_usage`), a fork of
 `Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
-status and new-session keys for Claude Code, Kimi and Gemini CLI.
+status and new-session keys for Claude Code, Kimi, Gemini CLI and Google
+Antigravity (desktop app and the `agy` CLI).
 
 ## Privacy rules (mandatory)
 
@@ -144,6 +145,8 @@ npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kim
 npm run test:kimi-session     # Kimi Code CLI + Kimi Work sessions, Kimi New Session launcher
 npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Code Assist quota (fetch stubbed)
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
+npm run test:antigravity-usage    # Antigravity usage (network, local RPC and processes stubbed)
+npm run test:antigravity-session  # Antigravity sessions and New Session launcher (launchers, RPC, processes stubbed)
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
 npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
@@ -242,6 +245,15 @@ outside the repository with `assert` changed to `with` in
   `sessionProcs.ts` (`ps`/`lsof` or `/proc` probe via `execFile`),
   `session.ts`. New session: `newSession.ts` (Terminal running `gemini`, or
   `googlegemini://newchat`), `sessionCli.ts` (finds the `gemini` program).
+- Antigravity (`src/providers/antigravity/`): `paths.ts` (`antigravityRoot`:
+  the `antigravityDir` setting or `~/.gemini`, holding one data folder per
+  product: `antigravity/` for the desktop app, `antigravity-cli/` for `agy`,
+  `antigravity-ide/` for the IDE; `antigravityUserDataDir` for the Electron
+  user data; `antigravityPathSetting`; `installedProducts`). Usage:
+  `usage.ts` (`usageSource`) and `usage*.ts` helpers. Sessions: `session.ts`
+  (`sessionProvider`) and `session*.ts` helpers. New session:
+  `newSession.ts`. Tests block fetch, http/https, net and child_process: a
+  test never reaches a real Antigravity language server or process.
 - Key-group hooks a provider may use: `UsageSource.missingText` (text for a
   metric the fetch did not return), `UsageSource.face` (a face of its own for
   a metric setting, e.g. Claude's 'dual'), `SessionSource.notice(data)` (per

@@ -14,7 +14,7 @@ import type { Lang } from '../sessionView';
 
 export type { Lang, RunningSession, SessionState, SessionStatus };
 
-export type ProviderId = 'claude' | 'kimi' | 'gemini';
+export type ProviderId = 'claude' | 'kimi' | 'gemini' | 'antigravity';
 
 /** The three key types every provider has. */
 export type KeyKind = 'usage' | 'session' | 'newsession';
@@ -53,6 +53,13 @@ export type PluginConfig = {
    * (default: $GOOGLE_CLOUD_PROJECT or $GOOGLE_CLOUD_PROJECT_ID)
    */
   geminiCloudProject?: string;
+  /**
+   * Folder holding Antigravity's data folders (antigravity/ for the app,
+   * antigravity-cli/ for agy, antigravity-ide/ for the IDE); default ~/.gemini
+   */
+  antigravityDir?: string;
+  /** Antigravity CLI program (default: agy, found on PATH and common folders) */
+  antigravityPath?: string;
   [key: string]: unknown;
 };
 
@@ -80,7 +87,7 @@ export type KeyMark = {
 };
 
 export type Brand = {
-  /** Short name, e.g. "Claude", "Kimi", "Gemini" */
+  /** Short name, e.g. "Claude", "Kimi", "Gemini", "Antigravity" */
   name: string;
   /** Product named on key faces, e.g. "Claude Code", "Kimi CLI" */
   productName: string;
