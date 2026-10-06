@@ -161,8 +161,9 @@ export interface UsageSource {
   /**
    * The metric a key draws instead when the last fetch did not return its
    * own (e.g. a limit the user's plan does not have), or null to word the
-   * gap with missingText. Must name one of `metrics`; the key draws it as
-   * usual, with that metric's own chip label, and its saved setting is left
+   * gap with missingText. Must name one of `metrics`; the key draws it
+   * exactly like a key set to it (its own chip label where one fits, so a
+   * narrow key may show no label at all), and its saved setting is left
    * alone. A hook that throws or names another id counts as null.
    */
   substituteMetric?(metricId: string, metrics: UsageMetric[]): string | null;

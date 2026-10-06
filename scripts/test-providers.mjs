@@ -152,26 +152,53 @@ describe('key ids and manifest', () => {
   test('every string a settings page names has English and Chinese text', () => {
     const lookup = (strings, ref) =>
       ref.split('.').reduce((node, part) => node?.[part], strings);
+    const check = (file, ref) => {
+      for (const lang of ['en', 'zh-CN']) {
+        const text = lookup(locales[lang], ref);
+        assert.equal(typeof text, 'string', `${file}: ${lang} ${ref}`);
+        assert.ok(text.trim(), `${file}: ${lang} ${ref}`);
+      }
+    };
     let refs = 0;
     for (const file of fs.readdirSync(path.join(pluginDir, 'ui'))) {
       const source = fs.readFileSync(path.join(pluginDir, 'ui', file), 'utf8');
       const named = [
-        // $t("Group.UI.name") and $t(`Group.UI.${…}`) with a { key: "name" } table
-        ...[...source.matchAll(/\$t\(\s*["'](\w+\.UI\.\w+)["']/g)].map(m => m[1]),
-        ...[...source.matchAll(/\$t\(\s*`(\w+)\.UI\.\$\{/g)].flatMap(m =>
-          [...source.matchAll(/\bkey: "(\w+)"/g)].map(k => `${m[1]}.UI.${k[1]}`)
+        // $t("Config.Saved"), $t('PluginName'), and full names kept in
+        // tables or picked by a condition ("KimiUsage.UI.substituteHint")
+        ...[...source.matchAll(/\$t\(\s*["']([\w.]+)["']/g)].map(m => m[1]),
+        ...[...source.matchAll(/["'](\w+\.UI\.\w+)["']/g)].map(m => m[1]),
+      ];
+      // $t(`Group.UI.${…}`): every name in the page's tables, both
+      // { key: "name" } rows and const MAP = { code: "name" } maps
+      const tables = [
+        ...[...source.matchAll(/\bkey: "(\w+)"/g)].map(m => m[1]),
+        ...[...source.matchAll(/const [A-Z_]+ = \{([^{}]*)\}/g)].flatMap(m =>
+          [...m[1].matchAll(/:\s*"(\w+)"/g)].map(v => v[1])
         ),
       ];
+      for (const [, group] of source.matchAll(/\$t\(\s*`(\w+)\.UI\.\$\{/g)) {
+        assert.ok(tables.length > 0, `${file}: ${group}.UI.\${…} has no table`);
+        named.push(...tables.map(name => `${group}.UI.${name}`));
+      }
       for (const ref of new Set(named)) {
         refs++;
-        for (const lang of ['en', 'zh-CN']) {
-          const text = lookup(locales[lang], ref);
-          assert.equal(typeof text, 'string', `${file}: ${lang} ${ref}`);
-          assert.ok(text.trim(), `${file}: ${lang} ${ref}`);
-        }
+        check(file, ref);
+      }
+      // $t(`Session.State.${…}`) with a name from the backend: the same
+      // names in both languages
+      for (const [, group] of source.matchAll(/\$t\(\s*`([\w.]+)\.\$\{/g)) {
+        if (group.endsWith('.UI')) continue;
+        const names = Object.keys(lookup(locales.en, group) ?? {});
+        assert.ok(names.length > 0, `${file}: ${group}`);
+        assert.deepEqual(
+          Object.keys(lookup(locales['zh-CN'], group) ?? {}).sort(),
+          [...names].sort(),
+          `${file}: ${group}`
+        );
+        for (const name of names) check(file, `${group}.${name}`);
       }
     }
-    assert.ok(refs > 50, `${refs} strings`);
+    assert.ok(refs > 100, `${refs} strings`);
   });
 });
 
@@ -493,7 +520,7 @@ describe('UsageKeys', () => {
           logger: { info: (...a) => info.push(a.join(' ')), warn: () => undefined, error: () => undefined },
         }
       );
-      const notOnPlan = () => info.filter(line => line.includes('is not on this plan'));
+      const notReported = () => info.filter(line => line.includes('is not reported'));
       try {
         const keys = [
           t.key(1, { metric: 'monthly' }),
@@ -534,10 +561,10 @@ describe('UsageKeys', () => {
         await t.keys.alive(SERIAL, keys);
         await t.settle();
         const first = [
-          "Kimi usage key uid=1: limit 'monthly' is not on this plan; showing weekly",
-          "Kimi usage key uid=6: limit 'odd?id' is not on this plan; showing weekly",
+          "Kimi usage key uid=1: limit 'monthly' is not reported; showing weekly",
+          "Kimi usage key uid=6: limit 'odd?id' is not reported; showing weekly",
         ];
-        assert.deepEqual(notOnPlan(), first);
+        assert.deepEqual(notReported(), first);
 
         // set to a metric that is there, then back: logged again
         await t.keys.alive(SERIAL, [t.key(1, { metric: '5h' })]);
@@ -545,12 +572,17 @@ describe('UsageKeys', () => {
         assert.equal(t.last(1), await meter(metrics[0]));
         await t.keys.alive(SERIAL, [t.key(1, { metric: 'monthly' })]);
         await t.settle();
-        assert.deepEqual(notOnPlan(), [...first, first[0]]);
+        assert.deepEqual(notReported(), [...first, first[0]]);
         // a key that left the page is forgotten: back on it, logged again
         await t.keys.dead(SERIAL, [t.key(1)]);
         await t.keys.alive(SERIAL, [t.key(1, { metric: 'monthly' })]);
         await t.settle();
-        assert.deepEqual(notOnPlan(), [...first, first[0], first[0]]);
+        assert.deepEqual(notReported(), [...first, first[0], first[0]]);
+        // a page with none of these keys forgets them too, without plugin.dead
+        await t.keys.alive(SERIAL, [{ uid: 99, cid: 'other', width: 240, data: {} }]);
+        await t.keys.alive(SERIAL, [t.key(1, { metric: 'monthly' })]);
+        await t.settle();
+        assert.deepEqual(notReported(), [...first, first[0], first[0], first[0]]);
       } finally {
         t.keys.stop();
       }

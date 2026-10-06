@@ -3,7 +3,8 @@
         <v-row>
             <v-col cols="6">
                 <v-select
-                    v-model="modelValue.data.metric"
+                    :model-value="modelValue.data.metric"
+                    @update:model-value="pickMetric"
                     :items="metricOptions"
                     :label="$t('KimiUsage.UI.metric')"
                     item-title="title"
@@ -68,7 +69,8 @@
 // limits, the ones the account does not report are marked and disabled: a
 // key set to one shows the default limit instead (usageSource.substituteMetric
 // in src/providers/kimi/usage.ts). Default and the current choice stay
-// selectable.
+// selectable, and so do extra usage and the Kimi Work context, which depend
+// on the booster wallet and the desktop app rather than on the plan.
 const METRICS = [
     { value: "5h", key: "metric5h" },
     { value: "weekly", key: "metricWeekly" },
@@ -144,6 +146,16 @@ export default {
                         }),
                     };
                 }
+                // extra usage needs the booster wallet turned on and something
+                // bought, not another plan: it stays selectable too
+                if (value === "extra") {
+                    return {
+                        ...option,
+                        title: this.$t("KimiUsage.UI.metricNoExtra", {
+                            metric: option.title,
+                        }),
+                    };
+                }
                 return {
                     ...option,
                     title: this.$t("KimiUsage.UI.metricNotOnPlan", {
@@ -163,11 +175,16 @@ export default {
             const fallback = this.metrics.find(m => m.id !== "context");
             if (!fallback) return "";
             const known = METRICS.find(m => m.value === fallback.id);
-            return this.$t("KimiUsage.UI.substituteHint", {
-                limit: known
-                    ? this.$t(`KimiUsage.UI.${known.key}`)
-                    : fallback.label,
-            });
+            return this.$t(
+                current === "extra"
+                    ? "KimiUsage.UI.substituteHintExtra"
+                    : "KimiUsage.UI.substituteHint",
+                {
+                    limit: known
+                        ? this.$t(`KimiUsage.UI.${known.key}`)
+                        : fallback.label,
+                }
+            );
         },
         langOptions() {
             return [
@@ -177,6 +194,13 @@ export default {
         },
     },
     methods: {
+        // Vuetify's type-ahead (typing a letter while the field has focus)
+        // also picks disabled options; a click cannot. Ignore those picks.
+        pickMetric(value) {
+            const option = this.metricOptions.find(o => o.value === value);
+            if (option && option.props && option.props.disabled) return;
+            this.modelValue.data.metric = value;
+        },
         async check() {
             this.statusText = this.$t("KimiUsage.UI.checking");
             try {

@@ -139,9 +139,9 @@ const CURRENT = {
 };
 
 /**
- * What Kimi Code 2.x answers for a plan with only the 5-hour and weekly
- * limits: both payload formats at once and a turned-off booster wallet under
- * its snake_case name. Every value is synthetic.
+ * What the /usages endpoint answers for a plan with only the 5-hour and
+ * weekly limits: both payload formats at once and a turned-off booster
+ * wallet under its snake_case name. Every value is synthetic.
  */
 const LIVE = {
   usage: { limit: '100', remaining: '74', resetTime: '2026-10-11T00:00:00Z' },
@@ -415,7 +415,7 @@ describe('usage payloads', () => {
     ]);
   });
 
-  test('Kimi Code 2.x: both formats, 5h and weekly only, a turned-off wallet', () => {
+  test('/usages today: both formats, 5h and weekly only, a turned-off wallet', () => {
     assert.deepEqual(Api.parseUsagePayload(LIVE, FIXED), [
       { id: '5h', label: '5h', percent: 10, resetsAt: '2026-10-05T15:12:00.000Z' },
       { id: 'weekly', label: 'Weekly', percent: 26, resetsAt: '2026-10-11T00:00:00.000Z' },
@@ -448,6 +448,16 @@ describe('usage payloads', () => {
       [['extra', 75]]
     );
     assert.deepEqual(extra({ booster_wallet: 'junk', boosterWallet: null }), []);
+    // both names: the first with a balance counts, the live booster_wallet first
+    const good = wallet();
+    assert.deepEqual(extra({ boosterWallet: {}, booster_wallet: good }), [['extra', 75]]);
+    assert.deepEqual(extra({ boosterWallet: { status: 'STATUS_ENABLED' }, booster_wallet: good }), [['extra', 75]]);
+    assert.deepEqual(extra({ booster_wallet: { balance: 'junk' }, boosterWallet: good }), [['extra', 75]]);
+    assert.deepEqual(
+      extra({ boosterWallet: wallet({ status: 'STATUS_DISABLED' }), booster_wallet: good }),
+      [['extra', 75]]
+    );
+    assert.deepEqual(extra({ boosterWallet: good, booster_wallet: wallet({ status: 'STATUS_DISABLED' }) }), []);
   });
 
   test('both shapes in one payload: the current one wins', () => {
@@ -1184,10 +1194,10 @@ describe('Kimi usage keys', () => {
       await keys.drawAll();
       await settle();
       assert.deepEqual(
-        info.filter(line => line.includes('is not on this plan')),
+        info.filter(line => line.includes('is not reported')),
         [
-          "Kimi usage key uid=1: limit 'monthly_code' is not on this plan; showing 5h",
-          "Kimi usage key uid=3: limit 'extra' is not on this plan; showing 5h",
+          "Kimi usage key uid=1: limit 'monthly_code' is not reported; showing 5h",
+          "Kimi usage key uid=3: limit 'extra' is not reported; showing 5h",
         ]
       );
       assert.match(info[0], /^Kimi usage keys alive on FAKE-DEVICE-1: uid=1 width=300 metric=monthly_code, uid=2 width=300 metric=5h, /);
@@ -1219,7 +1229,7 @@ describe('Kimi usage keys', () => {
       assert.equal(sent.get(2), messageFace(120, '未登录', '请运行 kimi login'));
       assert.deepEqual(pngSize(sent.get(3)), [300, 60]); // the context meter
       assert.notEqual(sent.get(3), messageFace(300, 'Not logged in', 'Run kimi login'));
-      assert.ok(!info.some(line => line.includes('is not on this plan')), info.join('\n'));
+      assert.ok(!info.some(line => line.includes('is not reported')), info.join('\n'));
     } finally {
       keys.stop();
     }

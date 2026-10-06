@@ -157,7 +157,9 @@ export class UsageKeys implements KeyGroup {
   async alive(serialNumber: string, keys: Key[]) {
     const mine = keys.filter(key => key?.cid === this.cid);
     if (mine.length === 0) {
+      // none of these keys left on the page: forget them like dead() does
       this.keys.delete(serialNumber);
+      this.substituted.delete(serialNumber);
       return;
     }
     this.keys.set(serialNumber, mine);
@@ -327,8 +329,8 @@ export class UsageKeys implements KeyGroup {
     if (keys) keys.set(uid, entry);
     else this.substituted.set(serialNumber, new Map([[uid, entry]]));
     this.deps.logger?.info?.(
-      `${this.logName} key uid=${uid}: limit '${logId(metric)}' is not on ` +
-        `this plan; showing ${logId(shown)}`
+      `${this.logName} key uid=${uid}: limit '${logId(metric)}' is not ` +
+        `reported; showing ${logId(shown)}`
     );
   }
 

@@ -5,15 +5,17 @@
  * - current (Kimi Code since 2026-09): { usages: { limit_5h, limit_7d,
  *   limit_month_total, limit_month_code: { used_ratio 0–1, reset_time } },
  *   booster_wallet (or boosterWallet): { status, balance: { type: 'BOOSTER',
- *   amount, amountLeft } } } (booster amounts are fixed-point, 1e6 per cent;
- *   zero amounts are left out). Plans report only some limits (e.g. 5h and
- *   weekly, no monthly ones), and a wallet with status 'STATUS_DISABLED' or
- *   no amount has no extra usage;
+ *   amount, amountLeft | amount_left } } } (booster amounts are fixed-point,
+ *   1e6 per cent; zero amounts are left out). Plans report only some limits
+ *   (e.g. 5h and weekly, no monthly ones), and a wallet with status
+ *   'STATUS_DISABLED' or no purchased amount has no extra usage. When both
+ *   wallet names come, the first with a balance (booster_wallet first) counts;
  * - legacy (kimi-cli, older Kimi Code): { usage: { used | remaining, limit,
  *   resetTime }, limits: [{ window: { duration, timeUnit }, detail: { used |
  *   remaining, limit, resetTime | reset_in } }] }.
  *
- * Kimi Code 2.x sends both shapes in one payload; the current one wins.
+ * The endpoint now answers with both shapes in one payload; per metric id
+ * the current one wins.
  *
  * Sends exactly the CLI's two headers (no device headers: they carry the
  * host name). Responses are parsed without quoting them in errors.
@@ -255,10 +257,11 @@ export function parseUsagePayload(
 ): UsageMetric[] {
   if (!isRecord(payload)) return [];
   const current = quotaMetrics(payload.usages);
+  // the live name first; a stray or empty record under either name is skipped
   const booster = boosterMetric(
-    isRecord(payload.boosterWallet)
-      ? payload.boosterWallet
-      : payload.booster_wallet
+    [payload.booster_wallet, payload.boosterWallet].find(
+      wallet => isRecord(wallet) && isRecord(wallet.balance)
+    )
   );
   if (booster) current.push(booster);
   for (const legacy of legacyMetrics(payload, now)) {
