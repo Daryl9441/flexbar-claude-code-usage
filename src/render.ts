@@ -180,20 +180,22 @@ const CHIP_FONT = `bold 12px ${FONT}`;
 
 /**
  * The limit label as it fits maxWidth in the current font: in full, without
- * a leading "Claude " or version ("2.5 Flash Lite" → "Flash Lite", for
- * model names), or ellipsized while at least 4 characters remain. Null when
- * none of these fit.
+ * a leading "Claude " (and, with dropVersion, a leading model version: "2.5
+ * Flash Lite" → "Flash Lite"), or ellipsized while at least 4 characters
+ * remain. Null when none of these fit.
  */
 function fitLabel(
   ctx: SKRSContext2D,
   label: string,
-  maxWidth: number
+  maxWidth: number,
+  dropVersion = false
 ): string | null {
   if (!label.trim()) return null;
+  const name = label.replace(/^Claude\s+/i, '');
   const short =
-    label
-      .replace(/^Claude\s+/i, '')
-      .replace(/^(?:Gemini\s+)?\d+(?:\.\d+)*\s+(?=\S)/i, '') || label;
+    (dropVersion
+      ? name.replace(/^(?:Gemini\s+)?\d+(?:\.\d+)*\s+(?=\S)/i, '')
+      : name) || label;
   for (const candidate of [label, short]) {
     if (textWidth(ctx, candidate) <= maxWidth) return candidate;
   }
@@ -206,11 +208,12 @@ function fitLabel(
 function fitChip(
   ctx: SKRSContext2D,
   label: string,
-  maxWidth: number
+  maxWidth: number,
+  dropVersion = false
 ): { label: string; padX: number } | null {
   ctx.font = CHIP_FONT;
   if (textWidth(ctx, label) + 9 * 2 <= maxWidth) return { label, padX: 9 };
-  const fitted = fitLabel(ctx, label, maxWidth - 6 * 2);
+  const fitted = fitLabel(ctx, label, maxWidth - 6 * 2, dropVersion);
   return fitted ? { label: fitted, padX: 6 } : null;
 }
 
@@ -256,6 +259,12 @@ export type RenderOptions = {
   markColor?: string;
   /** Language of the reset countdown (default English) */
   lang?: 'en' | 'zh';
+  /**
+   * Model labels drop a leading version before they are cut ("2.5 Flash
+   * Lite" → "Flash Lite"). Off for Claude, whose chips keep it ("Claude
+   * 3.7 Sonnet" → "3.7 Sonnet") as they always did.
+   */
+  dropVersion?: boolean;
 };
 
 // Brand edge: a strip this wide in the provider's colour on the right edge
@@ -370,17 +379,18 @@ export async function renderUsageKey(
     ? fullChipWidth
     : contentWidth - percentWidth - 8;
   const tag = snapshot.tag ?? '';
-  let chip = fitChip(ctx, snapshot.label, labelSpace);
+  const dropVersion = options.dropVersion === true;
+  let chip = fitChip(ctx, snapshot.label, labelSpace, dropVersion);
   if (tag && chip?.label !== snapshot.label) {
-    chip = fitChip(ctx, tag, labelSpace) ?? chip;
+    chip = fitChip(ctx, tag, labelSpace, dropVersion) ?? chip;
   }
   if (chip) {
     drawChip(ctx, rightX, resetBelow ? 4 : 7, chip.label, chip.padX);
   } else {
     ctx.font = `bold 11px ${FONT}`;
-    let label = fitLabel(ctx, snapshot.label, labelSpace);
+    let label = fitLabel(ctx, snapshot.label, labelSpace, dropVersion);
     if (tag && label !== snapshot.label) {
-      label = fitLabel(ctx, tag, labelSpace) ?? label;
+      label = fitLabel(ctx, tag, labelSpace, dropVersion) ?? label;
     }
     if (label) {
       ctx.fillStyle = COLORS.chipText;

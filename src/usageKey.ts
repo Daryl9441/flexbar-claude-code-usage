@@ -24,6 +24,8 @@ import {
   PluginConfig,
   UiMessage,
   UsageDescription,
+  UsageFace,
+  UsageFaceRequest,
   UsageMetric,
   UsageSource,
 } from './providers/types';
@@ -293,6 +295,24 @@ export class UsageKeys implements KeyGroup {
     }
   }
 
+  /**
+   * The source's own face for a key, or null for the single meter. A face
+   * that throws is logged and left out, so the key still gets the meter or
+   * the "No data" face instead of keeping what it showed before.
+   */
+  private async face(request: UsageFaceRequest): Promise<UsageFace | null> {
+    if (!this.source.face) return null;
+    try {
+      return (await this.source.face(request)) ?? null;
+    } catch (error) {
+      const name = this.isClaude ? 'Usage' : `${this.brand.name} usage`;
+      this.deps.logger?.warn?.(
+        `${name} key face failed: ${this.logText(error)}`
+      );
+      return null;
+    }
+  }
+
   private async renderKey(key: Key): Promise<string> {
     const width = this.deps.keyWidth(key);
     const data = key?.data ?? {};
@@ -329,17 +349,15 @@ export class UsageKeys implements KeyGroup {
       const showResetTime = data.showResetTime !== false;
       const bgColor = this.deps.bgColor(key);
       // a view of several metrics the source draws itself (Claude's 'dual')
-      const face = this.source.face
-        ? await this.source.face({
-            metric,
-            metrics: this.metrics,
-            width,
-            showResetTime,
-            bgColor,
-            lang,
-            data,
-          })
-        : null;
+      const face = await this.face({
+        metric,
+        metrics: this.metrics,
+        width,
+        showResetTime,
+        bgColor,
+        lang,
+        data,
+      });
       if (face) {
         return 'image' in face
           ? face.image
@@ -360,6 +378,9 @@ export class UsageKeys implements KeyGroup {
             ...marks,
             bgColor,
             ...(lang === 'zh' ? { lang } : {}),
+            // model chips drop the version before they are cut; Claude's
+            // keep it, as they always did
+            ...(this.brand.mark === 'clawd' ? {} : { dropVersion: true }),
           }
         );
       }

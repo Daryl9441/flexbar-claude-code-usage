@@ -172,7 +172,8 @@ export interface UsageSource {
    * rather than one (Claude's 'dual': what is left of the 5-hour and weekly
    * limits on one key), or null to draw the single meter as usual. Only
    * called while there are metrics from the last fetch; errors, loading and
-   * rate-limit faces stay generic.
+   * rate-limit faces stay generic. A face that throws is logged and treated
+   * as null.
    */
   face?(
     request: UsageFaceRequest

@@ -358,6 +358,7 @@ describe('UsageKeys', () => {
       showResetTime: data.showResetTime !== false,
       ...Kit.markOptions(KIMI_BRAND, data),
       bgColor: undefined,
+      dropVersion: true,
     });
   const message = (title, text, width = 240, accent = KIMI_BRAND.accent) =>
     R.renderMessageKey(width, title, text, {
@@ -536,6 +537,7 @@ describe('UsageKeys', () => {
           ...Kit.markOptions(KIMI_BRAND, {}),
           bgColor: undefined,
           lang: 'zh',
+          dropVersion: true,
         });
         assert.equal(t.last(1), zh);
         assert.equal(t.last(2), await meter(metrics[0]));
@@ -586,6 +588,42 @@ describe('UsageKeys', () => {
         t.keys.stop();
       }
     }
+  });
+
+  test('a face that throws is logged and left out', async () => {
+    await withClock(NOW, async () => {
+      const secret = ['sk-', 'ant-', 'z'.repeat(30)].join('');
+      const t = usageKeys({
+        defaultMetric: 'both',
+        fetch: async () => metrics,
+        face: ({ metric }) => {
+          if (metric === 'weekly') {
+            return Promise.reject(new Error(`async face broke, ${secret}`));
+          }
+          throw new Error(`face broke, ${secret}`);
+        },
+      });
+      try {
+        await t.keys.alive(SERIAL, [
+          t.key(1),
+          t.key(2, { metric: '5h' }),
+          t.key(3, { metric: 'weekly' }),
+        ]);
+        await t.settle();
+        // a view without a metric of its own says so, single limits get
+        // the meter, and nothing keeps showing "Loading…"
+        assert.equal(t.last(1), message('Kimi Code', 'No data for this limit'));
+        assert.equal(t.last(2), await meter(metrics[0]));
+        assert.equal(t.last(3), await meter(metrics[1]));
+        const log = t.warnings.join('\n');
+        assert.match(log, /Kimi usage key face failed: face broke/);
+        assert.match(log, /Kimi usage key face failed: async face broke/);
+        assert.doesNotMatch(log, /Could not draw key/);
+        assert.ok(!log.includes(secret), log);
+      } finally {
+        t.keys.stop();
+      }
+    });
   });
 
   test('settings messages list metrics or the log-safe error', async () => {
@@ -1036,6 +1074,35 @@ describe("Claude Usage key: 5 hours + weekly (remaining)", () => {
     });
   });
 
+  test('model chips keep their version on narrow keys', async () => {
+    await withClock(NOW, async () => {
+      const sonnet = { ...model, label: 'Claude 3.7 Sonnet' };
+      const t = claudeKeys([session, weekly, sonnet]);
+      try {
+        await t.keys.alive(SERIAL, [
+          t.key(1, { metric: 'weekly_model' }, 180),
+          t.key(2, { metric: 'weekly_model', showClawd: true }, 240),
+        ]);
+        await t.settle();
+        for (const [uid, width, showClawd] of [
+          [1, 180, false],
+          [2, 240, true],
+        ]) {
+          const options = { showResetTime: true, showClawd };
+          assert.equal(t.last(uid), await R.renderUsageKey(width, sonnet, options));
+          // "3.7 Sonnet", not the "Sonnet" other providers' chips would show
+          assert.notEqual(
+            t.last(uid),
+            await R.renderUsageKey(width, sonnet, { ...options, dropVersion: true }),
+            `${width}`
+          );
+        }
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
   test('the face only answers for the dual metric', () => {
     const request = metric => ({
       metric,
@@ -1109,6 +1176,7 @@ describe('narrow keys still name their provider', () => {
       R.renderUsageKey(width, { label, percent: 40, resetsAt: null }, {
         showResetTime: false,
         ...Kit.markOptions(GEMINI_BRAND, {}),
+        dropVersion: true,
       });
     for (const width of [120, 180]) {
       assert.equal(await chip('2.5 Flash Lite', width), await chip('Flash Lite', width), `${width}`);
