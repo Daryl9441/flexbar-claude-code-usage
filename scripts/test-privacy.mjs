@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   isSensitiveFileName,
+  parseAcceptedCommits,
   isSyntheticUuid,
   parseAllowlist,
   parseDenylist,
@@ -795,6 +796,30 @@ describe('diffs and identities', () => {
     assert.equal(redact('short'), '*****');
     assert.equal(redact(SAMPLES.ghp), `****…(${SAMPLES.ghp.length} chars)`);
   });
+  test('accepted commits: full ids only, comments ignored, case-insensitive', () => {
+    const sha1 = 'ab'.repeat(20);
+    const sha256 = 'cd'.repeat(32);
+    const ids = parseAcceptedCommits(
+      `# owner decision\n\n${sha1} # first commit\n${sha256.toUpperCase()}\n`
+    );
+    assert.deepEqual([...ids], [sha1, sha256]);
+    // an abbreviated id could match another commit; anything else is a typo
+    assert.throws(
+      () => parseAcceptedCommits('abcdef1'),
+      /line 1: expected a full/
+    );
+    assert.throws(
+      () => parseAcceptedCommits(`${sha1}\n${'g'.repeat(40)}`),
+      /line 2/
+    );
+    assert.equal(parseAcceptedCommits('# nothing accepted\n').size, 0);
+  });
+
+  test("this repository's accepted commits file parses", () => {
+    const file = path.join(repoRoot, '.privacy-accepted-commits');
+    if (!fs.existsSync(file)) return;
+    assert.ok(parseAcceptedCommits(fs.readFileSync(file, 'utf8')).size > 0);
+  });
 });
 
 // --- the repository itself ---------------------------------------------------------------
@@ -957,6 +982,42 @@ describe('CLI and hooks in a scratch repository', () => {
     const result = run(['--history', 'HEAD --output=/tmp/x']);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /unsupported history argument/);
+  });
+
+  test('--history skips only the identity of an accepted commit', () => {
+    const file = path.join(repo, '.privacy-accepted-commits');
+    fs.writeFileSync(
+      file,
+      `# synthetic owner decision\n${leaky} # feat: add config\n`
+    );
+    try {
+      const result = run(['--history', `${clean}..HEAD`, '--json']);
+      assert.equal(
+        result.status,
+        1,
+        'the credential in the change is still an error'
+      );
+      const report = JSON.parse(result.stdout);
+      assert.deepEqual(
+        report.findings.map(f => [f.field ?? `${f.file}:${f.line}`, f.rule]),
+        [['config.ts:2', 'credential-assignment']]
+      );
+      assert.match(report.scanned, /identity accepted for 1/);
+      assert.ok(!result.stdout.includes(SAMPLES.email));
+
+      // an abbreviated id is refused instead of silently matching
+      fs.writeFileSync(file, `${leaky.slice(0, 12)}\n`);
+      const short = run(['--history', `${clean}..HEAD`]);
+      assert.equal(short.status, 2);
+      assert.match(short.stderr, /expected a full commit id/);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+    // without the file the identity is reported again
+    const again = JSON.parse(
+      run(['--history', `${clean}..HEAD`, '--json']).stdout
+    );
+    assert.ok(again.findings.some(f => f.field === 'author-email'));
   });
 
   test('--staged and pre-commit check staged lines and the commit identity', () => {

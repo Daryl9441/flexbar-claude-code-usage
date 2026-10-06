@@ -82,10 +82,15 @@ repository owner requires this without exception.
 **Accepted exception (owner decision, 2026-10-05):** the fork's earliest own
 commits (527603b, 62195b6, ccd6975, 2b57e20, 3689257, 2319505, and e1752e4 on
 the local `diag/stripes`) carry the owner's personal git identity. The owner
-chose to keep them as they are: do not rewrite or force-push them. History
-scans (`check:privacy:history`, `check:privacy:all`) will keep listing them;
-the pre-push hook and CI only scan new commits, so they don't block pushes.
-New commits use the noreply identity.
+chose to keep them as they are: do not rewrite or force-push them. They are
+listed by full commit id in `.privacy-accepted-commits` (owner decision,
+2026-10-06), so `--history` scans (`check:privacy:history`,
+`check:privacy:all`, the pre-push hook and CI) skip their author/committer
+identity check only; their messages and changes are still scanned. Without
+that file they would block pushes: the pre-push hook re-checks commits that
+are only on other branches of the destination remote, and CI scans
+`before..after` of each push. Add an entry there only on the owner's explicit
+decision; new commits use the noreply identity.
 
 **If private data was already committed or pushed:**
 

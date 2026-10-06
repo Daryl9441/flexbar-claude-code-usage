@@ -1,0 +1,14 @@
+# Commits whose author/committer identity the repository owner accepted
+# (owner decision, 2026-10-05; see "Accepted exception" in CLAUDE.md).
+# scripts/check-privacy.mjs --history skips ONLY the identity check of these
+# commits; their messages and changes are still scanned. One full commit id
+# per line. Add an entry only on the owner's explicit decision, never to get a
+# new commit past the check: new commits use the GitHub noreply identity.
+
+527603b7caf0adf3b48b8a765279b5ad12107a81 # fix: render CJK text instead of tofu boxes
+62195b69419b7eb6767e2262dde84d694c3a6b49 # fix: lay out key text without squashing
+ccd6975a708a5cae62f8c5f8dcbeef732a1c8abf # Merge branch 'fix/layout'
+2b57e2086c94e60e56012486d213bdd8f59331a8 # fix: harden the key draw pipeline
+3689257fdf9aee7d4f9371afbc967e85523f4ead # Merge branch 'fix/pipeline'
+23195054e470490ae2a3284b8e77701a0100bc37 # feat: add a Session Status key
+e1752e4b4b4cd2e49dfcaaabb028104cd77c7c83 # diag: diagnostic build (local diag/stripes only)

@@ -22,6 +22,9 @@
 // Matches are always printed redacted, so CI logs never repeat a secret.
 // Verified-public values go in .privacy-allowlist (one regex per line, tested
 // against the matched text), each with a comment explaining why it is public.
+// Commits whose author/committer identity the repository owner accepted are
+// listed by full id in .privacy-accepted-commits: --history skips only their
+// identity check, never their message or changes.
 //
 // Your own identifiers (user name, real name, hostname, device serial, personal
 // email addresses, ...) go in the git-ignored .privacy-denylist.local, or in
@@ -388,6 +391,33 @@ export function parseAllowlist(text) {
 }
 
 const isAllowed = (text, allowlist) => allowlist.some(re => re.test(text));
+
+// --- accepted commits --------------------------------------------------------
+
+const FULL_COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * Parses .privacy-accepted-commits: one full commit id (40 or 64 hex digits)
+ * per line, optionally followed by `# comment`; `#` starts a comment line.
+ * The repository owner accepted the author/committer identity of a listed
+ * commit (see CLAUDE.md), so --history skips only that identity check; the
+ * commit's message and changes are still scanned. Abbreviated ids are
+ * rejected, so an entry can never match a commit other than the one meant.
+ */
+export function parseAcceptedCommits(text) {
+  const ids = new Set();
+  for (const [i, raw] of text.split(/\r?\n/).entries()) {
+    const line = raw.replace(/#.*$/, '').trim().toLowerCase();
+    if (!line) continue;
+    if (!FULL_COMMIT_ID.test(line)) {
+      throw new Error(
+        `.privacy-accepted-commits line ${i + 1}: expected a full commit id`
+      );
+    }
+    ids.add(line);
+  }
+  return ids;
+}
 
 // --- denylist ----------------------------------------------------------------
 
@@ -847,6 +877,13 @@ function loadAllowlist(root) {
     : [];
 }
 
+function loadAcceptedCommits(root) {
+  const file = path.join(root, '.privacy-accepted-commits');
+  return fs.existsSync(file)
+    ? parseAcceptedCommits(fs.readFileSync(file, 'utf8'))
+    : new Set();
+}
+
 /** Every file in the index, read from the working tree. */
 function scanTrackedFiles(root, base) {
   const results = [];
@@ -962,8 +999,10 @@ function scanHistory(root, range, base) {
     ],
     { cwd: root }
   );
+  const accepted = base.acceptedCommits ?? new Set();
   const results = [];
   let commits = 0;
+  let acceptedIdentities = 0;
   for (const chunk of out.split(COMMIT_MARK).slice(1)) {
     commits++;
     const patchAt = chunk.indexOf(PATCH_MARK);
@@ -972,8 +1011,14 @@ function scanHistory(root, range, base) {
     const [sha, an, ae, cn, ce, ...messageParts] = header.split('\x00');
     const message = messageParts.join('\x00');
     const ctx = { ...base, commit: sha.slice(0, 12) };
-    results.push(...scanIdentity('author', an, ae, ctx));
-    results.push(...scanIdentity('committer', cn, ce, ctx));
+    // an identity the owner accepted (.privacy-accepted-commits); the
+    // message and the changes below are scanned all the same
+    if (accepted.has(sha)) {
+      acceptedIdentities++;
+    } else {
+      results.push(...scanIdentity('author', an, ae, ctx));
+      results.push(...scanIdentity('committer', cn, ce, ctx));
+    }
     message.split('\n').forEach((line, i) => {
       results.push(
         ...scanLine(line, { ...ctx, field: 'message', line: i + 1 })
@@ -982,7 +1027,10 @@ function scanHistory(root, range, base) {
     // binary files: the blob as this commit left it
     results.push(...scanDiff(patch, { ...ctx, readBlob: readBlob(root, sha) }));
   }
-  return { results, scanned: `${commits} commits in ${range}` };
+  const note = acceptedIdentities
+    ? ` (identity accepted for ${acceptedIdentities}, see .privacy-accepted-commits)`
+    : '';
+  return { results, scanned: `${commits} commits in ${range}${note}` };
 }
 
 function gitSupportsRemerge(root) {
@@ -1083,6 +1131,7 @@ export function main(argv = process.argv.slice(2)) {
       allowlist: loadAllowlist(root),
       denylist: loadDenylist(root),
       sessionIds: loadLocalSessionIds(),
+      acceptedCommits: loadAcceptedCommits(root),
     };
     if (mode === 'staged') {
       results = [
