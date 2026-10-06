@@ -179,6 +179,8 @@ export class NewSessionKeys implements KeyGroup {
   private queued = new Set<string>();
   private feedback = new Map<string, Feedback>();
   private lastPress = new Map<string, number>();
+  /** Whether the launcher got the global settings (configure) yet */
+  private configured = false;
   private readonly launch: Launcher;
   private readonly run: CommandRunner;
   private readonly terminal: TerminalOpener;
@@ -210,13 +212,41 @@ export class NewSessionKeys implements KeyGroup {
   }
 
   /** plugin.alive: the device's current plugin keys (any cid). */
-  alive(serialNumber: string, keys: Key[]): Promise<void> {
+  async alive(serialNumber: string, keys: Key[]): Promise<void> {
     const mine = keys.filter(key => key?.cid === this.cid);
     if (mine.length > 0) this.keys.set(serialNumber, mine);
     else this.keys.delete(serialNumber);
     // the page was (re)loaded: repaint everything on it
     this.forget(serialNumber, () => true, false);
+    if (mine.length > 0) await this.configureLauncher();
     return this.redraw();
+  }
+
+  /**
+   * Hands the global settings to a launcher that asks for them, once
+   * before its first face (later changes come through configure).
+   */
+  private async configureLauncher() {
+    const launcher = this.provider.launcher;
+    const load = this.deps.loadConfig;
+    if (this.configured || !launcher.configure || !launcher.needsConfig) {
+      return;
+    }
+    if (!load) return;
+    this.configured = true;
+    const config = await loadConfigBriefly(
+      load,
+      this.deps.configWaitMs ?? CONFIG_WAIT_MS
+    );
+    if (!config) {
+      this.configured = false;
+      return;
+    }
+    try {
+      launcher.configure(config);
+    } catch {
+      // the subtitle keeps its guess
+    }
   }
 
   /** plugin.dead: keys that left the device page (all when none listed). */
@@ -233,8 +263,21 @@ export class NewSessionKeys implements KeyGroup {
     return Promise.resolve();
   }
 
-  /** No global settings and no settings-page messages. */
-  async configure() {}
+  /**
+   * Global settings changed: launchers that use them (an 'auto' subtitle)
+   * get them; no settings-page messages.
+   */
+  async configure(config?: PluginConfig) {
+    const launcher = this.provider.launcher;
+    if (!launcher.configure || !launcher.needsConfig) return;
+    try {
+      launcher.configure(config ?? {});
+      this.configured = true;
+    } catch {
+      return;
+    }
+    await this.redraw();
+  }
 
   async message(): Promise<unknown> {
     return undefined;

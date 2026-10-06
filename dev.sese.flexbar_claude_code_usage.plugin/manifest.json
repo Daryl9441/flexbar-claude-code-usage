@@ -4,7 +4,7 @@
     "version": "0.4.0",
     "author": "Sese-Schneider",
     "entry": "backend/plugin.cjs",
-    "description": "Display your Claude Code, Kimi and Gemini usage limits and sessions on your Flexbar",
+    "description": "Display your Claude Code, Kimi, Gemini and Antigravity usage limits and sessions on your Flexbar",
     "repo": "https://github.com/Sese-Schneider/flexbar-claude-code-usage",
     "sdk": {
         "version": "1.0.0"
@@ -250,6 +250,80 @@
                     "resume": false,
                     "approvalMode": "default"
                 }
+            },
+            {
+                "title": "$AntigravityUsage.Title",
+                "tip": "$AntigravityUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.antigravity_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,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",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showResetTime": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$AntigravitySession.Title",
+                "tip": "$AntigravitySession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.antigravity_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,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",
+                    "width": 240
+                },
+                "data": {
+                    "source": "auto",
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showMark": true,
+                    "showProgress": true
+                }
+            },
+            {
+                "title": "$AntigravityNewSession.Title",
+                "tip": "$AntigravityNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.antigravity_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,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",
+                    "width": 120
+                },
+                "data": {
+                    "target": "auto",
+                    "folder": "",
+                    "mode": "default",
+                    "resume": false,
+                    "sandbox": false
+                }
             }
         ]
     },
@@ -270,7 +344,7 @@
                 }
             },
             "Config": {
-                "Description": "Shows usage limits and session status for Claude Code, Kimi and Gemini from the logins and session files already on this computer, with no API key. Every setting below is optional: leave it empty for the default. The refresh interval applies to all three.",
+                "Description": "Shows usage limits and session status for Claude Code, Kimi, Gemini and Antigravity from the logins and session files already on this computer, with no API key. Every setting below is optional: leave it empty for the default. The refresh interval applies to all of them.",
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
@@ -285,7 +359,10 @@
                 "GeminiPath": "Gemini CLI program (optional)",
                 "GeminiCloudProject": "Gemini Cloud project (optional)",
                 "KimiRefreshLoginHint": "On: an expired Kimi Code login is refreshed under the Kimi Code CLI’s own lock, which rewrites ~/.kimi-code/credentials/<slot>.json. Off: the key only reads it and asks you to run kimi.",
-                "GeminiCloudProjectHint": "Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota; empty uses $GOOGLE_CLOUD_PROJECT."
+                "GeminiCloudProjectHint": "Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota; empty uses $GOOGLE_CLOUD_PROJECT.",
+                "AntigravityDir": "Antigravity data folder (optional)",
+                "AntigravityDirHint": "The folder that holds antigravity, antigravity-cli and antigravity-ide; empty uses ~/.gemini.",
+                "AntigravityPath": "Antigravity CLI program, agy (optional)"
             },
             "Session": {
                 "Title": "Claude Sessions",
@@ -473,6 +550,102 @@
                     "terminalHint": "Opens Terminal and runs the Gemini CLI in the folder.",
                     "appHint": "Opens a new chat in the Gemini app: no project folder, not a CLI session."
                 }
+            },
+            "AntigravityUsage": {
+                "Title": "Antigravity Usage",
+                "Tip": "Shows your Antigravity model quota (5-hour and weekly limits) as a live meter, read from the running Antigravity app or IDE",
+                "UI": {
+                    "metric": "Usage limit",
+                    "metricDefault": "Default (least left of any limit)",
+                    "lang": "Key text language",
+                    "showResetTime": "Show time until reset",
+                    "showMark": "Show Antigravity mark",
+                    "checking": "Checking…",
+                    "notAvailable": "Not available: {error}",
+                    "connectedVia": "Connected via {server}",
+                    "connectedTier": "Connected via {server} — {tier}",
+                    "serverApp": "the Antigravity app",
+                    "serverIde": "the Antigravity IDE",
+                    "choiceGroup": "{group}: least left",
+                    "choiceBucket": "{group}: {window}",
+                    "choiceDual": "{group}: 5-hour and weekly (two rows)",
+                    "choiceModel": "Model: {name}",
+                    "window5h": "5-hour limit",
+                    "windowDaily": "daily limit",
+                    "windowWeekly": "weekly limit",
+                    "windowMonthly": "monthly limit",
+                    "groupLine": "{group}: {limits}",
+                    "limitLeft": "{window} {left}% left",
+                    "limitAmount": "{window} {amount} left",
+                    "limitOff": "{window} off",
+                    "limitUnknown": "{window} unknown",
+                    "problemNotInstalled": "Antigravity was not found on this computer.",
+                    "problemCliOnly": "Only the agy CLI was found. Its quota can only be read through the Antigravity app or IDE.",
+                    "problemNotRunning": "Neither the Antigravity app nor the Antigravity IDE is running.",
+                    "problemSignedOut": "Antigravity is not signed in.",
+                    "problemNoQuota": "Antigravity has reported no quota yet.",
+                    "problemOldVersion": "This Antigravity version does not report quota.",
+                    "problemUnreachable": "Antigravity is running but does not answer.",
+                    "problemUnsupportedOs": "The usage key needs macOS or Linux.",
+                    "errorNetwork": "Antigravity could not reach Google. The key retries at the next refresh.",
+                    "errorHttp": "Antigravity returned an error. The key retries at the next refresh.",
+                    "errorParse": "Antigravity sent an answer the key does not understand.",
+                    "errorRateLimited": "Rate limited. The key retries later.",
+                    "hintInstall": "Install the Antigravity app (or IDE) and sign in.",
+                    "hintOpen": "Open the Antigravity app or IDE. On macOS the app can keep running in the menu bar with its windows closed.",
+                    "hintCliOnly": "Install the Antigravity app or IDE and keep one of them open; the key reads the quota from it.",
+                    "hintSignIn": "Open Antigravity and sign in with your Google account.",
+                    "hintUpdate": "Update Antigravity to the latest version."
+                }
+            },
+            "AntigravitySession": {
+                "Title": "Antigravity Sessions",
+                "Tip": "Shows whether your latest Antigravity conversation (desktop app, IDE or agy CLI) is working, done, or waiting for you; press to list running conversations",
+                "UI": {
+                    "projectFilter": "Project filter",
+                    "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show project name",
+                    "showMark": "Show Antigravity mark",
+                    "checking": "Looking for sessions…",
+                    "found": "Now showing: {project} — {state}",
+                    "notFound": "No Antigravity conversation found in {dir}",
+                    "source": "Follow",
+                    "sourceHint": "The app and the IDE report live status while they run; agy conversations come from its summary database and the running agy processes",
+                    "sourceAuto": "All (app, IDE and CLI)",
+                    "sourceApp": "Antigravity app",
+                    "sourceIde": "Antigravity IDE",
+                    "sourceCli": "Antigravity CLI (agy)",
+                    "showProgress": "Show task progress",
+                    "showProgressHint": "From the checklist in the conversation's task.md artifact"
+                }
+            },
+            "AntigravityNewSession": {
+                "Title": "Antigravity New Session",
+                "Tip": "Opens a new Antigravity conversation: agy in Terminal, or brings up the Antigravity app or IDE",
+                "UI": {
+                    "folder": "Project folder (optional)",
+                    "folderHint": "Absolute path or ~/…; leave empty for your home folder",
+                    "lang": "Key text language",
+                    "target": "Open in",
+                    "targetAuto": "Automatic (agy if installed, else the app)",
+                    "targetTerminal": "Terminal (agy CLI)",
+                    "targetApp": "Antigravity app (macOS)",
+                    "targetIde": "Antigravity IDE (folder, macOS)",
+                    "mode": "Permissions",
+                    "modeDefault": "Ask for review (default)",
+                    "modeAcceptEdits": "Auto-approve edits",
+                    "modePlan": "Plan (no changes)",
+                    "modeSkip": "Skip all permissions (dangerous)",
+                    "skipWarning": "agy runs every command and edit without asking",
+                    "resume": "Continue the latest conversation",
+                    "sandbox": "Terminal sandbox",
+                    "terminalHint": "Opens Terminal and runs agy in the folder: a new conversation.",
+                    "appHint": "Brings up the Antigravity app (starting it if needed). Antigravity has no link for a new conversation: press ⌘N in the app.",
+                    "ideHint": "Opens the folder in the Antigravity IDE; start a conversation in its agent panel.",
+                    "autoHint": "Runs agy in Terminal when it is installed; otherwise, on macOS, brings up the Antigravity app (⌘N for a new conversation) or opens the folder in the IDE."
+                }
             }
         },
         "zh-CN": {
@@ -491,7 +664,7 @@
                 }
             },
             "Config": {
-                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi 和 Gemini 的用量限制与会话状态，无需 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对三者都有效。",
+                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi、Gemini 和 Antigravity 的用量限制与会话状态，无需 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对所有服务都有效。",
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
@@ -506,7 +679,10 @@
                 "GeminiPath": "Gemini CLI 程序（可选）",
                 "GeminiCloudProject": "Gemini Cloud 项目（可选）",
                 "KimiRefreshLoginHint": "开启：在 Kimi Code CLI 自己的锁下刷新过期的 Kimi Code 登录，会改写 ~/.kimi-code/credentials/<slot>.json。关闭：按键只读取登录信息，过期时提示你运行 kimi。",
-                "GeminiCloudProjectHint": "Gemini Code Assist 标准版或企业版配额使用的 Google Cloud 项目 ID；留空则使用 $GOOGLE_CLOUD_PROJECT。"
+                "GeminiCloudProjectHint": "Gemini Code Assist 标准版或企业版配额使用的 Google Cloud 项目 ID；留空则使用 $GOOGLE_CLOUD_PROJECT。",
+                "AntigravityDir": "Antigravity 数据目录（可选）",
+                "AntigravityDirHint": "包含 antigravity、antigravity-cli 和 antigravity-ide 的目录；留空则使用 ~/.gemini。",
+                "AntigravityPath": "Antigravity CLI 程序 agy（可选）"
             },
             "Session": {
                 "Title": "Claude 会话",
@@ -693,6 +869,102 @@
                     "resume": "恢复最近的会话",
                     "terminalHint": "打开终端并在该文件夹中运行 Gemini CLI。",
                     "appHint": "在 Gemini App 中打开新对话：没有项目文件夹，不是 CLI 会话。"
+                }
+            },
+            "AntigravityUsage": {
+                "Title": "Antigravity 用量",
+                "Tip": "以实时仪表显示 Antigravity 模型配额（5 小时与每周限制），数据来自正在运行的 Antigravity App 或 IDE",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricDefault": "默认（剩余最少的限制）",
+                    "lang": "按键文字语言",
+                    "showResetTime": "显示距重置的时间",
+                    "showMark": "显示 Antigravity 标志",
+                    "checking": "正在检查…",
+                    "notAvailable": "不可用：{error}",
+                    "connectedVia": "已连接（{server}）",
+                    "connectedTier": "已连接（{server}）— {tier}",
+                    "serverApp": "Antigravity App",
+                    "serverIde": "Antigravity IDE",
+                    "choiceGroup": "{group}：剩余最少",
+                    "choiceBucket": "{group}：{window}",
+                    "choiceDual": "{group}：5 小时与每周（两行）",
+                    "choiceModel": "模型：{name}",
+                    "window5h": "5 小时限制",
+                    "windowDaily": "每日限制",
+                    "windowWeekly": "每周限制",
+                    "windowMonthly": "每月限制",
+                    "groupLine": "{group}：{limits}",
+                    "limitLeft": "{window}剩余 {left}%",
+                    "limitAmount": "{window}剩余 {amount}",
+                    "limitOff": "{window}未启用",
+                    "limitUnknown": "{window}未知",
+                    "problemNotInstalled": "本机未找到 Antigravity。",
+                    "problemCliOnly": "只找到 agy CLI。配额只能通过 Antigravity App 或 IDE 读取。",
+                    "problemNotRunning": "Antigravity App 和 Antigravity IDE 都未运行。",
+                    "problemSignedOut": "Antigravity 未登录。",
+                    "problemNoQuota": "Antigravity 暂未返回配额。",
+                    "problemOldVersion": "此版本的 Antigravity 不提供配额信息。",
+                    "problemUnreachable": "Antigravity 正在运行，但没有响应。",
+                    "problemUnsupportedOs": "用量按键需要 macOS 或 Linux。",
+                    "errorNetwork": "Antigravity 无法连接 Google，按键会在下次刷新时重试。",
+                    "errorHttp": "Antigravity 返回错误，按键会在下次刷新时重试。",
+                    "errorParse": "Antigravity 返回了无法识别的数据。",
+                    "errorRateLimited": "请求受限，按键稍后自动重试。",
+                    "hintInstall": "请安装 Antigravity App（或 IDE）并登录。",
+                    "hintOpen": "请打开 Antigravity App 或 IDE。在 macOS 上，关闭窗口后 App 可以继续在菜单栏运行。",
+                    "hintCliOnly": "请安装 Antigravity App 或 IDE 并保持其中一个打开，按键会从中读取配额。",
+                    "hintSignIn": "请打开 Antigravity 并用 Google 账号登录。",
+                    "hintUpdate": "请将 Antigravity 更新到最新版本。"
+                }
+            },
+            "AntigravitySession": {
+                "Title": "Antigravity 会话",
+                "Tip": "显示最新的 Antigravity 对话（桌面 App、IDE 或 agy CLI）是在进行中、已完成，还是在等你；按下可列出运行中的对话",
+                "UI": {
+                    "projectFilter": "项目筛选",
+                    "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
+                    "idleMinutes": "多久后视为空闲（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示项目名",
+                    "showMark": "显示 Antigravity 标志",
+                    "checking": "正在查找会话…",
+                    "found": "当前显示：{project} — {state}",
+                    "notFound": "在 {dir} 中没有找到 Antigravity 对话",
+                    "source": "跟踪",
+                    "sourceHint": "App 和 IDE 运行时实时报告状态；agy 对话来自它的摘要数据库和正在运行的 agy 进程",
+                    "sourceAuto": "全部（App、IDE 和 CLI）",
+                    "sourceApp": "Antigravity App",
+                    "sourceIde": "Antigravity IDE",
+                    "sourceCli": "Antigravity CLI（agy）",
+                    "showProgress": "显示任务进度",
+                    "showProgressHint": "来自对话 task.md 产物中的清单"
+                }
+            },
+            "AntigravityNewSession": {
+                "Title": "Antigravity 新建会话",
+                "Tip": "打开新的 Antigravity 对话：在终端中运行 agy，或打开 Antigravity App / IDE",
+                "UI": {
+                    "folder": "项目文件夹（可选）",
+                    "folderHint": "绝对路径或 ~/…；留空则使用主目录",
+                    "lang": "按键文字语言",
+                    "target": "打开方式",
+                    "targetAuto": "自动（已安装 agy 时用 agy，否则用 App）",
+                    "targetTerminal": "终端（agy CLI）",
+                    "targetApp": "Antigravity App（macOS）",
+                    "targetIde": "Antigravity IDE（文件夹，macOS）",
+                    "mode": "权限模式",
+                    "modeDefault": "需审核（默认）",
+                    "modeAcceptEdits": "自动批准编辑",
+                    "modePlan": "计划（不做修改）",
+                    "modeSkip": "跳过所有权限确认（危险）",
+                    "skipWarning": "agy 会不经询问执行所有命令和编辑",
+                    "resume": "继续最近的对话",
+                    "sandbox": "终端沙箱",
+                    "terminalHint": "打开终端并在该文件夹中运行 agy：新的对话。",
+                    "appHint": "打开 Antigravity App（如未运行则启动）。Antigravity 没有新建对话的链接：请在 App 中按 ⌘N。",
+                    "ideHint": "在 Antigravity IDE 中打开该文件夹；在其智能体面板中开始对话。",
+                    "autoHint": "已安装 agy 时在终端中运行 agy；否则在 macOS 上打开 Antigravity App（按 ⌘N 新建对话）或在 IDE 中打开该文件夹。"
                 }
             }
         }

@@ -29,11 +29,23 @@ const SR = req('sessionRender.js');
 const V = req('sessionView.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
 const { GEMINI_BRAND } = req('providers/gemini/brand.js');
+const { ANTIGRAVITY_BRAND } = req('providers/antigravity/brand.js');
 const { CLAUDE_BRAND } = req('providers/claude/brand.js');
 const ClaudeFace = req('providers/claude/usageFace.js');
 const D = req('usageDualRender.js');
 const KimiPaths = req('providers/kimi/paths.js');
 const GeminiPaths = req('providers/gemini/paths.js');
+const AgPaths = req('providers/antigravity/paths.js');
+// the registry reaches Claude's usage client, which loads the FlexDesigner
+// SDK; the real one connects to the app on load, so a stand-in is cached
+const sdk = require.resolve('@eniac/flexdesigner', { paths: [build] });
+require.cache[sdk] = {
+  id: sdk,
+  filename: sdk,
+  loaded: true,
+  exports: { logger: undefined, plugin: undefined },
+};
+const Registry = req('providers/registry.js');
 
 globalThis.fetch = async () => {
   throw new Error('network is disabled in tests');
@@ -93,6 +105,9 @@ const EXPECTED_CIDS = [
   `${PLUGIN}.gemini_usage`,
   `${PLUGIN}.gemini_session`,
   `${PLUGIN}.gemini_newsession`,
+  `${PLUGIN}.antigravity_usage`,
+  `${PLUGIN}.antigravity_session`,
+  `${PLUGIN}.antigravity_newsession`,
 ];
 
 describe('key ids and manifest', () => {
@@ -104,12 +119,40 @@ describe('key ids and manifest', () => {
   const { local: locales } = manifest;
 
   test('keyCid keeps Claude ids and prefixes the others', () => {
-    const cids = ['claude', 'kimi', 'gemini'].flatMap(p =>
+    const cids = ['claude', 'kimi', 'gemini', 'antigravity'].flatMap(p =>
       ['usage', 'session', 'newsession'].map(k => Kit.keyCid(p, k))
     );
     assert.deepEqual(cids, EXPECTED_CIDS);
     assert.equal(SK.SESSION_CID, `${PLUGIN}.session`);
     assert.equal(NK.NEW_SESSION_CID, `${PLUGIN}.newsession`);
+  });
+
+  test('the registry lists the providers and one key group per cid, in order', () => {
+    assert.deepEqual(
+      Registry.PROVIDERS.map(p => p.id),
+      ['claude', 'kimi', 'gemini', 'antigravity']
+    );
+    assert.deepEqual(
+      Registry.ROUTES.map(r => r.cid),
+      EXPECTED_CIDS
+    );
+    const groups = Registry.createKeyGroups(host().deps);
+    assert.deepEqual(
+      groups.map(g => g.cid),
+      EXPECTED_CIDS
+    );
+    for (const cid of EXPECTED_CIDS) {
+      assert.equal(Registry.routeOf(cid)?.cid, cid);
+    }
+    assert.equal(Registry.providerById('antigravity').brand, ANTIGRAVITY_BRAND);
+  });
+
+  test('every provider has its own accent colour and name', () => {
+    const brands = Registry.PROVIDERS.map(p => p.brand);
+    assert.equal(new Set(brands.map(b => b.accent.toLowerCase())).size, brands.length);
+    assert.equal(new Set(brands.map(b => b.name)).size, brands.length);
+    assert.equal(ANTIGRAVITY_BRAND.productName, 'Antigravity');
+    assert.notEqual(ANTIGRAVITY_BRAND.mark, 'clawd');
   });
 
   test('the key library lists every key in order, each with a UI file', () => {
@@ -169,9 +212,12 @@ describe('key ids and manifest', () => {
         ...[...source.matchAll(/["'](\w+\.UI\.\w+)["']/g)].map(m => m[1]),
       ];
       // $t(`Group.UI.${…}`): every name in the page's tables, both
-      // { key: "name" } rows and const MAP = { code: "name" } maps
+      // { value: "id", key: "name" } rows and const MAP = { code: "name" }
+      // maps (rows like { key: "gemini", name: "Gemini" } hold ids, not names)
       const tables = [
-        ...[...source.matchAll(/\bkey: "(\w+)"/g)].map(m => m[1]),
+        ...[...source.matchAll(/\{\s*value: "[^"]*",\s*key: "(\w+)"/g)].map(
+          m => m[1]
+        ),
         ...[...source.matchAll(/const [A-Z_]+ = \{([^{}]*)\}/g)].flatMap(m =>
           [...m[1].matchAll(/:\s*"(\w+)"/g)].map(v => v[1])
         ),
@@ -371,6 +417,59 @@ describe('data folders', () => {
       GeminiPaths.geminiPathSetting({ geminiPath: '~/bin/gemini' }, HOME),
       '/Users/you/bin/gemini'
     );
+  });
+
+  test('Antigravity: setting, then ~/.gemini; one data folder per product', () => {
+    assert.equal(AgPaths.antigravityRoot({}, HOME), '/Users/you/.gemini');
+    assert.equal(
+      AgPaths.antigravityRoot({ antigravityDir: '~/ag' }, HOME),
+      '/Users/you/ag'
+    );
+    assert.equal(
+      AgPaths.antigravityDataDir({}, 'app', HOME),
+      '/Users/you/.gemini/antigravity'
+    );
+    assert.equal(
+      AgPaths.antigravityDataDir({}, 'cli', HOME),
+      '/Users/you/.gemini/antigravity-cli'
+    );
+    assert.equal(
+      AgPaths.antigravityDataDir({ antigravityDir: '/srv/ag' }, 'ide', HOME),
+      '/srv/ag/antigravity-ide'
+    );
+    assert.equal(
+      AgPaths.antigravityUserDataDir('app', 'darwin', {}, HOME),
+      '/Users/you/Library/Application Support/Antigravity'
+    );
+    assert.equal(
+      AgPaths.antigravityUserDataDir('ide', 'linux', {}, HOME),
+      '/Users/you/.config/Antigravity IDE'
+    );
+    assert.equal(
+      AgPaths.antigravityUserDataDir('app', 'linux', { XDG_CONFIG_HOME: '/x' }, HOME),
+      '/x/Antigravity'
+    );
+    assert.equal(AgPaths.antigravityPathSetting({}, HOME), null);
+    assert.equal(AgPaths.antigravityPathSetting({ antigravityPath: ' ' }, HOME), null);
+    assert.equal(
+      AgPaths.antigravityPathSetting({ antigravityPath: '~/bin/agy' }, HOME),
+      '/Users/you/bin/agy'
+    );
+  });
+
+  test('Antigravity: installedProducts lists the data folders that exist', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-paths-test-'));
+    try {
+      const config = { antigravityDir: root };
+      assert.deepEqual(AgPaths.installedProducts(config), []);
+      fs.mkdirSync(path.join(root, 'antigravity-cli'));
+      fs.writeFileSync(path.join(root, 'antigravity'), '');
+      assert.deepEqual(AgPaths.installedProducts(config), ['cli']);
+      fs.mkdirSync(path.join(root, 'antigravity-ide'));
+      assert.deepEqual(AgPaths.installedProducts(config), ['cli', 'ide']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

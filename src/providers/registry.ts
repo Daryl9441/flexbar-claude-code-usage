@@ -12,13 +12,19 @@ import { NewSessionKeys } from '../newSessionKey';
 import { SessionKeys } from '../sessionKey';
 import { UsageKeys } from '../usageKey';
 
+import { ANTIGRAVITY } from './antigravity';
 import { CLAUDE } from './claude';
 import { GEMINI } from './gemini';
 import { KIMI } from './kimi';
 import { keyCid } from './kit';
 import { KeyGroup, KeyHost, KeyKind, ProviderDef, ProviderId } from './types';
 
-export const PROVIDERS: readonly ProviderDef[] = [CLAUDE, KIMI, GEMINI];
+export const PROVIDERS: readonly ProviderDef[] = [
+  CLAUDE,
+  KIMI,
+  GEMINI,
+  ANTIGRAVITY,
+];
 
 export type KeyRoute = { provider: ProviderDef; kind: KeyKind; cid: string };
 
