@@ -89,10 +89,12 @@ Three keys show Moonshot AI's Kimi Code CLI and the Kimi desktop app's Kimi Work
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Usage limit | Default | 5-hour, weekly, monthly, monthly (Kimi Code share), extra usage (booster), or the Kimi Work context. Default shows the 5-hour limit when the plan reports it |
+| Usage limit | Default | 5-hour, weekly, monthly, monthly (Kimi Code share), extra usage (booster), or the Kimi Work context. Default shows the 5-hour limit when the plan reports it. Limits your plan does not report are marked "not on your plan" once the settings page has checked your account |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
 | Show time until reset | on | Show the countdown until the limit resets |
 | Show Kimi mark | on | Show the Kimi mark next to the meter |
+
+Not every plan reports every limit: some report only the 5-hour and weekly limits, and extra usage only appears while the booster wallet is turned on and has a balance. A key set to a limit your plan does not report shows the default limit instead (the 5-hour one when the plan has it), with that limit's own label on the meter, and its settings page says so; your setting is kept, so the key shows the chosen limit again once the plan reports it.
 
 The **Kimi Work context** limit needs no login: it is how full the context window of the running (or latest) Kimi Work task is, read from the Kimi desktop app's data on this computer. On a computer with only the desktop app, it is the only limit available.
 

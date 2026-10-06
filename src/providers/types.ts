@@ -159,8 +159,17 @@ export interface UsageSource {
   /** Key-face text for an error from fetch() (default: errorKeyText) */
   errorText?(error: unknown, lang: Lang): KeyText;
   /**
-   * Key-face text for a key whose metric the last fetch did not return, or
-   * null for the generic "No data for this limit".
+   * The metric a key draws instead when the last fetch did not return its
+   * own (e.g. a limit the user's plan does not have), or null to word the
+   * gap with missingText. Must name one of `metrics`; the key draws it as
+   * usual, with that metric's own chip label, and its saved setting is left
+   * alone. A hook that throws or names another id counts as null.
+   */
+  substituteMetric?(metricId: string, metrics: UsageMetric[]): string | null;
+  /**
+   * Key-face text for a key whose metric the last fetch did not return (and
+   * substituteMetric did not replace), or null for the generic "No data for
+   * this limit".
    */
   missingText?(metricId: string, lang: Lang): KeyText | null;
   /** Error text for the log and the settings UI (default: safeErrorMessage) */

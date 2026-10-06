@@ -42,6 +42,7 @@ const Auth = req('providers/kimi/usageAuth.js');
 const Cfg = req('providers/kimi/usageConfig.js');
 const Ctx = req('providers/kimi/usageContext.js');
 const Kit = req('providers/kit.js');
+const R = req('render.js');
 const { UsageKeys } = req('usageKey.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
 
@@ -134,6 +135,51 @@ const CURRENT = {
     monthlyChargeLimitEnabled: true,
     monthlyChargeLimit: { currency: 'CNY', priceInCents: '20000' },
     monthlyUsed: { currency: 'CNY', priceInCents: '5000' },
+  },
+};
+
+/**
+ * What Kimi Code 2.x answers for a plan with only the 5-hour and weekly
+ * limits: both payload formats at once and a turned-off booster wallet under
+ * its snake_case name. Every value is synthetic.
+ */
+const LIVE = {
+  usage: { limit: '100', remaining: '74', resetTime: '2026-10-11T00:00:00Z' },
+  limits: [
+    {
+      window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+      detail: { limit: '100', remaining: '90', resetTime: '2026-10-05T15:12:00Z' },
+    },
+  ],
+  usages: {
+    limit_5h: { used_ratio: 0.1, reset_time: '2026-10-05T15:12:00Z' },
+    limit_7d: { used_ratio: 0.26, reset_time: '2026-10-11T00:00:00Z' },
+  },
+  booster_wallet: {
+    id: 'FAKE-WALLET-1',
+    userId: 'FAKE-USER-1',
+    balance: {
+      id: 'FAKE-BALANCE-1',
+      feature: 'FEATURE_OMNI',
+      type: 'BOOSTER',
+      unit: 'UNIT_CURRENCY',
+      periodStart: '2026-10-01T00:00:00Z',
+      periodEnd: '2026-11-01T00:00:00Z',
+      subscriptionId: 'FAKE-SUBSCRIPTION-1',
+      userId: 'FAKE-USER-1',
+      createTime: '2026-01-01T00:00:00Z',
+      updateTime: '2026-01-01T00:00:00Z',
+      domain: 'DOMAIN_TEST',
+    },
+    status: 'STATUS_DISABLED',
+    allowTopup: false,
+    topupLimit: { currency: 'CNY', priceInCents: '0' },
+    autoRefillCharge: { currency: 'CNY', priceInCents: '0' },
+    autoRefillThreshold: { currency: 'CNY', priceInCents: '0' },
+    monthlyChargeLimit: { currency: 'CNY', priceInCents: '0' },
+    monthlyUsed: { currency: 'CNY', priceInCents: '0' },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
   },
 };
 
@@ -369,6 +415,41 @@ describe('usage payloads', () => {
     ]);
   });
 
+  test('Kimi Code 2.x: both formats, 5h and weekly only, a turned-off wallet', () => {
+    assert.deepEqual(Api.parseUsagePayload(LIVE, FIXED), [
+      { id: '5h', label: '5h', percent: 10, resetsAt: '2026-10-05T15:12:00.000Z' },
+      { id: 'weekly', label: 'Weekly', percent: 26, resetsAt: '2026-10-11T00:00:00.000Z' },
+    ]);
+  });
+
+  test('booster wallet: either name; none when turned off or without an amount', () => {
+    const wallet = (fields = {}, balance = {}) => ({
+      status: 'STATUS_ENABLED',
+      balance: { type: 'BOOSTER', amount: '20000000000', amountLeft: '5000000000', ...balance },
+      ...fields,
+    });
+    const extra = payload => Api.parseUsagePayload(payload, FIXED).map(m => [m.id, m.percent]);
+    assert.deepEqual(extra({ booster_wallet: wallet() }), [['extra', 75]]);
+    assert.deepEqual(extra({ boosterWallet: wallet() }), [['extra', 75]]);
+    assert.deepEqual(
+      extra({ booster_wallet: wallet({}, { amountLeft: undefined, amount_left: '15000000000' }) }),
+      [['extra', 25]]
+    );
+    // turned off: nothing to spend, whatever the amounts say
+    assert.deepEqual(extra({ booster_wallet: wallet({ status: 'STATUS_DISABLED' }) }), []);
+    assert.deepEqual(extra({ boosterWallet: wallet({ status: 'STATUS_DISABLED' }) }), []);
+    // zero values are left out: no amount = nothing bought, no amountLeft = all spent
+    assert.deepEqual(extra({ booster_wallet: wallet({}, { amount: undefined, amountLeft: undefined }) }), []);
+    assert.deepEqual(extra({ booster_wallet: wallet({}, { amountLeft: undefined }) }), [['extra', 100]]);
+    assert.deepEqual(extra({ booster_wallet: { ...LIVE.booster_wallet, status: 'STATUS_ENABLED' } }), []);
+    // a wallet without a status reads as before
+    assert.deepEqual(
+      extra({ boosterWallet: { balance: { type: 'BOOSTER', amount: '4', amountLeft: '1' } } }),
+      [['extra', 75]]
+    );
+    assert.deepEqual(extra({ booster_wallet: 'junk', boosterWallet: null }), []);
+  });
+
   test('both shapes in one payload: the current one wins', () => {
     const metrics = Api.parseUsagePayload(
       {
@@ -585,6 +666,18 @@ describe('logged in to Kimi Code', () => {
     assert.equal(fetch.calls[0].url, 'https://api.kimi.com/coding/v1/usages');
     assert.equal(authOf(fetch.calls[0]), `Bearer ${access}`);
     assert.ok(!JSON.stringify(metrics).includes(access));
+  });
+
+  test('a plan with only 5h and weekly: those two, then the context', async () => {
+    const t = tree();
+    login(t.code);
+    writeDesktop(t.desktop, { usage: { [convKey(1)]: ctxEntry(0.5, FIXED) } });
+    const fetch = stubFetch({ '/usages': () => json(LIVE) });
+    const metrics = await U.fetchKimiUsage(t.config, deps(fetch));
+    assert.deepEqual(metrics.map(m => [m.id, m.percent]), [['5h', 10], ['weekly', 26], ['context', 50]]);
+    // a key set to a limit this plan lacks shows the 5-hour one
+    assert.equal(U.usageSource.substituteMetric('monthly_code', metrics), '5h');
+    assert.equal(U.usageSource.missingText('monthly_code', 'en'), null);
   });
 
   test('a global login reads its own slot and asks api.kimi.ai', async () => {
@@ -896,6 +989,19 @@ describe('usageSource', () => {
     assert.equal(U.usageSource.minFetchGapMs, undefined, '30 s default gap');
   });
 
+  test('substituteMetric: a limit not on the plan shows the default plan limit', () => {
+    const list = ids => ids.map(id => ({ id, label: id, percent: 1, resetsAt: null }));
+    const sub = U.usageSource.substituteMetric;
+    assert.equal(sub('monthly_code', list(['5h', 'weekly'])), '5h');
+    assert.equal(sub('extra', list(['5h', 'weekly', 'context'])), '5h');
+    assert.equal(sub('monthly', list(['weekly', 'limit_3600s', 'context'])), 'weekly');
+    // the context keeps "No context data"; without plan limits (not logged
+    // in, desktop app only) the key keeps saying why
+    assert.equal(sub('context', list(['5h', 'weekly'])), null);
+    assert.equal(sub('5h', list(['context'])), null);
+    assert.equal(sub('weekly', []), null);
+  });
+
   test('logText: the fixed message, without the class name', () => {
     const e = new Kit.ProviderError('no-credentials', 'Kimi Code is not logged in.');
     assert.equal(U.usageSource.logText(e), 'Kimi Code is not logged in.');
@@ -939,7 +1045,7 @@ describe('usageSource', () => {
 
 // --- through the generic key group ---------------------------------------------------
 
-function keyGroup(config) {
+function keyGroup(config, logger = null) {
   const cid = Kit.keyCid('kimi', 'usage');
   const sent = new Map();
   let chain = Promise.resolve();
@@ -951,7 +1057,7 @@ function keyGroup(config) {
     bgColor: () => undefined,
     loadConfig: async () => config,
     pollIntervalMs: () => 3_600_000,
-    logger: null,
+    logger,
     provider: { cid, brand: KIMI_BRAND, source: U.usageSource },
   });
   const settle = async () => {
@@ -964,6 +1070,14 @@ function keyGroup(config) {
   };
   return { cid, keys, sent, settle };
 }
+
+/** A message face as the Kimi usage keys draw it. */
+const messageFace = (width, title, text) =>
+  R.renderMessageKey(width, title, text, {
+    accent: KIMI_BRAND.accent,
+    mark: Kit.brandMark(KIMI_BRAND),
+    markColor: KIMI_BRAND.accent,
+  });
 
 /** [width, height] of a PNG data URL. */
 function pngSize(dataUrl) {
@@ -1025,6 +1139,87 @@ describe('Kimi usage keys', () => {
       const reply = await keys.message({ data: 'usage-status', cid, settings: {} });
       assert.equal(reply.success, false);
       assert.match(reply.error, /Rate limited, retry in/);
+    } finally {
+      keys.stop();
+    }
+  });
+
+  test('a limit the plan does not have shows the 5-hour limit, logged once', async () => {
+    const t = tree();
+    login(t.code, { base: Date.now() }); // the key group runs on the real clock
+    globalThis.fetch = async () => json(LIVE);
+    const info = [];
+    const { cid, keys, sent, settle } = keyGroup(t.config, {
+      info: (...a) => info.push(a.join(' ')),
+      warn: () => undefined,
+      error: () => undefined,
+    });
+    // no reset time: two draws a minute apart must match
+    const key = (uid, width, metric, lang = 'en') => ({
+      uid,
+      cid,
+      width,
+      data: { metric, showResetTime: false, showMark: true, lang },
+    });
+    try {
+      const all = [
+        key(1, 300, 'monthly_code'),
+        key(2, 300, '5h'),
+        key(3, 120, 'extra', 'zh'),
+        key(4, 120, '5h', 'zh'),
+        key(5, 300, 'context'),
+        key(6, 120, 'context', 'zh'),
+      ];
+      await keys.alive('FAKE-DEVICE-1', all);
+      await settle();
+      // the 5h meter with its own chip ("5h", "5小时"), not "No data"
+      assert.equal(sent.get(1), sent.get(2));
+      assert.equal(sent.get(3), sent.get(4));
+      assert.notEqual(sent.get(1), messageFace(300, 'Kimi Code', 'No data for this limit'));
+      // the context is not replaced: it says what is missing
+      assert.equal(sent.get(5), messageFace(300, 'No context data', 'Use Kimi Work first'));
+      assert.equal(sent.get(6), messageFace(120, '暂无上下文数据', '请先使用 Kimi Work'));
+      // settings untouched, one log line per key however often it redraws
+      assert.equal(all[0].data.metric, 'monthly_code');
+      await keys.drawAll();
+      await settle();
+      assert.deepEqual(
+        info.filter(line => line.includes('is not on this plan')),
+        [
+          "Kimi usage key uid=1: limit 'monthly_code' is not on this plan; showing 5h",
+          "Kimi usage key uid=3: limit 'extra' is not on this plan; showing 5h",
+        ]
+      );
+      assert.match(info[0], /^Kimi usage keys alive on FAKE-DEVICE-1: uid=1 width=300 metric=monthly_code, uid=2 width=300 metric=5h, /);
+    } finally {
+      keys.stop();
+    }
+  });
+
+  test('without plan limits a plan-limit key still says why', async () => {
+    const t = tree();
+    fs.mkdirSync(t.code, { recursive: true }); // Kimi Code, not logged in
+    writeDesktop(t.desktop, { usage: { [convKey(1)]: ctxEntry(0.4, FIXED) } });
+    globalThis.fetch = stubFetch({});
+    const info = [];
+    const { cid, keys, sent, settle } = keyGroup(t.config, {
+      info: (...a) => info.push(a.join(' ')),
+      warn: () => undefined,
+      error: () => undefined,
+    });
+    try {
+      await keys.alive('FAKE-DEVICE-1', [
+        { uid: 1, cid, width: 300, data: { metric: 'monthly_code' } },
+        { uid: 2, cid, width: 120, data: { metric: '5h', lang: 'zh' } },
+        { uid: 3, cid, width: 300, data: { metric: '' } },
+      ]);
+      await settle();
+      assert.equal(globalThis.fetch.calls.length, 0);
+      assert.equal(sent.get(1), messageFace(300, 'Not logged in', 'Run kimi login'));
+      assert.equal(sent.get(2), messageFace(120, '未登录', '请运行 kimi login'));
+      assert.deepEqual(pngSize(sent.get(3)), [300, 60]); // the context meter
+      assert.notEqual(sent.get(3), messageFace(300, 'Not logged in', 'Run kimi login'));
+      assert.ok(!info.some(line => line.includes('is not on this plan')), info.join('\n'));
     } finally {
       keys.stop();
     }

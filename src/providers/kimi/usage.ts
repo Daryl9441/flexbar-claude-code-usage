@@ -13,6 +13,8 @@
  * | Found on this computer          | Metrics / key face                       |
  * | ------------------------------- | ---------------------------------------- |
  * | Kimi Code logged in             | 5h, weekly, … (+ context with Kimi Work) |
+ * | … key set to a limit not on the | the default plan limit (5h when there),  |
+ * |   plan (e.g. monthly_code)      |   with its own chip (substituteMetric)   |
  * | only Kimi Work context data     | context                                  |
  * | Kimi Code folder, no login      | "Not logged in · Run kimi login"         |
  * | login rejected / tombstone      | "Login expired · Run kimi login"         |
@@ -221,9 +223,24 @@ function logText(error: unknown): string {
 }
 
 /**
- * Key face for a key whose metric the last fetch did not return, or null
- * for the generic "No data for this limit". Not part of UsageSource yet:
- * the integrator can call it from UsageKeys (see the hand-back).
+ * The limit a key draws when its own is not on the user's plan (a plan
+ * without the monthly limits, a turned-off booster wallet): the default plan
+ * limit, i.e. the first one returned (5h when the plan has it), drawn with
+ * its own chip. Never for the Kimi Work context, and never without plan
+ * limits (not logged in, …): missingText words those.
+ */
+function substituteMetric(
+  metricId: string,
+  metrics: UsageMetric[]
+): string | null {
+  if (metricId === 'context') return null;
+  return metrics.find(m => m.id !== 'context')?.id ?? null;
+}
+
+/**
+ * Key face for a key whose metric the last fetch did not return and that
+ * substituteMetric did not replace, or null for the generic "No data for
+ * this limit".
  */
 function missingText(metricId: string, lang: Lang): KeyText | null {
   if (metricId === 'context') return TEXT.noContext[lang];
@@ -242,6 +259,7 @@ async function fetchAndRemember(
 }
 
 export type KimiUsageSource = UsageSource & {
+  substituteMetric(metricId: string, metrics: UsageMetric[]): string | null;
   missingText(metricId: string, lang: Lang): KeyText | null;
 };
 
@@ -255,6 +273,8 @@ export const usageSource: KimiUsageSource = {
 
   metricLabel: (metric, lang) =>
     (lang === 'zh' && LABEL_ZH[metric.id]) || metric.label,
+
+  substituteMetric,
 
   missingText,
 

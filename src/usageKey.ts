@@ -96,6 +96,21 @@ function describeError(error: unknown): string {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }
 
+/**
+ * A metric id fit for one log line: ids are short words ('5h', 'weekly'),
+ * but a key's setting is whatever its settings page stored.
+ */
+function logId(metric: string): string {
+  const id = metric.replace(/[^\w.:-]/g, '?');
+  return id.length > 40 ? `${id.slice(0, 40)}…` : id;
+}
+
+/** The `metric` setting of a key for the log, 'default' when empty. */
+function metricSetting(key: Key): string {
+  const metric: unknown = key?.data?.metric;
+  return typeof metric === 'string' && metric ? logId(metric) : 'default';
+}
+
 export class UsageKeys implements KeyGroup {
   readonly cid: string;
   private keys = new Map<string, Key[]>();
@@ -107,6 +122,11 @@ export class UsageKeys implements KeyGroup {
   private lockTicker: NodeJS.Timeout | null = null;
   private lastFetchAt = 0;
   private inFlight: Promise<void> | null = null;
+  /**
+   * Keys drawing another metric than their setting (substituteMetric), by
+   * serial number and uid, so each change is logged once, not every redraw.
+   */
+  private substituted = new Map<string, Map<unknown, string>>();
 
   constructor(private readonly deps: UsageKeyDeps) {
     this.cid = deps.provider.cid;
@@ -125,6 +145,11 @@ export class UsageKeys implements KeyGroup {
     return this.cid === keyCid('claude', 'usage');
   }
 
+  /** How log lines name these keys: "Usage" (Claude), "Kimi usage", … */
+  private get logName(): string {
+    return this.isClaude ? 'Usage' : `${this.brand.name} usage`;
+  }
+
   /**
    * plugin.alive: keys loaded onto a device page (page switch, profile
    * upload, reconnect), with FlexDesigner's current uid and width for each.
@@ -136,11 +161,15 @@ export class UsageKeys implements KeyGroup {
       return;
     }
     this.keys.set(serialNumber, mine);
-    const name = this.isClaude ? 'Usage' : `${this.brand.name} usage`;
+    this.pruneSubstituted(serialNumber);
     this.deps.logger?.info?.(
-      `${name} keys alive on ${serialNumber}: ` +
+      `${this.logName} keys alive on ${serialNumber}: ` +
         mine
-          .map(key => `uid=${key.uid} width=${this.deps.keyWidth(key)}`)
+          .map(
+            key =>
+              `uid=${key.uid} width=${this.deps.keyWidth(key)} ` +
+              `metric=${metricSetting(key)}`
+          )
           .join(', ')
     );
 
@@ -163,6 +192,7 @@ export class UsageKeys implements KeyGroup {
         : (this.keys.get(serialNumber) ?? []).filter(key => !dead.has(key.uid));
     if (remaining.length > 0) this.keys.set(serialNumber, remaining);
     else this.keys.delete(serialNumber);
+    this.pruneSubstituted(serialNumber);
   }
 
   /**
@@ -259,6 +289,58 @@ export class UsageKeys implements KeyGroup {
     return errorKeyText(error, this.brand, lang);
   }
 
+  /**
+   * The metric the source draws instead of one the last fetch did not
+   * return, or null. Only an id among `metrics` counts.
+   */
+  private substitute(
+    metric: string,
+    metrics: UsageMetric[]
+  ): UsageMetric | null {
+    if (!this.source.substituteMetric) return null;
+    try {
+      const id = this.source.substituteMetric(metric, metrics);
+      return (id && metrics.find(m => m.id === id)) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Remembers which metric a key draws in place of its setting (null: its
+   * own) and logs each new substitution once.
+   */
+  private noteSubstitute(
+    serialNumber: string,
+    uid: unknown,
+    metric: string,
+    shown: string | null
+  ) {
+    const keys = this.substituted.get(serialNumber);
+    if (shown === null) {
+      keys?.delete(uid);
+      if (keys?.size === 0) this.substituted.delete(serialNumber);
+      return;
+    }
+    const entry = `${metric}\u0000${shown}`;
+    if (keys?.get(uid) === entry) return;
+    if (keys) keys.set(uid, entry);
+    else this.substituted.set(serialNumber, new Map([[uid, entry]]));
+    this.deps.logger?.info?.(
+      `${this.logName} key uid=${uid}: limit '${logId(metric)}' is not on ` +
+        `this plan; showing ${logId(shown)}`
+    );
+  }
+
+  /** Forgets substitutions of keys no longer alive on a device. */
+  private pruneSubstituted(serialNumber: string) {
+    const keys = this.substituted.get(serialNumber);
+    if (!keys) return;
+    const alive = new Set((this.keys.get(serialNumber) ?? []).map(k => k.uid));
+    for (const uid of [...keys.keys()]) if (!alive.has(uid)) keys.delete(uid);
+    if (keys.size === 0) this.substituted.delete(serialNumber);
+  }
+
   /** The source's text for a metric the last fetch did not return, or null. */
   private missingText(metric: string, lang: Lang): KeyText | null {
     try {
@@ -305,15 +387,14 @@ export class UsageKeys implements KeyGroup {
     try {
       return (await this.source.face(request)) ?? null;
     } catch (error) {
-      const name = this.isClaude ? 'Usage' : `${this.brand.name} usage`;
       this.deps.logger?.warn?.(
-        `${name} key face failed: ${this.logText(error)}`
+        `${this.logName} key face failed: ${this.logText(error)}`
       );
       return null;
     }
   }
 
-  private async renderKey(key: Key): Promise<string> {
+  private async renderKey(serialNumber: string, key: Key): Promise<string> {
     const width = this.deps.keyWidth(key);
     const data = key?.data ?? {};
     const lang = langOf(data.lang);
@@ -359,6 +440,7 @@ export class UsageKeys implements KeyGroup {
         data,
       });
       if (face) {
+        this.noteSubstitute(serialNumber, key?.uid, metric, null);
         return 'image' in face
           ? face.image
           : renderMessageKey(
@@ -368,9 +450,9 @@ export class UsageKeys implements KeyGroup {
               message
             );
       }
-      const snapshot = this.metrics.find(m => m.id === metric);
-      if (snapshot) {
-        return renderUsageKey(
+      // the meter of one metric, with that metric's own chip text
+      const meter = (snapshot: UsageMetric) =>
+        renderUsageKey(
           width,
           { ...snapshot, label: this.metricLabel(snapshot, lang) },
           {
@@ -383,7 +465,12 @@ export class UsageKeys implements KeyGroup {
             ...(this.brand.mark === 'clawd' ? {} : { dropVersion: true }),
           }
         );
-      }
+      const snapshot = this.metrics.find(m => m.id === metric);
+      // a limit the plan does not have: the source may name one to show
+      const stand = snapshot ? null : this.substitute(metric, this.metrics);
+      this.noteSubstitute(serialNumber, key?.uid, metric, stand?.id ?? null);
+      const shown = snapshot ?? stand;
+      if (shown) return meter(shown);
       const missing = this.missingText(metric, lang);
       return missing
         ? renderMessageKey(width, missing.title, missing.message, message)
@@ -421,7 +508,11 @@ export class UsageKeys implements KeyGroup {
     const key = this.aliveKey(serialNumber, uid);
     if (!key) return;
     try {
-      await this.deps.send(serialNumber, key, await this.renderKey(key));
+      await this.deps.send(
+        serialNumber,
+        key,
+        await this.renderKey(serialNumber, key)
+      );
     } catch (error) {
       this.deps.logger?.warn?.(
         `Could not draw key ${uid}: ${describeError(error)}`

@@ -4,11 +4,16 @@
  *
  * - current (Kimi Code since 2026-09): { usages: { limit_5h, limit_7d,
  *   limit_month_total, limit_month_code: { used_ratio 0–1, reset_time } },
- *   boosterWallet: { balance: { type: 'BOOSTER', amount, amountLeft } } }
- *   (booster amounts are fixed-point, 1e6 per cent);
- * - legacy (kimi-cli, older Kimi Code): { usage: { used, limit, resetTime },
- *   limits: [{ window: { duration, timeUnit }, detail: { used | remaining,
- *   limit, resetTime | reset_in } }] }.
+ *   booster_wallet (or boosterWallet): { status, balance: { type: 'BOOSTER',
+ *   amount, amountLeft } } } (booster amounts are fixed-point, 1e6 per cent;
+ *   zero amounts are left out). Plans report only some limits (e.g. 5h and
+ *   weekly, no monthly ones), and a wallet with status 'STATUS_DISABLED' or
+ *   no amount has no extra usage;
+ * - legacy (kimi-cli, older Kimi Code): { usage: { used | remaining, limit,
+ *   resetTime }, limits: [{ window: { duration, timeUnit }, detail: { used |
+ *   remaining, limit, resetTime | reset_in } }] }.
+ *
+ * Kimi Code 2.x sends both shapes in one payload; the current one wins.
  *
  * Sends exactly the CLI's two headers (no device headers: they carry the
  * host name). Responses are parsed without quoting them in errors.
@@ -101,14 +106,22 @@ function quotaMetrics(usages: unknown): UsageMetric[] {
   });
 }
 
-/** Booster wallet: share of the purchased extra usage already spent. */
+/**
+ * Booster wallet: share of the purchased extra usage already spent. None
+ * for a turned-off wallet or one without a purchased amount.
+ */
 function boosterMetric(wallet: unknown): UsageMetric | null {
   if (!isRecord(wallet) || !isRecord(wallet.balance)) return null;
+  if (typeof wallet.status === 'string' && /DISABLED/i.test(wallet.status)) {
+    return null;
+  }
   const balance = wallet.balance;
   if (balance.type !== 'BOOSTER') return null;
   const amount = num(balance.amount);
   if (amount === null || amount <= 0) return null;
-  const left = Math.min(amount, Math.max(0, num(balance.amountLeft) ?? 0));
+  // zero values are left out of the payload: no amountLeft = all spent
+  const rest = num(balance.amountLeft ?? balance.amount_left) ?? 0;
+  const left = Math.min(amount, Math.max(0, rest));
   return metric('extra', percentFromRatio(1 - left / amount), null);
 }
 
@@ -242,7 +255,11 @@ export function parseUsagePayload(
 ): UsageMetric[] {
   if (!isRecord(payload)) return [];
   const current = quotaMetrics(payload.usages);
-  const booster = boosterMetric(payload.boosterWallet);
+  const booster = boosterMetric(
+    isRecord(payload.boosterWallet)
+      ? payload.boosterWallet
+      : payload.booster_wallet
+  );
   if (booster) current.push(booster);
   for (const legacy of legacyMetrics(payload, now)) {
     if (!current.some(m => m.id === legacy.id)) current.push(legacy);

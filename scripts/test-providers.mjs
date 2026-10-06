@@ -148,6 +148,31 @@ describe('key ids and manifest', () => {
     assert.equal(locales.en.PluginName, 'AI Coding Usage');
     assert.equal(locales['zh-CN'].PluginName, 'AI 编程用量');
   });
+
+  test('every string a settings page names has English and Chinese text', () => {
+    const lookup = (strings, ref) =>
+      ref.split('.').reduce((node, part) => node?.[part], strings);
+    let refs = 0;
+    for (const file of fs.readdirSync(path.join(pluginDir, 'ui'))) {
+      const source = fs.readFileSync(path.join(pluginDir, 'ui', file), 'utf8');
+      const named = [
+        // $t("Group.UI.name") and $t(`Group.UI.${…}`) with a { key: "name" } table
+        ...[...source.matchAll(/\$t\(\s*["'](\w+\.UI\.\w+)["']/g)].map(m => m[1]),
+        ...[...source.matchAll(/\$t\(\s*`(\w+)\.UI\.\$\{/g)].flatMap(m =>
+          [...source.matchAll(/\bkey: "(\w+)"/g)].map(k => `${m[1]}.UI.${k[1]}`)
+        ),
+      ];
+      for (const ref of new Set(named)) {
+        refs++;
+        for (const lang of ['en', 'zh-CN']) {
+          const text = lookup(locales[lang], ref);
+          assert.equal(typeof text, 'string', `${file}: ${lang} ${ref}`);
+          assert.ok(text.trim(), `${file}: ${lang} ${ref}`);
+        }
+      }
+    }
+    assert.ok(refs > 50, `${refs} strings`);
+  });
 });
 
 // --- kit -----------------------------------------------------------------------
@@ -440,6 +465,92 @@ describe('UsageKeys', () => {
         // never asked for a metric that is there
         assert.equal(t.last(5), await meter(metrics[0]));
         assert.ok(asked.every(([id]) => id !== '5h'));
+      } finally {
+        t.keys.stop();
+      }
+    });
+  });
+
+  test('substituteMetric draws another metric for one the fetch did not return', async () => {
+    await withClock(NOW, async () => {
+      const info = [];
+      const asked = [];
+      const t = usageKeys(
+        {
+          defaultMetric: '',
+          fetch: async () => metrics,
+          substituteMetric: (id, list) => {
+            asked.push(id);
+            if (id === 'broken') throw new Error('boom');
+            if (id === 'bogus') return 'not-a-metric';
+            if (id === 'context') return null;
+            return list[1].id;
+          },
+          missingText: id =>
+            id === 'context' ? { title: 'No context data', message: 'Use Kimi Work first' } : null,
+        },
+        {
+          logger: { info: (...a) => info.push(a.join(' ')), warn: () => undefined, error: () => undefined },
+        }
+      );
+      const notOnPlan = () => info.filter(line => line.includes('is not on this plan'));
+      try {
+        const keys = [
+          t.key(1, { metric: 'monthly' }),
+          t.key(2, { metric: 'context' }),
+          t.key(3, { metric: 'broken' }),
+          t.key(4, { metric: 'bogus' }),
+          t.key(5, { metric: '5h' }),
+          t.key(6, { metric: 'odd\nid' }, 120),
+          t.key(7),
+        ];
+        await t.keys.alive(SERIAL, keys);
+        await t.settle();
+        // the stand-in is drawn like a key set to it, chip and all
+        assert.equal(t.last(1), await meter(metrics[1]));
+        assert.equal(t.last(6), await meter(metrics[1], 120));
+        // null, a throwing hook or an id that was not fetched: missingText
+        assert.equal(t.last(2), message('No context data', 'Use Kimi Work first'));
+        assert.equal(t.last(3), message('Kimi Code', 'No data for this limit'));
+        assert.equal(t.last(4), message('Kimi Code', 'No data for this limit'));
+        // never asked for a metric that is there, or for the default
+        assert.equal(t.last(5), await meter(metrics[0]));
+        assert.equal(t.last(7), await meter(metrics[0]));
+        assert.deepEqual(asked.sort(), ['bogus', 'broken', 'context', 'monthly', 'odd\nid']);
+        // the key's setting is left alone
+        assert.equal(keys[0].data.metric, 'monthly');
+        assert.ok(
+          info.includes(
+            `Kimi usage keys alive on ${SERIAL}: uid=1 width=240 metric=monthly, ` +
+              'uid=2 width=240 metric=context, uid=3 width=240 metric=broken, ' +
+              'uid=4 width=240 metric=bogus, uid=5 width=240 metric=5h, ' +
+              'uid=6 width=120 metric=odd?id, uid=7 width=240 metric=default'
+          ),
+          info.join('\n')
+        );
+
+        // one line per key and change, not one per redraw
+        await t.keys.drawAll();
+        await t.keys.alive(SERIAL, keys);
+        await t.settle();
+        const first = [
+          "Kimi usage key uid=1: limit 'monthly' is not on this plan; showing weekly",
+          "Kimi usage key uid=6: limit 'odd?id' is not on this plan; showing weekly",
+        ];
+        assert.deepEqual(notOnPlan(), first);
+
+        // set to a metric that is there, then back: logged again
+        await t.keys.alive(SERIAL, [t.key(1, { metric: '5h' })]);
+        await t.settle();
+        assert.equal(t.last(1), await meter(metrics[0]));
+        await t.keys.alive(SERIAL, [t.key(1, { metric: 'monthly' })]);
+        await t.settle();
+        assert.deepEqual(notOnPlan(), [...first, first[0]]);
+        // a key that left the page is forgotten: back on it, logged again
+        await t.keys.dead(SERIAL, [t.key(1)]);
+        await t.keys.alive(SERIAL, [t.key(1, { metric: 'monthly' })]);
+        await t.settle();
+        assert.deepEqual(notOnPlan(), [...first, first[0], first[0]]);
       } finally {
         t.keys.stop();
       }
@@ -887,7 +998,7 @@ describe('Claude keys keep their log wording', () => {
     try {
       await keys.alive(SERIAL, [{ uid: 1, cid, width: 240, data: {} }]);
       await h.settle();
-      assert.ok(info.includes(`Usage keys alive on ${SERIAL}: uid=1 width=240`), info.join('\n'));
+      assert.ok(info.includes(`Usage keys alive on ${SERIAL}: uid=1 width=240 metric=default`), info.join('\n'));
       assert.ok(warn.includes('Usage endpoint rate limited, backing off for 60s'), warn.join('\n'));
     } finally {
       keys.stop();

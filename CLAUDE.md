@@ -219,18 +219,20 @@ outside the repository with `assert` changed to `with` in
   `src/providers/claude/`; `usageFace.ts` is the Usage key's default 'dual'
   face (what is left of the 5-hour and weekly limits, `UsageSource.face`).
 - Kimi (`src/providers/kimi/`): `paths.ts` (Kimi Code home, desktop data
-  folder). Usage: `usage.ts` (`usageSource`, `missingText`), `usageConfig.ts`
-  (endpoint and login slot like the CLI: env, `config.toml`, region marker),
-  `usageAuth.ts` (token file, refresh under the CLI's `oauth/<slot>.lock`,
-  atomic 0600 write-back; off with `kimiRefreshLogin: false`), `usageApi.ts`
-  (`/usages`, both response formats), `usageContext.ts` (Kimi Work context
-  fill from the desktop app). Sessions: `sessionSource.ts` (one source for all
-  Kimi keys: watchers, poll, merge, notices per `source` setting),
-  `sessionCli.ts` + `sessionWire.ts` + `sessionTail.ts` (Kimi Code
-  `state.json` and `wire.jsonl` journals), `sessionDesktop.ts` (Kimi Work
-  stores, daemon state, sqlite titles via `node:sqlite`, read-only),
-  `sessionFs.ts`, `session.ts` (`sessionProvider`). `newSession.ts`: terminal
-  running `kimi` or `kimi-work://open`.
+  folder). Usage: `usage.ts` (`usageSource`; `substituteMetric` draws the
+  default plan limit for a limit the plan lacks, `missingText`),
+  `usageConfig.ts` (endpoint and login slot like the CLI: env,
+  `config.toml`, region marker), `usageAuth.ts` (token file, refresh under
+  the CLI's `oauth/<slot>.lock`, atomic 0600 write-back; off with
+  `kimiRefreshLogin: false`), `usageApi.ts` (`/usages`, both response
+  formats, `booster_wallet` or `boosterWallet`), `usageContext.ts` (Kimi
+  Work context fill from the desktop app). Sessions: `sessionSource.ts`
+  (one source for all Kimi keys: watchers, poll, merge, notices per
+  `source` setting), `sessionCli.ts` + `sessionWire.ts` + `sessionTail.ts`
+  (Kimi Code `state.json` and `wire.jsonl` journals), `sessionDesktop.ts`
+  (Kimi Work stores, daemon state, sqlite titles via `node:sqlite`,
+  read-only), `sessionFs.ts`, `session.ts` (`sessionProvider`).
+  `newSession.ts`: terminal running `kimi` or `kimi-work://open`.
 - Gemini (`src/providers/gemini/`): `paths.ts` (Gemini home, `geminiPath`).
   Usage: `usage.ts` (`usageSource`: metrics, caching, keep-last), `usageCreds.ts`
   (`oauth_creds.json` read-only, in-memory refresh), `usageCli.ts` (finds the
@@ -242,8 +244,10 @@ outside the repository with `assert` changed to `with` in
   `sessionProcs.ts` (`ps`/`lsof` or `/proc` probe via `execFile`),
   `session.ts`. New session: `newSession.ts` (Terminal running `gemini`, or
   `googlegemini://newchat`), `sessionCli.ts` (finds the `gemini` program).
-- Key-group hooks a provider may use: `UsageSource.missingText` (text for a
-  metric the fetch did not return), `UsageSource.face` (a face of its own for
+- Key-group hooks a provider may use: `UsageSource.substituteMetric` (a
+  reported metric to draw instead of one the fetch did not return; logged
+  once per key), `UsageSource.missingText` (text for a metric the fetch did
+  not return and nothing replaced), `UsageSource.face` (a face of its own for
   a metric setting, e.g. Claude's 'dual'), `SessionSource.notice(data)` (per
   key settings), `NewSessionRequest.config` (global settings), and a
   launcher's `ProviderError` with `extra.keyText` (its title replaces the

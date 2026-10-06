@@ -47,6 +47,9 @@
         <v-row>
             <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
+                <p v-if="substituteText" class="text-caption mx-2">
+                    {{ substituteText }}
+                </p>
                 <p
                     v-if="modelValue.data.metric === 'context'"
                     class="text-caption mx-2"
@@ -61,7 +64,11 @@
 <script>
 // Kimi Usage key settings. The metric list is fixed (the backend's metric ids
 // in src/providers/kimi/usageApi.ts); limits only an older server reports are
-// appended from the backend's reply.
+// appended from the backend's reply. Once the backend has answered with plan
+// limits, the ones the account does not report are marked and disabled: a
+// key set to one shows the default limit instead (usageSource.substituteMetric
+// in src/providers/kimi/usage.ts). Default and the current choice stay
+// selectable.
 const METRICS = [
     { value: "5h", key: "metric5h" },
     { value: "weekly", key: "metricWeekly" },
@@ -95,6 +102,9 @@ export default {
     data() {
         return {
             metrics: [],
+            // ids the account reports, or null until the backend answered
+            // with plan limits (not logged in, errors: nothing is marked)
+            reported: null,
             statusText: "",
         };
     },
@@ -118,7 +128,46 @@ export default {
             if (current && !known.has(current)) {
                 options.push({ title: current, value: current });
             }
-            return options;
+            if (!this.reported) return options;
+            return options.map(option => {
+                const value = option.value;
+                if (value === "" || this.reported.includes(value)) {
+                    return option;
+                }
+                // the Kimi Work context comes from the desktop app, not the
+                // plan: it may appear later, so it stays selectable
+                if (value === "context") {
+                    return {
+                        ...option,
+                        title: this.$t("KimiUsage.UI.metricNoContext", {
+                            metric: option.title,
+                        }),
+                    };
+                }
+                return {
+                    ...option,
+                    title: this.$t("KimiUsage.UI.metricNotOnPlan", {
+                        metric: option.title,
+                    }),
+                    props: { disabled: value !== current },
+                };
+            });
+        },
+        // the limit a key set to an unavailable plan limit shows instead
+        substituteText() {
+            const current = this.modelValue.data.metric;
+            if (!this.reported || !current || current === "context") {
+                return "";
+            }
+            if (this.reported.includes(current)) return "";
+            const fallback = this.metrics.find(m => m.id !== "context");
+            if (!fallback) return "";
+            const known = METRICS.find(m => m.value === fallback.id);
+            return this.$t("KimiUsage.UI.substituteHint", {
+                limit: known
+                    ? this.$t(`KimiUsage.UI.${known.key}`)
+                    : fallback.label,
+            });
         },
         langOptions() {
             return [
@@ -140,10 +189,16 @@ export default {
                     this.metrics = Array.isArray(response.metrics)
                         ? response.metrics
                         : [];
+                    const plan = this.metrics.filter(m => m.id !== "context");
+                    this.reported =
+                        !response.contextOnly && plan.length > 0
+                            ? this.metrics.map(m => m.id)
+                            : null;
                     this.statusText = response.contextOnly
                         ? this.$t("KimiUsage.UI.contextOnly")
                         : this.$t("KimiUsage.UI.connected");
                 } else {
+                    this.reported = null;
                     const key = response && ERROR_KEYS[response.code];
                     this.statusText = key
                         ? this.$t(`KimiUsage.UI.${key}`)
