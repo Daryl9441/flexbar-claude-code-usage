@@ -17,8 +17,12 @@
  * loopback request). The LS is asked to refresh from Google (forceRefresh)
  * on the first fetch, at most every 15 minutes after that, when a limit's
  * reset time has passed, and when a settings page opens (at most once a
- * minute). GetUserStatus (≈ 30 KB: plan name, per-model quota) only feeds
- * the settings page (every 30 minutes at most) and the no-groups fallback.
+ * minute). A forced request waits on Google (seconds), so it gets a longer
+ * deadline; one that runs out is asked again unforced on the same port
+ * (the LS answers from its cache in about a millisecond) and counts as the
+ * refresh, so a slow Google never blanks the key. GetUserStatus (≈ 30 KB:
+ * plan name, per-model quota) only feeds the settings page (every 30
+ * minutes at most) and the no-groups fallback.
  *
  * The CSRF token stays in memory and only goes to a port lsof attributes
  * to the LS it came from, in a header (./usageRpc.ts). The agy CLI keeps
@@ -66,6 +70,7 @@ import {
 import {
   RpcPost,
   RpcResult,
+  RpcTransportError,
   classifyReply,
   describeTransport,
   httpPost,
@@ -90,11 +95,20 @@ const STATUS_TTL_MS = 30 * 60_000;
 const STATUS_FALLBACK_TTL_MS = 10 * 60_000;
 /** Keep showing the last meter through blips for at most this long */
 const KEEP_LAST_MS = 30 * 60_000;
+/**
+ * …but after the app and the IDE quit only this long (a restart): the quota
+ * is account-wide and agy keeps using it while nothing can read it
+ */
+const KEEP_NOT_RUNNING_MS = 2 * 60_000;
 const RPC_TIMEOUT_MS = 5_000;
+/** A forced refresh waits on Google: a longer deadline */
+const FORCED_RPC_TIMEOUT_MS = 20_000;
 const QUOTA_MAX_BYTES = 512 * 1024;
 const STATUS_MAX_BYTES = 4 * 1024 * 1024;
 
 const QUOTA_METHOD = 'RetrieveUserQuotaSummary';
+const QUOTA_BODY = { request: {} };
+const QUOTA_FORCED_BODY = { request: {}, forceRefresh: true };
 const STATUS_METHOD = 'GetUserStatus';
 const STATUS_BODY = {
   metadata: {
@@ -148,6 +162,17 @@ type StatusInfo = {
 };
 
 type Answer = { result: RpcResult; server: LanguageServer };
+
+/**
+ * A forced request: its deadline, the unforced body asked on the same port
+ * when it runs out, and whether the LS got it (answered or timed out).
+ */
+type ForcedCall = { timeoutMs: number; fallback: unknown; reached: boolean };
+
+/** True for a request that ran out of time (the LS may still be busy). */
+function timedOut(error: unknown): boolean {
+  return error instanceof RpcTransportError && error.reason === 'timeout';
+}
 
 type Outcome =
   | { at: number; key: string; metrics: UsageMetric[] }
@@ -233,6 +258,8 @@ export function createAntigravityUsageSource(
   let recent: Outcome | null = null;
   let inFlight: { key: string; promise: Promise<UsageMetric[]> } | null = null;
   let lastSuccessAt = 0;
+  /** When the app and the IDE were first seen not running (0: they run) */
+  let notRunningSince = 0;
 
   // --- installation ----------------------------------------------------------
 
@@ -322,14 +349,32 @@ export function createAntigravityUsageSource(
    * passed over while another may do better. Ports that fail at transport
    * level are skipped; when nothing answers and the process lookup was
    * older, it is redone once. Null when no server runs.
+   *
+   * `forced`: a forced refresh. It gets its own deadline; when it runs out,
+   * the same port is asked once more with the unforced body, and every
+   * later request of this call is unforced too (the refresh was sent).
    */
   async function call(
     method: string,
     body: unknown,
-    maxBytes: number
+    maxBytes: number,
+    forced?: ForcedCall
   ): Promise<Answer | null> {
     let { list, fresh } = await discover(false);
     let transport = 'no open port';
+    let current = body;
+    let timeoutMs = forced?.timeoutMs ?? RPC_TIMEOUT_MS;
+    const send = async (server: LanguageServer, port: number) =>
+      classifyReply(
+        await post({
+          port,
+          method,
+          body: current,
+          token: server.token,
+          timeoutMs,
+          maxBytes,
+        })
+      );
     for (let round = 0; round < 2; round++) {
       if (round === 1) {
         if (fresh) break;
@@ -348,25 +393,29 @@ export function createAntigravityUsageSource(
         for (const port of order) {
           let result: RpcResult;
           try {
-            result = classifyReply(
-              await post({
-                port,
-                method,
-                body,
-                token: candidate.token,
-                timeoutMs: RPC_TIMEOUT_MS,
-                maxBytes,
-              })
-            );
+            result = await send(candidate, port);
           } catch (error) {
             transport = describeTransport(error);
-            continue;
+            if (!forced || current === forced.fallback || !timedOut(error)) {
+              continue;
+            }
+            // the refresh waits on Google: the LS's cached numbers, here
+            forced.reached = true;
+            current = forced.fallback;
+            timeoutMs = RPC_TIMEOUT_MS;
+            try {
+              result = await send(candidate, port);
+            } catch (retryError) {
+              transport = describeTransport(retryError);
+              continue;
+            }
           }
           if (result.kind === 'wrong-port') continue;
           if (result.kind === 'connect' && result.csrf) {
             transport = 'CSRF token refused';
             break;
           }
+          if (forced && current !== forced.fallback) forced.reached = true;
           if (result.kind === 'http') {
             // not the Connect port after all, maybe: try the others first
             other ??= { result, server: candidate };
@@ -470,16 +519,30 @@ export function createAntigravityUsageSource(
   }
 
   async function quota(force: boolean): Promise<Answer | null> {
-    const body = force ? { request: {}, forceRefresh: true } : { request: {} };
-    const answer = await call(QUOTA_METHOD, body, QUOTA_MAX_BYTES);
-    if (force && answer) lastForceAt = now();
+    if (!force) return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES);
+    const forced: ForcedCall = {
+      timeoutMs: FORCED_RPC_TIMEOUT_MS,
+      fallback: QUOTA_BODY,
+      reached: false,
+    };
+    let answer: Answer | null;
+    try {
+      answer = await call(
+        QUOTA_METHOD,
+        QUOTA_FORCED_BODY,
+        QUOTA_MAX_BYTES,
+        forced
+      );
+    } finally {
+      // a refresh the LS got counts, answered or not: no retry every round
+      if (forced.reached) lastForceAt = now();
+    }
     // a refresh Google did not answer: the LS's cached numbers will do
     if (
-      force &&
       answer?.result.kind === 'connect' &&
       RETRY_UNFORCED.has(answer.result.code)
     ) {
-      return call(QUOTA_METHOD, { request: {} }, QUOTA_MAX_BYTES);
+      return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES);
     }
     return answer;
   }
@@ -568,9 +631,12 @@ export function createAntigravityUsageSource(
       const metrics = await fetchMetrics(config, force);
       recent = { at: now(), key, metrics };
       lastSuccessAt = now();
+      notRunningSince = 0;
       return metrics;
     } catch (error) {
       recent = { at: now(), key, error };
+      if (problemOf(error) !== 'not-running') notRunningSince = 0;
+      else if (notRunningSince === 0) notRunningSince = now();
       throw error;
     }
   }
@@ -706,12 +772,15 @@ export function createAntigravityUsageSource(
     face,
     keepLastOnError(error) {
       if (!(error instanceof ProviderError)) return false;
-      const transient =
-        error.code === 'network' ||
-        error.code === 'http' ||
-        problemOf(error) === 'not-running';
+      if (lastSuccessAt === 0 || now() - lastSuccessAt >= KEEP_LAST_MS) {
+        return false;
+      }
+      if (error.code === 'network' || error.code === 'http') return true;
+      // the app or the IDE restarting, not quitting: a short while only
       return (
-        transient && lastSuccessAt > 0 && now() - lastSuccessAt < KEEP_LAST_MS
+        problemOf(error) === 'not-running' &&
+        notRunningSince > 0 &&
+        now() - notRunningSince < KEEP_NOT_RUNNING_MS
       );
     },
     describe,

@@ -13,6 +13,11 @@
  *   com.google.antigravity-ide <folder>`);
  * - 'auto' (default): agy when it is installed, else the app, else the IDE.
  *
+ * The app and the IDE are opened on macOS only; elsewhere those targets say
+ * so (and 'auto' needs agy). An 'auto' key's subtitle names what a press
+ * opens, looked up with the global settings (agy's path) the key group
+ * hands over on load and on change.
+ *
  * Everything goes through execFile (src/launch.ts), never a shell, and no
  * folder ends up in a URL. The terminal is opened by the key group (on
  * macOS a self-deleting `.command` script in which every word is quoted).
@@ -88,6 +93,13 @@ export const LAUNCH_ERRORS = {
   app: keyText('App not found', '未找到 App'),
   ide: keyText('IDE not found', '未找到 IDE'),
   none: keyText('Antigravity not found', '未找到 Antigravity'),
+  macOnly: keyText('macOS only', '仅限 macOS'),
+};
+
+/** Subtitle of an app or IDE key off macOS (a press says the same). */
+const MAC_ONLY: Readonly<Record<Lang, string>> = {
+  en: 'macOS only',
+  zh: '仅限 macOS',
 };
 
 export type AntigravityLauncherDeps = {
@@ -97,6 +109,9 @@ export type AntigravityLauncherDeps = {
   findCli?: (request: NewSessionRequest, config: PluginConfig) => string | null;
   /** Whether the desktop app / IDE is installed (macOS) */
   appInstalled?: (product: 'app' | 'ide', home: string) => boolean;
+  /** This computer, for the subtitles (presses carry their own) */
+  platform?: NodeJS.Platform;
+  home?: () => string;
 };
 
 function defaultIsDirectory(dir: string): boolean {
@@ -122,6 +137,8 @@ export function createAntigravityLauncher(
   deps: AntigravityLauncherDeps = {}
 ): NewSessionLauncher {
   const isDirectory = deps.isDirectory ?? defaultIsDirectory;
+  const localPlatform = deps.platform ?? process.platform;
+  const localHome = deps.home ?? (() => os.homedir());
   const appInstalled =
     deps.appInstalled ??
     ((product: 'app' | 'ide', home: string) => bundleInstalled(product, home));
@@ -151,6 +168,13 @@ export function createAntigravityLauncher(
     cwd: request.folder ?? request.home ?? os.homedir(),
   });
 
+  const macOnly = (product: 'app' | 'ide') =>
+    new ProviderError(
+      'unsupported',
+      `The Antigravity ${product === 'app' ? 'app' : 'IDE'} is opened on macOS only`,
+      { keyText: LAUNCH_ERRORS.macOnly }
+    );
+
   const app = (): LaunchTarget => ({
     kind: 'command',
     file: OPEN,
@@ -163,9 +187,11 @@ export function createAntigravityLauncher(
     args: ['-b', BUNDLE_IDS.ide, ...(request.folder ? [request.folder] : [])],
   });
 
+  /** The global settings: handed over by the key group, or the last press's */
+  let settings: PluginConfig = {};
   /** What 'auto' opened at the last press (with the global settings) */
   let autoChoice: Exclude<AntigravityTarget, 'auto'> | null = null;
-  /** What 'auto' would open, looked up without the settings (cached) */
+  /** What 'auto' would open, looked up with `settings` (cached) */
   let autoGuess: {
     at: number;
     value: Exclude<AntigravityTarget, 'auto'> | null;
@@ -178,17 +204,17 @@ export function createAntigravityLauncher(
     if (autoGuess && now - autoGuess.at < AUTO_GUESS_MS) return autoGuess.value;
     let value: Exclude<AntigravityTarget, 'auto'> | null = null;
     try {
-      const home = os.homedir();
-      const platform = process.platform;
+      const home = localHome();
+      const platform = localPlatform;
       const probe: NewSessionRequest = {
         data: {},
         rawFolder: '',
         folder: null,
         home,
         platform,
-        config: {},
+        config: settings,
       };
-      if (findCli(probe, {})) value = 'terminal-cli';
+      if (findCli(probe, settings)) value = 'terminal-cli';
       else if (platform === 'darwin' && appInstalled('app', home))
         value = 'app';
       else if (platform === 'darwin' && appInstalled('ide', home))
@@ -202,18 +228,21 @@ export function createAntigravityLauncher(
 
   const subtitleOf = (
     target: AntigravityTarget,
-    folderName: string | null
+    folderName: string | null,
+    lang: Lang
   ): string | null => {
     switch (target) {
       case 'app':
-        return 'App · ⌘N';
+        return localPlatform === 'darwin' ? 'App · ⌘N' : MAC_ONLY[lang];
       case 'ide':
-        return folderName ?? 'IDE';
+        return localPlatform === 'darwin'
+          ? (folderName ?? 'IDE')
+          : MAC_ONLY[lang];
       case 'terminal-cli':
         return folderName;
       default: {
         const resolved = autoTarget();
-        return resolved ? subtitleOf(resolved, folderName) : folderName;
+        return resolved ? subtitleOf(resolved, folderName, lang) : folderName;
       }
     }
   };
@@ -230,15 +259,30 @@ export function createAntigravityLauncher(
      * where to press ⌘N instead of the folder. An 'auto' key names what a
      * press opens.
      */
-    subtitle: (data, folderName) => subtitleOf(targetOf(data), folderName),
+    subtitle: (data, folderName, lang) =>
+      subtitleOf(targetOf(data), folderName, lang),
+
+    /** The global settings, on load and on change: the subtitle uses them. */
+    configure(config: PluginConfig) {
+      settings = config && typeof config === 'object' ? config : {};
+      autoChoice = null;
+      autoGuess = null;
+    },
 
     target(request: NewSessionRequest): LaunchTarget {
       const home = request.home ?? os.homedir();
       const mac = request.platform === 'darwin';
       const target = targetOf(request.data);
+      const config = configOf(request);
+      // a press without settings (they took too long) keeps the known ones
+      if (Object.keys(config).length > 0 && config !== settings) {
+        settings = config;
+        autoGuess = null;
+      }
       switch (target) {
         case 'app':
-          if (!mac || !appInstalled('app', home)) {
+          if (!mac) throw macOnly('app');
+          if (!appInstalled('app', home)) {
             throw new ProviderError(
               'not-installed',
               'Antigravity app not found',
@@ -249,7 +293,8 @@ export function createAntigravityLauncher(
           }
           return app();
         case 'ide':
-          if (!mac || !appInstalled('ide', home)) {
+          if (!mac) throw macOnly('ide');
+          if (!appInstalled('ide', home)) {
             throw new ProviderError(
               'not-installed',
               'Antigravity IDE not found',
@@ -262,7 +307,7 @@ export function createAntigravityLauncher(
           return ide(request);
         case 'terminal-cli': {
           checkFolder(request.folder);
-          const cli = findCli(request, configOf(request));
+          const cli = findCli(request, config);
           if (!cli) {
             throw new ProviderError('not-installed', 'agy not found', {
               keyText: LAUNCH_ERRORS.cli,
@@ -274,7 +319,7 @@ export function createAntigravityLauncher(
           // auto: the CLI opens a real new conversation in the folder; the
           // app and the IDE only come up
           autoChoice = null;
-          const cli = findCli(request, configOf(request));
+          const cli = findCli(request, config);
           if (cli) {
             autoChoice = 'terminal-cli';
             checkFolder(request.folder);
@@ -289,9 +334,14 @@ export function createAntigravityLauncher(
             checkFolder(request.folder);
             return ide(request);
           }
-          throw new ProviderError('not-installed', 'Antigravity not found', {
-            keyText: LAUNCH_ERRORS.none,
-          });
+          // off macOS only agy can be opened: name what is missing
+          throw mac
+            ? new ProviderError('not-installed', 'Antigravity not found', {
+                keyText: LAUNCH_ERRORS.none,
+              })
+            : new ProviderError('not-installed', 'agy not found', {
+                keyText: LAUNCH_ERRORS.cli,
+              });
         }
       }
     },

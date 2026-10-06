@@ -9,8 +9,9 @@
  * the summary; subagents, battle-mode forks and archived conversations are
  * hidden; a conversation needs the user while it runs and has a waiting step
  * (an askQuestion is a question, anything else an approval); a blocking
- * notify_user after the last user input waits for a review; "active" means
- * notFullyIdle; a killed conversation is not running.
+ * notify_user after the last user input waits for a review (of the plan in
+ * planning mode, else of what the agent did); "active" means notFullyIdle;
+ * a killed conversation is not running.
  *
  * Summaries carry agent-written text (titles, command lines, questions):
  * only what a key face shows is kept, and none of it is ever logged.
@@ -404,6 +405,17 @@ const WAIT_LABELS: Record<Lang, Record<string, string>> = {
   },
 };
 
+/** A blocking notify_user outside planning mode: "Review: <task>". */
+export function reviewLabel(task: string | null, lang: Lang): string {
+  if (task) return `${lang === 'zh' ? '审阅' : 'Review'}: ${task}`;
+  return lang === 'zh' ? '请审阅' : 'Review requested';
+}
+
+/** Whether the task boundary is in planning mode (a plan to review). */
+export function planningMode(mode: string | null): boolean {
+  return !!mode && /(^|_)PLANNING$/i.test(mode.trim());
+}
+
 /** What an approval waits for, e.g. "Run: npm test", "Permission: write". */
 export function waitingLabel(w: Waiting, lang: Lang): string {
   const labels = WAIT_LABELS[lang];
@@ -487,8 +499,14 @@ export function deriveAgStatus(
       status.tool = waitingLabel(f.waiting, lang);
     }
   } else if (reviewPending(f)) {
-    status.state = 'plan';
-    status.detail = f.task.name;
+    if (planningMode(f.task.mode)) {
+      status.state = 'plan';
+      status.detail = f.task.name;
+    } else {
+      // a walkthrough or other result to look at: not a plan
+      status.state = 'permission';
+      status.tool = reviewLabel(f.task.name, lang);
+    }
   } else if (engaged) {
     if (liveness === 'gone') stopped();
     else {

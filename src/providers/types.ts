@@ -371,6 +371,12 @@ export interface NewSessionLauncher {
     lang: Lang
   ): string | null;
   /**
+   * The global plugin settings, when the keys load and when they change
+   * (only for launchers with `needsConfig`): for a subtitle that depends
+   * on them. Presses still get them in the request.
+   */
+  configure?(config: PluginConfig): void;
+  /**
    * The target for a press; throw when it cannot open. A ProviderError with
    * `extra.keyText` shows that title on the error face instead of the
    * generic one.

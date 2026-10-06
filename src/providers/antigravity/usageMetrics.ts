@@ -20,6 +20,10 @@
  * `percent` is the share USED (0–100), like every other meter. A bucket
  * whose reset time has passed is shown as reset (nothing used) until the
  * server reports again.
+ *
+ * Narrow keys show a bucket's short tag instead of its label; the tag keeps
+ * the group's initial ("G 5h", "C 7d"), since `lowest` can move between
+ * groups (the bare window when two groups share an initial).
  */
 import { Lang, UsageMetric } from '../types';
 
@@ -283,7 +287,31 @@ export function parseQuotaSummary(
       buckets: unique,
     });
   });
+  tagGroups(groups);
   return groups;
+}
+
+/** A group's initial for the narrow tags: its first letter or digit. */
+function initialOf(short: string): string {
+  const first = Array.from(short.trim())[0] ?? '';
+  return /^[\p{L}\p{N}]$/u.test(first) ? first.toUpperCase() : '';
+}
+
+/** Puts each group's initial in its buckets' tags, when it tells them apart. */
+function tagGroups(groups: QuotaGroupView[]): void {
+  const initials = groups.map(group => initialOf(group.short));
+  groups.forEach((group, index) => {
+    const initial = initials[index];
+    if (
+      !initial ||
+      initials.indexOf(initial) !== initials.lastIndexOf(initial)
+    ) {
+      return;
+    }
+    for (const bucket of group.buckets) {
+      if (bucket.tag) bucket.tag = `${initial} ${bucket.tag}`;
+    }
+  });
 }
 
 function usable(bucket: QuotaBucketView): boolean {

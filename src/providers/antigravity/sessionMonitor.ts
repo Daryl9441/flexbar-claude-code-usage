@@ -18,7 +18,7 @@
  * answer. Nothing runs while nothing is installed. Never logs titles, ids,
  * paths of conversations or the CSRF token.
  */
-import { promises as fsp } from 'node:fs';
+import { constants as fsConstants, promises as fsp } from 'node:fs';
 import path from 'node:path';
 
 import { safeErrorMessage } from '../../redact';
@@ -106,7 +106,7 @@ const NEW_SESSION: Localized = { en: 'New session', zh: '新会话' };
 
 /** A language server rejected the request twice (signed out) */
 export const SIGNED_OUT: SessionNotice = {
-  label: { en: 'Signed out', zh: '未登录' },
+  label: { en: 'Not signed in', zh: '未登录' },
   text: { en: 'Sign in to Antigravity', zh: '请登录 Antigravity' },
 };
 
@@ -137,24 +137,33 @@ function samePathKey(p: string, platform: NodeJS.Platform): string {
 /** Conversation ids become folder names under brain/: nothing else */
 const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
-type FileStat = { mtimeMs: number; size: number } | null;
+/** `regular: false` for anything but a plain file (folder, named pipe…) */
+type FileStat = { mtimeMs: number; size: number; regular?: boolean } | null;
 
 async function statOf(file: string): Promise<FileStat> {
   try {
     const st = await fsp.stat(file);
-    return { mtimeMs: st.mtimeMs, size: st.size };
+    return { mtimeMs: st.mtimeMs, size: st.size, regular: st.isFile() };
   } catch {
     return null;
   }
 }
 
+/**
+ * The first `max` bytes of a regular file. Opened non-blocking and checked
+ * on the open handle, so a named pipe in its place never stalls a read.
+ */
 async function readSmallText(
   file: string,
   max: number
 ): Promise<string | null> {
   try {
-    const fh = await fsp.open(file, 'r');
+    const fh = await fsp.open(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0)
+    );
     try {
+      if (!(await fh.stat()).isFile()) return null;
       const buffer = Buffer.alloc(max);
       const { bytesRead } = await fh.read(buffer, 0, max, 0);
       return buffer.subarray(0, bytesRead).toString('utf8');
@@ -323,6 +332,9 @@ export class AntigravitySessionMonitor implements SessionSource {
       if (data?.showProgress !== false) {
         chosen.status.progress = this.progressFor(chosen.entry.facts);
       }
+      // no title or summary yet (a new conversation's first turn): the face
+      // would show its header only
+      chosen.status.title ??= NEW_SESSION[lang];
       return { status: chosen.status, others };
     }
     // an agy that has not recorded a conversation yet beats "No sessions"
@@ -739,7 +751,7 @@ export class AntigravitySessionMonitor implements SessionSource {
     }
     const file = path.join(this.dataDir(product), SUMMARY_DB);
     const db = await this.stat(file);
-    if (!db) {
+    if (!db || db.regular === false) {
       this.dbs.delete(product);
       return [];
     }
@@ -816,7 +828,9 @@ export class AntigravitySessionMonitor implements SessionSource {
         this.tasks.delete(key);
         continue;
       }
-      const st = await this.stat(task.file);
+      const found = await this.stat(task.file);
+      // only a regular file is opened (a named pipe would never answer)
+      const st = found && found.regular !== false ? found : null;
       const signature = st ? `${st.mtimeMs}:${st.size}` : '-';
       if (task.signature === signature) continue;
       const text = st ? await this.readText(task.file, TASK_MAX_BYTES) : null;

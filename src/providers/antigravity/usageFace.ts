@@ -23,9 +23,15 @@ import { KeyMark, KeyText, Lang, UsageMetric } from '../types';
 
 /** Keys at least this wide get the group column. */
 export const GROUP_COLUMN_MIN_WIDTH = 180;
-/** Width of the group column, and where the dual face starts. */
-const COLUMN = 48;
-const DUAL_X = 40;
+/**
+ * Width of the group column, which is where the dual face starts: the name
+ * stays clear of the dual face's row tags ("5h", "7d"), which begin at least
+ * 8 px further in, so it never reads as one label with them.
+ */
+const COLUMN = 44;
+/** Widest group name: under the mark, and without it (larger type) */
+const NAME_MAX = COLUMN - 8;
+const NAME_MAX_PLAIN = COLUMN - 6;
 const MARK = 24;
 
 export type DualFaceOptions = {
@@ -97,9 +103,9 @@ export async function renderGroupDualKey(
   ctx.fillStyle = options.bgColor || COLORS.background;
   ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
 
-  const face = dual(wide ? keyWidth - DUAL_X : keyWidth);
+  const face = dual(wide ? keyWidth - COLUMN : keyWidth);
   const image = await loadImage(Buffer.from(face.split(',')[1], 'base64'));
-  ctx.drawImage(image, wide ? DUAL_X : 0, 0);
+  ctx.drawImage(image, wide ? COLUMN : 0, 0);
 
   if (!wide) {
     if (options.mark && options.markColor) {
@@ -112,14 +118,14 @@ export async function renderGroupDualKey(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = isLight(options.bgColor) ? '#57534e' : COLORS.label;
-  const centre = 6 + (COLUMN - 6) / 2;
+  const centre = COLUMN / 2 + 1;
   if (options.mark) {
     drawMark(ctx, options.mark, centre - MARK / 2, 9, MARK);
     ctx.font = `bold 10px ${FONT}`;
-    ctx.fillText(ellipsize(ctx, name, COLUMN - 6), centre, 50);
+    ctx.fillText(ellipsize(ctx, name, NAME_MAX), centre, 50);
   } else {
     ctx.font = `bold 11px ${FONT}`;
-    ctx.fillText(ellipsize(ctx, name, COLUMN - 6), centre, 34);
+    ctx.fillText(ellipsize(ctx, name, NAME_MAX_PLAIN), centre, 34);
   }
   return canvas.toDataURL('image/png');
 }

@@ -264,19 +264,23 @@ outside the repository with `assert` changed to `with` in
   merge of app, IDE and CLI), `sessionProcs.ts` (`ProcessProbe`, `CsrfToken`
   that never prints, `agy` processes and folders), `sessionRpc.ts`
   (`GetAllCascadeTrajectories`), `sessionDb.ts` (`conversation_summaries.db`
-  read-only via `node:sqlite`, WAL copied to a temp folder),
+  read-only via `node:sqlite`, regular files only, WAL copied to a temp
+  folder, leftover copies swept),
   `sessionProto.ts` (protobuf reader for `agy`'s `raw_summary`),
   `sessionSummary.ts` (facts and states, `task.md` progress),
   `sessionCli.ts` (`findAgy`, app bundle ids). New session: `newSession.ts`
   (`target`: `agy` in Terminal with fixed presets, `open -b` for the app or
-  the IDE). Tests block fetch, http/https, net and child_process: a test
-  never reaches a real Antigravity language server or process.
+  the IDE on macOS; `configure` gets the global settings for the 'auto'
+  subtitle). Tests block fetch, http/https, net and child_process (only
+  `mkfifo` runs, for named-pipe fixtures): a test never reaches a real
+  Antigravity language server or process.
 - Key-group hooks a provider may use: `UsageSource.missingText` (text for a
   metric the fetch did not return), `UsageSource.face` (a face of its own for
   a metric setting, e.g. Claude's 'dual'), `SessionSource.notice(data)` (per
-  key settings), `NewSessionRequest.config` (global settings), and a
-  launcher's `ProviderError` with `extra.keyText` (its title replaces the
-  error face).
+  key settings), `NewSessionRequest.config` (global settings),
+  `NewSessionLauncher.configure` (the global settings on load and on change,
+  for a subtitle that depends on them), and a launcher's `ProviderError`
+  with `extra.keyText` (its title replaces the error face).
 - Rendering: `src/render.ts` (usage meter of one limit, used %, and message
   faces, `drawMark`), `src/usageDualRender.ts` (Claude's 5h + 7d remaining
   face; `dualLayout` places it and is what the tests check),

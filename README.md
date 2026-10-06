@@ -163,7 +163,7 @@ Three keys show [Google Antigravity](https://antigravity.google): the desktop ap
 
 The app and the IDE each run a local language server on `127.0.0.1`. The usage and session keys find it with `ps` and `lsof` (only your own processes), read the CSRF token from its command line and ask it read-only questions over HTTP on the loopback interface. The token stays in memory: it is sent only in a request header to a port that `lsof` lists for the same process, and never logged, shown or put on a command line.
 
-**Antigravity Usage** shows the model quota Antigravity reports for your Google account: a 5-hour and a weekly limit for each model group (today Gemini, and Claude / GPT-OSS). It asks the running app first, then the IDE (`RetrieveUserQuotaSummary`, about 1 KB, at most one round every 30 seconds). The language server is asked to refresh from Google on the first fetch, every 15 minutes, after a limit's reset time has passed and when the settings page opens. The percentage is the share used, as on the other single-limit meters.
+**Antigravity Usage** shows the model quota Antigravity reports for your Google account: a 5-hour and a weekly limit for each model group (today Gemini, and Claude / GPT-OSS). It asks the running app first, then the IDE (`RetrieveUserQuotaSummary`, about 1 KB, at most one round every 30 seconds). The language server is asked to refresh from Google on the first fetch, every 15 minutes, after a limit's reset time has passed and when the settings page opens; when Google takes longer than 20 seconds, the key shows the numbers the language server already has. The percentage is the share used, as on the other single-limit meters. Narrow keys name the limit by a short tag that keeps the group's initial: "G 5h" (Gemini), "C 7d" (Claude / GPT-OSS).
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -172,11 +172,11 @@ The app and the IDE each run a local language server on `127.0.0.1`. The usage a
 | Show time until reset | on | Show the countdown until the limit resets (only once part of the limit is used) |
 | Show Antigravity mark | on | Show the Antigravity mark next to the meter |
 
-The settings page lists the limits Antigravity reports, with what is left of each, the plan name and the program that answered. A key that cannot read the quota says why: "Not installed", "Needs the app" (only `agy` is installed: its quota lives inside the CLI process, so the key needs the app or the IDE running), "Not running" (open the app; on macOS it can keep running in the menu bar with its windows closed), "Not signed in", "No quota data", "Update needed", "No answer", or "Not supported" on Windows. A network or server error, or closing the app, keeps the last meter for up to 30 minutes.
+The settings page lists the limits Antigravity reports, with what is left of each, the plan name and the program that answered. A key that cannot read the quota says why: "Not installed", "Needs the app" (only `agy` is installed: its quota lives inside the CLI process, so the key needs the app or the IDE running), "Not running" (open the app; on macOS it can keep running in the menu bar with its windows closed), "Not signed in", "No quota data", "Update needed", "No answer", or "Not supported" on Windows. A network or server error keeps the last meter for up to 30 minutes; after the app and the IDE quit it stays about two minutes (enough for a restart), then the key says "Not running", since `agy` can keep using the quota while nothing can read it.
 
 **Antigravity Sessions** works like the Claude Sessions key (same states, `+N`, press for the running list) for the conversations of all three programs. While the app or the IDE runs, its language server reports every conversation's live status (`GetAllCascadeTrajectories`); while it does not, the last known state comes from its `conversation_summaries.db`, read-only (copied to a temporary folder first when the database has a write-ahead log). `agy` conversations come from the CLI's summary database plus the running `agy` processes and their folders: a running `agy` owns the newest conversation in its folder, an `agy` without a conversation yet shows as "New session", and a conversation whose `agy` has exited while it was running shows as Stopped.
 
-States follow Antigravity's own interface: a question for you shows as **Question**, a command, file or URL waiting for your approval as **Approval** ("Run: npm test", "Permission: read_url"), and an implementation plan waiting for your review as **Plan ready**. Running conversations and background tasks are **Working**, killed or interrupted ones **Stopped**; sub-agents, archived conversations and internal trajectories are hidden. The progress bar comes from the conversation's `task.md` checklist.
+States follow Antigravity's own interface: a question for you shows as **Question**, a command, file or URL waiting for your approval as **Approval** ("Run: npm test", "Permission: read_url"), an implementation plan waiting for your review (planning mode) as **Plan ready**, and any other result waiting for your review, such as a walkthrough, as **Approval** ("Review: <task>"). A new conversation without a title or summary yet shows as "New session". Running conversations and background tasks are **Working**, killed or interrupted ones **Stopped**; sub-agents, archived conversations and internal trajectories are hidden. The progress bar comes from the conversation's `task.md` checklist.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -190,14 +190,14 @@ Cost: a 5-second tick checks a few file times per data folder; `ps` runs at most
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Open in | Automatic | Automatic: `agy` in a terminal window when it is installed, else the Antigravity app, else the IDE. Or always the terminal (`agy`), the app or the IDE |
+| Open in | Automatic | Automatic: `agy` in a terminal window when it is installed, else (on macOS) the Antigravity app, else the IDE. Or always the terminal (`agy`), the app or the IDE (both macOS only) |
 | Permissions | Ask for review (default) | For `agy`: ask for review, auto-approve edits (`--mode accept-edits`), plan (`--mode plan`), or skip all permissions (`--dangerously-skip-permissions`, with a warning on the settings page) |
 | Continue the latest conversation | off | For `agy`: start with `--continue` |
 | Terminal sandbox | off | For `agy`: start with `--sandbox` |
 | Project folder | empty | Where `agy` starts, or the folder the IDE opens (empty: your home folder) |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
 
-The terminal opens like Gemini New Session's (a self-deleting `.command` script on macOS, every word quoted). Antigravity has no link that starts a new conversation, so **the app** target only brings the app up (`open -b com.google.antigravity`, starting it if needed) and the key's subtitle says "App · ⌘N": press ⌘N there. **The IDE** target opens the folder in the IDE (`open -b com.google.antigravity-ide <folder>`); start the conversation in its agent panel. A failed tap says why on the key: "Folder not found", "agy not found", "App not found", "IDE not found" or "Antigravity not found". `agy` is found through the **Antigravity CLI program** setting, else `PATH`, `~/.local/bin` and Homebrew's folders.
+The terminal opens like Gemini New Session's (a self-deleting `.command` script on macOS, every word quoted). Antigravity has no link that starts a new conversation, so **the app** target only brings the app up (`open -b com.google.antigravity`, starting it if needed) and the key's subtitle says "App · ⌘N": press ⌘N there. **The IDE** target opens the folder in the IDE (`open -b com.google.antigravity-ide <folder>`); start the conversation in its agent panel. A failed tap says why on the key: "Folder not found", "agy not found", "App not found", "IDE not found", "Antigravity not found", or "macOS only" for the app and IDE targets on Linux and Windows (their subtitle says so too). `agy` is found through the **Antigravity CLI program** setting, else `PATH`, `~/.local/bin` and Homebrew's folders; an Automatic key's subtitle uses that setting too, before the first press.
 
 Requirements and limitations:
 
@@ -205,7 +205,8 @@ Requirements and limitations:
 - macOS for the app and IDE targets of the New Session key. Finding the language servers needs `ps` and `lsof` (macOS; Linux when `lsof` is installed). On Windows the usage key shows "Not supported" and the session key reads the summary databases only, without knowing what still runs.
 - The usage key cannot tell a key press from a poll, so a press refetches but does not force a refresh from Google.
 - Which steps wait for you comes from the language server's answer; for `agy` it comes from the CLI's summary database, which may only be written when a turn ends, so a running `agy` turn can show its previous state until then.
-- A blocking review that is not a plan still shows as "Plan ready", and Antigravity's summaries carry no error state, so the red **Error** state does not occur.
+- Antigravity's summaries carry no error state, so the red **Error** state does not occur.
+- On keys narrower than about 180 px, the two-row dual face has no room for the group's name: use the default or a single-limit meter there, whose tag names the group.
 
 ## How it works
 

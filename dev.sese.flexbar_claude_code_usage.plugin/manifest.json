@@ -556,7 +556,6 @@
                     "showResetTime": "Show time until reset",
                     "showMark": "Show Antigravity mark",
                     "checking": "Checking…",
-                    "connected": "Connected",
                     "notAvailable": "Not available: {error}",
                     "connectedVia": "Connected via {server}",
                     "connectedTier": "Connected via {server} — {tier}",
@@ -627,8 +626,8 @@
                     "target": "Open in",
                     "targetAuto": "Automatic (agy if installed, else the app)",
                     "targetTerminal": "Terminal (agy CLI)",
-                    "targetApp": "Antigravity app",
-                    "targetIde": "Antigravity IDE (folder)",
+                    "targetApp": "Antigravity app (macOS)",
+                    "targetIde": "Antigravity IDE (folder, macOS)",
                     "mode": "Permissions",
                     "modeDefault": "Ask for review (default)",
                     "modeAcceptEdits": "Auto-approve edits",
@@ -640,7 +639,7 @@
                     "terminalHint": "Opens Terminal and runs agy in the folder: a new conversation.",
                     "appHint": "Brings up the Antigravity app (starting it if needed). Antigravity has no link for a new conversation: press ⌘N in the app.",
                     "ideHint": "Opens the folder in the Antigravity IDE; start a conversation in its agent panel.",
-                    "autoHint": "Runs agy in Terminal when it is installed; otherwise brings up the Antigravity app (⌘N for a new conversation) or opens the folder in the IDE."
+                    "autoHint": "Runs agy in Terminal when it is installed; otherwise, on macOS, brings up the Antigravity app (⌘N for a new conversation) or opens the folder in the IDE."
                 }
             }
         },
@@ -864,7 +863,7 @@
             },
             "AntigravityUsage": {
                 "Title": "Antigravity 用量",
-                "Tip": "以实时仪表显示 Antigravity 模型配额（5 小时与每周限制），数据来自正在运行的 Antigravity 应用或 IDE",
+                "Tip": "以实时仪表显示 Antigravity 模型配额（5 小时与每周限制），数据来自正在运行的 Antigravity App 或 IDE",
                 "UI": {
                     "metric": "用量限制",
                     "metricDefault": "默认（剩余最少的限制）",
@@ -872,11 +871,10 @@
                     "showResetTime": "显示距重置的时间",
                     "showMark": "显示 Antigravity 标志",
                     "checking": "正在检查…",
-                    "connected": "已连接",
                     "notAvailable": "不可用：{error}",
                     "connectedVia": "已连接（{server}）",
                     "connectedTier": "已连接（{server}）— {tier}",
-                    "serverApp": "Antigravity 应用",
+                    "serverApp": "Antigravity App",
                     "serverIde": "Antigravity IDE",
                     "choiceGroup": "{group}：剩余最少",
                     "choiceBucket": "{group}：{window}",
@@ -892,8 +890,8 @@
                     "limitOff": "{window}未启用",
                     "limitUnknown": "{window}未知",
                     "problemNotInstalled": "本机未找到 Antigravity。",
-                    "problemCliOnly": "只找到 agy CLI。配额只能通过 Antigravity 应用或 IDE 读取。",
-                    "problemNotRunning": "Antigravity 应用和 Antigravity IDE 都未运行。",
+                    "problemCliOnly": "只找到 agy CLI。配额只能通过 Antigravity App 或 IDE 读取。",
+                    "problemNotRunning": "Antigravity App 和 Antigravity IDE 都未运行。",
                     "problemSignedOut": "Antigravity 未登录。",
                     "problemNoQuota": "Antigravity 暂未返回配额。",
                     "problemOldVersion": "此版本的 Antigravity 不提供配额信息。",
@@ -903,9 +901,9 @@
                     "errorHttp": "Antigravity 返回错误，按键会在下次刷新时重试。",
                     "errorParse": "Antigravity 返回了无法识别的数据。",
                     "errorRateLimited": "请求受限，按键稍后自动重试。",
-                    "hintInstall": "请安装 Antigravity 应用（或 IDE）并登录。",
-                    "hintOpen": "请打开 Antigravity 应用或 IDE。在 macOS 上，关闭窗口后应用可以继续在菜单栏运行。",
-                    "hintCliOnly": "请安装 Antigravity 应用或 IDE 并保持其中一个打开，按键会从中读取配额。",
+                    "hintInstall": "请安装 Antigravity App（或 IDE）并登录。",
+                    "hintOpen": "请打开 Antigravity App 或 IDE。在 macOS 上，关闭窗口后 App 可以继续在菜单栏运行。",
+                    "hintCliOnly": "请安装 Antigravity App 或 IDE 并保持其中一个打开，按键会从中读取配额。",
                     "hintSignIn": "请打开 Antigravity 并用 Google 账号登录。",
                     "hintUpdate": "请将 Antigravity 更新到最新版本。"
                 }
@@ -943,8 +941,8 @@
                     "target": "打开方式",
                     "targetAuto": "自动（已安装 agy 时用 agy，否则用 App）",
                     "targetTerminal": "终端（agy CLI）",
-                    "targetApp": "Antigravity App",
-                    "targetIde": "Antigravity IDE（文件夹）",
+                    "targetApp": "Antigravity App（macOS）",
+                    "targetIde": "Antigravity IDE（文件夹，macOS）",
                     "mode": "权限模式",
                     "modeDefault": "需审核（默认）",
                     "modeAcceptEdits": "自动批准编辑",
@@ -956,7 +954,7 @@
                     "terminalHint": "打开终端并在该文件夹中运行 agy：新的对话。",
                     "appHint": "打开 Antigravity App（如未运行则启动）。Antigravity 没有新建对话的链接：请在 App 中按 ⌘N。",
                     "ideHint": "在 Antigravity IDE 中打开该文件夹；在其智能体面板中开始对话。",
-                    "autoHint": "已安装 agy 时在终端中运行 agy；否则打开 Antigravity App（按 ⌘N 新建对话）或在 IDE 中打开该文件夹。"
+                    "autoHint": "已安装 agy 时在终端中运行 agy；否则在 macOS 上打开 Antigravity App（按 ⌘N 新建对话）或在 IDE 中打开该文件夹。"
                 }
             }
         }

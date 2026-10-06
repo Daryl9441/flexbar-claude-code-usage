@@ -35,7 +35,7 @@ const TEXTS: Record<AntigravityProblem, Texts> = {
   },
   'cli-only': {
     en: { title: 'Needs the app', message: 'Open Antigravity or its IDE' },
-    zh: { title: '需要桌面应用', message: '请打开 Antigravity 或 IDE' },
+    zh: { title: '需要桌面 App', message: '请打开 Antigravity 或 IDE' },
   },
   'not-running': {
     en: { title: 'Not running', message: 'Open Antigravity' },

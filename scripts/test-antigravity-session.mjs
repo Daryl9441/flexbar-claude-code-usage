@@ -7,8 +7,9 @@
 // terminal or an app, never reach a real Antigravity language server or
 // list real processes: the process probe, the loopback RPC, the summary
 // database reader and every launcher below are fakes, and fetch,
-// http/https, net and child_process fail loudly. Token-shaped strings are
-// built at runtime.
+// http/https, net and child_process fail loudly (the one program run is
+// mkfifo, for named-pipe fixtures in the temp folder). Token-shaped strings
+// are built at runtime.
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import fs from 'node:fs';
@@ -28,6 +29,10 @@ process.env.USERPROFILE = empty;
 globalThis.fetch = async () => {
   throw new Error('network is disabled in tests');
 };
+// named pipes in place of files (fixtures): the only program the tests run
+const realExecFileSync = childProcess.execFileSync;
+const MKFIFO = ['/usr/bin/mkfifo', '/bin/mkfifo'].find(file => fs.existsSync(file)) ?? null;
+const mkfifo = file => realExecFileSync(MKFIFO, [file], { stdio: 'ignore' });
 const blocked = name => () => {
   throw new Error(`${name} is disabled in tests`);
 };
@@ -658,12 +663,37 @@ describe('summaries and status', () => {
 
   test('a blocking notify_user after the last input waits for a review', () => {
     const notify = index => ({ stepIndex: index, step: { notifyUser: { isBlocking: true } } });
+    const boundary = (taskName, mode) => ({ step: { taskBoundary: { taskName, ...(mode ? { mode } : {}) } } });
+    // planning mode: the plan
     const plan = derive({
       latestNotifyUserStep: notify(9),
-      latestTaskBoundaryStep: { step: { taskBoundary: { taskName: 'FAKE Plan the toggle' } } },
+      latestTaskBoundaryStep: boundary('FAKE Plan the toggle', 'AGENT_MODE_PLANNING'),
     });
     assert.equal(plan.state, 'plan');
     assert.equal(plan.detail, 'FAKE Plan the toggle');
+    // anything else: a review of what the agent did, not a plan
+    const review = derive({
+      latestNotifyUserStep: notify(9),
+      latestTaskBoundaryStep: boundary('FAKE Verifying the toggle', 'AGENT_MODE_EXECUTION'),
+    });
+    assert.equal(review.state, 'permission');
+    assert.equal(review.confident, true);
+    assert.equal(review.tool, 'Review: FAKE Verifying the toggle');
+    assert.equal(
+      derive(
+        { latestNotifyUserStep: notify(9), latestTaskBoundaryStep: boundary('FAKE Verifying the toggle', 'AGENT_MODE_VERIFICATION') },
+        { lang: 'zh' }
+      ).tool,
+      '审阅: FAKE Verifying the toggle'
+    );
+    const bare = derive({ latestNotifyUserStep: notify(9) });
+    assert.equal(bare.state, 'permission');
+    assert.equal(bare.tool, 'Review requested');
+    assert.equal(derive({ latestNotifyUserStep: notify(9) }, { lang: 'zh' }).tool, '请审阅');
+    assert.equal(Sum.planningMode('AGENT_MODE_PLANNING'), true);
+    assert.equal(Sum.planningMode('PLANNING'), true);
+    assert.equal(Sum.planningMode('AGENT_MODE_EXECUTION'), false);
+    assert.equal(Sum.planningMode(null), false);
     assert.equal(derive({ latestNotifyUserStep: notify(2) }).state, 'done', 'answered since');
     assert.equal(
       derive({ latestNotifyUserStep: { stepIndex: 9, step: { notifyUser: { isBlocking: false } } } }).state,
@@ -820,6 +850,72 @@ describe('summary database reader', () => {
     assert.deepEqual(files(dir).map(f => [f, fs.statSync(path.join(dir, f)).size]), before);
     assert.deepEqual(files(tmp), [], 'the copy is gone');
     db.close();
+  });
+
+  test('only regular files are opened: a named pipe never blocks the reader', { skip: !MKFIFO }, async () => {
+    const opened = [];
+    const stub = {
+      DatabaseSync: class {
+        constructor(location) {
+          opened.push(String(location));
+        }
+        prepare() {
+          return { all: () => [] };
+        }
+        close() {}
+      },
+    };
+    const dir = fs.mkdtempSync(path.join(empty, 'db-'));
+    const tmp = fs.mkdtempSync(path.join(empty, 'tmp-'));
+    const read = Db.createDbReader({ sqlite: stub, tmpDir: tmp });
+    // the database is a named pipe
+    const pipe = path.join(dir, Db.SUMMARY_DB);
+    mkfifo(pipe);
+    assert.equal(await read(pipe), null);
+    // a database whose WAL is a named pipe: no copy, no open
+    const dir2 = fs.mkdtempSync(path.join(empty, 'db-'));
+    const file = path.join(dir2, Db.SUMMARY_DB);
+    fs.writeFileSync(file, 'FAKE database');
+    mkfifo(`${file}-wal`);
+    assert.equal(await read(file), null);
+    // a folder in its place
+    const dir3 = fs.mkdtempSync(path.join(empty, 'db-'));
+    fs.mkdirSync(path.join(dir3, Db.SUMMARY_DB));
+    assert.equal(await read(path.join(dir3, Db.SUMMARY_DB)), null);
+    assert.deepEqual(opened, []);
+    assert.deepEqual(files(tmp), []);
+    // a regular file is opened (immutable, no WAL)
+    fs.rmSync(`${file}-wal`);
+    assert.deepEqual(await read(file), []);
+    assert.equal(opened.length, 1);
+  });
+
+  test('temp copies an earlier run left behind are removed, and nothing else', async () => {
+    const tmp = fs.mkdtempSync(path.join(empty, 'tmp-'));
+    const now = Date.now();
+    const old = (now - 5 * MIN) / 1000;
+    const mk = (name, { dir = true, age = old } = {}) => {
+      const p = path.join(tmp, name);
+      if (dir) {
+        fs.mkdirSync(p);
+        fs.writeFileSync(path.join(p, Db.SUMMARY_DB), 'FAKE copy');
+      } else fs.writeFileSync(p, 'FAKE');
+      fs.utimesSync(p, age, age);
+    };
+    mk('flexbar-ag-AbC123');
+    mk('flexbar-ag-XyZ789');
+    mk('flexbar-ag-Fresh1', { age: now / 1000 });
+    mk('flexbar-ag-file01', { dir: false });
+    mk('flexbar-ag-toolong1');
+    mk('other-folder');
+    assert.equal(await Db.sweepDbCopies(tmp, 60_000, now), 2);
+    assert.deepEqual(files(tmp), ['flexbar-ag-Fresh1', 'flexbar-ag-file01', 'flexbar-ag-toolong1', 'other-folder']);
+    assert.equal(await Db.sweepDbCopies(path.join(tmp, 'missing')), 0);
+    // creating a reader sweeps its temp folder (once per process)
+    mk('flexbar-ag-Later1');
+    Db.createDbReader({ sqlite: { DatabaseSync: class {} }, tmpDir: tmp });
+    for (let i = 0; i < 100 && fs.existsSync(path.join(tmp, 'flexbar-ag-Later1')); i++) await sleep(5);
+    assert.equal(fs.existsSync(path.join(tmp, 'flexbar-ag-Later1')), false);
   });
 
   test('missing or broken databases give null; no node:sqlite gives no reader', { skip: !sqlite }, async () => {
@@ -1076,6 +1172,42 @@ describe('Antigravity session source', () => {
     source.stop();
   });
 
+  test('a task.md that is not a regular file is never opened', { skip: !MKFIFO }, async () => {
+    const { source, root } = makeSource({
+      probe: fakeProbe({ servers: [appServer], clis: [] }),
+      post: fakePost(() => ok({ [ID(1)]: summary({ status: 'CASCADE_RUN_STATUS_RUNNING' }) })),
+      installed: ['app'],
+    });
+    const dir = path.join(root, 'antigravity', 'brain', ID(1));
+    fs.mkdirSync(dir, { recursive: true });
+    mkfifo(path.join(dir, 'task.md'));
+    await source.rescan();
+    assert.equal(statusOf(source).state, 'working');
+    await sleep(30);
+    // the monitor keeps refreshing (a pipe opened for reading would hang it)
+    const settled = await Promise.race([source.rescan().then(() => true), sleep(2_000).then(() => false)]);
+    assert.equal(settled, true, 'rescan finished');
+    assert.equal(statusOf(source).progress, null);
+    source.stop();
+  });
+
+  test('a conversation without a title or summary: "New session" on the face', async () => {
+    const { source } = makeSource({
+      probe: fakeProbe({ servers: [appServer], clis: [] }),
+      post: fakePost(() =>
+        ok({ [ID(1)]: summary({ annotations: {}, summary: '', status: 'CASCADE_RUN_STATUS_RUNNING', notFullyIdle: true }) })
+      ),
+      installed: ['app'],
+    });
+    await source.rescan();
+    assert.equal(statusOf(source).title, 'New session');
+    assert.equal(statusOf(source, { lang: 'zh' }).title, '新会话');
+    // the running list keeps its own fallback (the project name)
+    const list = source.listRunning('', FIXED, IDLE_MS, {});
+    assert.deepEqual(list.map(r => [r.status.title, r.status.project]), [[null, 'demo-app']]);
+    source.stop();
+  });
+
   test('a desktop database that changes while no server is known: ps again soon', async () => {
     const clock = { now: FIXED };
     let servers = [];
@@ -1252,6 +1384,8 @@ describe('Antigravity New Session launcher', () => {
       isDirectory: dir => dir.startsWith('/Users/you/') && !dir.includes('missing'),
       findCli: () => ('cli' in opts ? opts.cli : '/Users/you/.local/bin/agy'),
       appInstalled: product => (opts.apps ?? ['app', 'ide']).includes(product),
+      platform: opts.platform ?? 'darwin',
+      home: () => '/Users/you',
     });
   const keyTitle = (fn, lang = 'en') => {
     try {
@@ -1303,8 +1437,30 @@ describe('Antigravity New Session launcher', () => {
     assert.deepEqual(launcher().target(request({ target: 'ide' })).args, ['-b', 'com.google.antigravity-ide']);
     assert.equal(keyTitle(() => launcher({ apps: [] }).target(request({ target: 'app' }))), 'App not found');
     assert.equal(keyTitle(() => launcher({ apps: [] }).target(request({ target: 'ide' })), 'zh'), '未找到 IDE');
-    assert.equal(keyTitle(() => launcher().target(request({ target: 'app' }, { platform: 'linux' }))), 'App not found');
     assert.equal(keyTitle(() => launcher().target(request({ target: 'ide', folder: '~/missing' }))), 'Folder not found');
+  });
+
+  test('off macOS: the app and the IDE say "macOS only", auto needs agy', () => {
+    const linux = { platform: 'linux' };
+    const error = fn => {
+      try {
+        fn();
+      } catch (e) {
+        return e;
+      }
+      assert.fail('no error');
+    };
+    const app = error(() => launcher(linux).target(request({ target: 'app' }, linux)));
+    assert.equal(app.code, 'unsupported');
+    assert.deepEqual(app.extra.keyText.en.title, 'macOS only');
+    assert.deepEqual(app.extra.keyText.zh.title, '仅限 macOS');
+    assert.equal(keyTitle(() => launcher(linux).target(request({ target: 'ide' }, linux))), 'macOS only');
+    assert.equal(keyTitle(() => launcher({ ...linux, cli: null }).target(request({}, linux))), 'agy not found');
+    assert.equal(launcher(linux).target(request({}, linux)).kind, 'terminal', 'agy works anywhere');
+    // the subtitles say so before a press
+    assert.equal(launcher(linux).subtitle({ target: 'app' }, null, 'en'), 'macOS only');
+    assert.equal(launcher(linux).subtitle({ target: 'ide' }, 'demo-app', 'zh'), '仅限 macOS');
+    assert.equal(launcher({ ...linux, cli: null }).subtitle({}, 'demo-app', 'en'), 'demo-app');
   });
 
   test('subtitles: the folder, or where the app opens; auto names what a press opens', () => {
@@ -1321,16 +1477,62 @@ describe('Antigravity New Session launcher', () => {
     assert.equal(launcher({ cli: null, apps: [] }).subtitle({}, 'demo-app', 'en'), 'demo-app');
     // a press decides with the global settings, and the face follows it
     let found = null;
-    const l2 = NS.createAntigravityLauncher({
-      isDirectory: () => true,
-      findCli: (_request, config) => (config.antigravityPath ? found : null),
-      appInstalled: () => true,
-    });
+    const custom = () =>
+      NS.createAntigravityLauncher({
+        isDirectory: () => true,
+        findCli: (_request, config) => (config.antigravityPath ? found : null),
+        appInstalled: () => true,
+        platform: 'darwin',
+        home: () => '/Users/you',
+      });
+    const l2 = custom();
     assert.equal(l2.subtitle({}, 'demo-app', 'en'), 'App · ⌘N');
     found = '/opt/custom/agy';
     l2.target(request({ folder: '~/code/demo-app' }, { config: { antigravityPath: '/opt/custom/agy' } }));
     assert.equal(l2.subtitle({}, 'demo-app', 'en'), 'demo-app');
     assert.equal(l2.needsConfig, true);
+    // …and so does the face before any press, once the settings are known
+    const l3 = custom();
+    l3.configure({ antigravityPath: '/opt/custom/agy' });
+    assert.equal(l3.subtitle({}, 'demo-app', 'en'), 'demo-app');
+    // a changed setting is looked at again
+    l3.configure({});
+    assert.equal(l3.subtitle({}, 'demo-app', 'en'), 'App · ⌘N');
+  });
+
+  test('the key group hands the global settings to the launcher, on load and on change', async () => {
+    const cid = Kit.keyCid('antigravity', 'newsession');
+    const hooks = drawHooks();
+    const configs = [];
+    let loads = 0;
+    const l = launcher();
+    const real = l.configure.bind(l);
+    l.configure = config => {
+      configs.push(config);
+      real(config);
+    };
+    const keys = new NewSessionKeys({
+      ...hooks.deps,
+      provider: { cid, brand: ANTIGRAVITY_BRAND, launcher: l },
+      loadConfig: async () => {
+        loads++;
+        return { antigravityPath: '/opt/custom/agy' };
+      },
+      launch: async () => assert.fail('nothing opens'),
+      run: async () => assert.fail('nothing opens'),
+      terminal: async () => assert.fail('nothing opens'),
+      home: '/Users/you',
+      platform: 'darwin',
+    });
+    const key = { uid: 1, cid, width: 120, data: {} };
+    await keys.alive(SERIAL, [key]);
+    await keys.alive(SERIAL, [key]);
+    assert.deepEqual(configs, [{ antigravityPath: '/opt/custom/agy' }], 'loaded once');
+    assert.equal(loads, 1);
+    await keys.configure({ antigravityPath: '/opt/other/agy' });
+    assert.deepEqual(configs.at(-1), { antigravityPath: '/opt/other/agy' });
+    await hooks.settle();
+    await keys.dead(SERIAL, []);
   });
 
   test('agy lookup: the setting, else PATH and the usual folders', () => {

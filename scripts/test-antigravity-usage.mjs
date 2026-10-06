@@ -140,6 +140,8 @@ const TLS_ANSWER = {
   text: 'Client sent an HTTP request to an HTTPS server.\n',
 };
 const refused = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+/** What the real transport throws when a request runs out of time. */
+const timeout = () => new R.RpcTransportError('timeout');
 
 /**
  * A fake machine: language servers in the process table (ps), their ports
@@ -183,6 +185,7 @@ function fakeMachine(servers, { extraPs = [], checkToken = true } = {}) {
       method: request.method,
       body: request.body,
       token: request.token,
+      timeoutMs: request.timeoutMs,
     });
     const s = state.servers.find(x => String(request.port) in x.ports);
     if (!s) throw refused();
@@ -379,14 +382,15 @@ describe('quota summary → metrics', () => {
     assert.deepEqual(
       metrics.map(m => [m.id, m.label, m.percent, m.resetsAt, m.tag]),
       [
-        ['lowest', 'Gemini 5h', 60, at(150), '5h'],
-        ['group:gemini', 'Gemini 5h', 60, at(150), '5h'],
-        ['gemini-5h', 'Gemini 5h', 60, at(150), '5h'],
-        ['gemini-weekly', 'Gemini Weekly', 18, at(5 * 1440), '7d'],
-        ['group:3p', 'Claude 5h', 0, null, '5h'],
+        // narrow keys show the tag: it keeps the group's initial
+        ['lowest', 'Gemini 5h', 60, at(150), 'G 5h'],
+        ['group:gemini', 'Gemini 5h', 60, at(150), 'G 5h'],
+        ['gemini-5h', 'Gemini 5h', 60, at(150), 'G 5h'],
+        ['gemini-weekly', 'Gemini Weekly', 18, at(5 * 1440), 'G 7d'],
+        ['group:3p', 'Claude 5h', 0, null, 'C 5h'],
         // nothing used: the reset time only rolls, so none is shown
-        ['3p-5h', 'Claude 5h', 0, null, '5h'],
-        ['3p-weekly', 'Claude Weekly', 0, null, '7d'],
+        ['3p-5h', 'Claude 5h', 0, null, 'C 5h'],
+        ['3p-weekly', 'Claude Weekly', 0, null, 'C 7d'],
       ]
     );
     assert.deepEqual(M.dualViews(groups), [
@@ -399,7 +403,7 @@ describe('quota summary → metrics', () => {
   test('the lowest follows the most used limit in any group', () => {
     const metrics = M.groupMetrics(M.parseQuotaSummary(summary({ claudeWeekly: 0.05 }), T0));
     const lowest = metrics.find(m => m.id === 'lowest');
-    assert.deepEqual([lowest.label, lowest.percent, lowest.tag], ['Claude Weekly', 95, '7d']);
+    assert.deepEqual([lowest.label, lowest.percent, lowest.tag], ['Claude Weekly', 95, 'C 7d']);
     assert.equal(metrics.find(m => m.id === 'group:3p').label, 'Claude Weekly');
   });
 
@@ -430,14 +434,27 @@ describe('quota summary → metrics', () => {
     assert.deepEqual(
       metrics.map(m => [m.id, m.label, m.percent, m.tag ?? null]),
       [
-        ['lowest', 'Imagen Daily', 75, '1d'],
-        ['group:img', 'Imagen Daily', 75, '1d'],
-        ['bucket:img-daily', 'Imagen Daily', 75, '1d'],
-        ['bucket:img-monthly', 'Imagen Monthly', 50, '30d'],
+        ['lowest', 'Imagen Daily', 75, 'I 1d'],
+        ['group:img', 'Imagen Daily', 75, 'I 1d'],
+        ['bucket:img-daily', 'Imagen Daily', 75, 'I 1d'],
+        ['bucket:img-monthly', 'Imagen Monthly', 50, 'I 30d'],
         ['bucket:extra-burst', 'extra 15m', 10, null],
       ]
     );
     assert.deepEqual(M.dualViews(groups), []);
+    // two groups with one initial: the bare window
+    const twins = M.parseQuotaSummary(
+      {
+        response: {
+          groups: [
+            { displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-5h', window: '5h', remainingFraction: 0.5 }] },
+            { displayName: 'GPT models', buckets: [{ bucketId: 'gpt-5h', window: '5h', remainingFraction: 0.5 }] },
+          ],
+        },
+      },
+      T0
+    );
+    assert.deepEqual(twins.map(g => g.buckets[0].tag), ['5h', '5h']);
   });
 
   test('malformed, disabled and count-only buckets', () => {
@@ -771,6 +788,75 @@ describe('Antigravity usage source', () => {
     assert.deepEqual(machine.calls.post.map(c => !!c.body.forceRefresh), [true, false]);
   });
 
+  test('a forced refresh that runs out of time: the same port unforced, and it counts as the refresh', async () => {
+    const slowGoogle = request => {
+      if (request.body.forceRefresh) throw timeout();
+      return ok(summary());
+    };
+    const machine = fakeMachine([
+      appServer({ RetrieveUserQuotaSummary: slowGoogle }),
+      ideServer({ RetrieveUserQuotaSummary: ok(summary({ gemini5h: 0 })) }),
+    ]);
+    const { src, clock } = source(machine);
+    const metrics = await src.fetch(CONFIG);
+    assert.equal(metrics[0].percent, 60, 'the cached numbers of the app');
+    assert.equal(src.lastServer(), 'app');
+    const quotaCalls = () =>
+      machine.calls.post
+        .filter(c => c.method === 'RetrieveUserQuotaSummary')
+        .map(c => [c.port, !!c.body.forceRefresh, c.timeoutMs]);
+    // the forced request has a longer deadline; the retry is the usual one
+    assert.deepEqual(quotaCalls(), [
+      [41002, true, 20_000],
+      [41002, false, 5_000],
+    ]);
+    // the refresh was sent: the next rounds read the cache, for 15 minutes
+    for (const step of [31_000, 3 * MIN, 5 * MIN]) {
+      clock.now += step;
+      await src.fetch(CONFIG);
+    }
+    assert.deepEqual(quotaCalls().slice(2), [
+      [41002, false, 5_000],
+      [41002, false, 5_000],
+      [41002, false, 5_000],
+    ]);
+    clock.now += 15 * MIN;
+    await src.fetch(CONFIG);
+    assert.deepEqual(quotaCalls().at(-2), [41002, true, 20_000]);
+
+    // the app does not answer at all: the IDE only ever gets the cache request
+    const app = appServer({});
+    app.ports = { 41002: () => { throw timeout(); } };
+    const both = fakeMachine([app, ideServer({ RetrieveUserQuotaSummary: ok(summary({ gemini5h: 0.2 })) })]);
+    const s2 = source(both);
+    assert.equal((await s2.src.fetch(CONFIG))[0].percent, 80);
+    assert.equal(s2.src.lastServer(), 'ide');
+    assert.deepEqual(
+      both.calls.post.map(c => [c.port, !!c.body.forceRefresh]),
+      [
+        [41002, true],
+        [41002, false],
+        [41012, false],
+      ]
+    );
+    // nothing answers: "no answer", and the refresh still counts as sent
+    const silent = fakeMachine([appServer({ RetrieveUserQuotaSummary: () => { throw timeout(); } })]);
+    const s3 = source(silent);
+    await assert.rejects(s3.src.fetch(CONFIG), { problem: 'unreachable', message: /timeout/ });
+    silent.state.servers[0].ports[41002] = routes({ RetrieveUserQuotaSummary: ok(summary()) });
+    s3.clock.now += 31_000;
+    await s3.src.fetch(CONFIG);
+    assert.equal(silent.calls.post.at(-1).body.forceRefresh, undefined);
+    // a refused connection never reached the LS: the next round forces
+    const down = fakeMachine([appServer({ RetrieveUserQuotaSummary: () => { throw refused(); } })]);
+    const s4 = source(down);
+    await assert.rejects(s4.src.fetch(CONFIG), { problem: 'unreachable' });
+    down.state.servers[0].ports[41002] = routes({ RetrieveUserQuotaSummary: ok(summary()) });
+    s4.clock.now += 31_000;
+    await s4.src.fetch(CONFIG);
+    assert.equal(down.calls.post.at(-1).body.forceRefresh, true);
+  });
+
   test('a passed reset asks for a refresh, once', async () => {
     const stale = summary({ gemini5h: 0.1 });
     stale.response.groups[0].buckets[1].resetTime = at(-1);
@@ -852,7 +938,7 @@ describe('Antigravity usage source', () => {
     assert.equal(refusing.calls.ps, 1);
   });
 
-  test('nothing answers: one more process lookup, then "no answer"; the meter stays 30 minutes', async () => {
+  test('nothing answers: one more process lookup, then "no answer"; the meter stays 30 minutes, 2 after a quit', async () => {
     const machine = fakeMachine([appServer({ RetrieveUserQuotaSummary: ok(summary()) })]);
     const { src, clock } = source(machine);
     await src.fetch(CONFIG);
@@ -874,13 +960,38 @@ describe('Antigravity usage source', () => {
     assert.equal(src.keepLastOnError(error), true);
     clock.now += 31 * MIN;
     assert.equal(src.keepLastOnError(error), false);
-    // not running also keeps the last meter for a while
-    const notRunning = new T.AntigravityUsageError('not-running', 'x');
-    const s2 = source(fakeMachine([appServer({ RetrieveUserQuotaSummary: ok(summary()) })]));
+    // the app and the IDE quit: the last meter stays through a restart only
+    const apps = tmpDir('apps');
+    fs.mkdirSync(path.join(apps, 'Antigravity.app'));
+    const quitting = fakeMachine([appServer({ RetrieveUserQuotaSummary: ok(summary()) })]);
+    const s2 = source(quitting, { appFolders: () => [apps] });
     await s2.src.fetch(CONFIG);
+    quitting.state.servers = [];
+    s2.clock.now += 31_000;
+    const notRunning = await s2.src.fetch(CONFIG).catch(e => e);
+    assert.equal(notRunning.problem, 'not-running');
     assert.equal(s2.src.keepLastOnError(notRunning), true);
-    assert.equal(s2.src.keepLastOnError(new T.AntigravityUsageError('signed-out', 'x')), false);
-    assert.equal(s2.src.keepLastOnError(new Error('x')), false);
+    s2.clock.now += 61_000;
+    await assert.rejects(s2.src.fetch(CONFIG), { problem: 'not-running' });
+    assert.equal(s2.src.keepLastOnError(notRunning), true, 'a minute after the quit');
+    s2.clock.now += 61_000;
+    await assert.rejects(s2.src.fetch(CONFIG), { problem: 'not-running' });
+    assert.equal(s2.src.keepLastOnError(notRunning), false, 'two minutes after the quit');
+    // back again: a later quit gets its own short while
+    quitting.state.servers = [appServer({ RetrieveUserQuotaSummary: ok(summary()) })];
+    s2.clock.now += 31_000;
+    await s2.src.fetch(CONFIG);
+    quitting.state.servers = [];
+    s2.clock.now += 31_000;
+    const again = await s2.src.fetch(CONFIG).catch(e => e);
+    assert.equal(s2.src.keepLastOnError(again), true);
+    // a not-running error the source did not see itself does not count
+    const s3 = source(fakeMachine([appServer({ RetrieveUserQuotaSummary: ok(summary()) })]));
+    await s3.src.fetch(CONFIG);
+    assert.equal(s3.src.keepLastOnError(new T.AntigravityUsageError('not-running', 'x')), false);
+    assert.equal(s3.src.keepLastOnError(new Kit.ProviderError('network', 'x')), true);
+    assert.equal(s3.src.keepLastOnError(new T.AntigravityUsageError('signed-out', 'x')), false);
+    assert.equal(s3.src.keepLastOnError(new Error('x')), false);
   });
 
   test('a failing process list and Windows are reported, not thrown raw', async () => {
