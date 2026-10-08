@@ -38,6 +38,12 @@ export type PluginConfig = {
   pollInterval?: number;
   /** Claude Code config folder (default ~/.claude) */
   claudeDir?: string;
+  /**
+   * Proxy for the Claude usage and token requests (src/proxy.ts): empty or
+   * 'auto' (HTTPS_PROXY, else the macOS system proxy), 'direct' / 'none' /
+   * 'off', or http://[user:pass@]host:port
+   */
+  claudeProxy?: string;
   /** Kimi Code home override (default $KIMI_CODE_HOME or ~/.kimi-code) */
   kimiDir?: string;
   /** Kimi desktop app data folder override (default: the app's userData) */

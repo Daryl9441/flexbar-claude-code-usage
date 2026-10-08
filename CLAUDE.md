@@ -147,6 +147,8 @@ npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Co
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
 npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
 npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
+npm run test:claude-proxy     # Claude proxy routing (claudeProxy, HTTPS_PROXY/NO_PROXY, scutil), CONNECT tunnel + fallback, 403 forbidden, Keychain write via security -i (fetch and child_process stubbed, loopback servers only)
+npm run test:claude-login     # Claude login state: signed out, invalid_grant, refresh lock, deadlines, write-back (fetch, child_process and Keychain stubbed)
 npm run check:privacy         # privacy scan of tracked files + staged changes
 npm run check:privacy:history # privacy scan of commits not in upstream/main (or origin/main)
 npm run check:privacy:all     # privacy scan of every local branch and origin, minus upstream
@@ -210,9 +212,60 @@ outside the repository with `assert` changed to `with` in
   the running sessions, paged by `ListPager`), `src/newSessionKey.ts`
   (`NewSessionKeys`; URL, command or terminal targets). Without a provider
   the session and new-session groups default to Claude.
-- Claude: `src/credentials.ts` reads Claude Code's OAuth credentials (env,
-  `~/.claude/.credentials.json`, macOS Keychain), refreshes them and writes the
-  new pair back. `src/api.ts`: usage endpoint client (`UsageError`).
+- Claude: `src/credentialStore.ts` reads Claude Code's OAuth credentials
+  (env, `~/.claude/.credentials.json`, macOS Keychain) and writes a refreshed
+  pair back (atomic private file replace; Keychain under the item's own
+  account) only into the login it came from: when the stored refresh token
+  changed meanwhile (Claude Code signed out or logged in again), nothing is
+  written. `src/credentials.ts` refreshes (see "Claude login state");
+  `src/keychain.ts` writes the Keychain item through
+  `/usr/bin/security -i` (hex on stdin, never in argv; the line, its newline
+  included, must fit in 4095 bytes: a longer one would be split, and at
+  exactly 4095 bytes without the newline the leftover newline runs as an
+  empty command whose exit 0 hides a failure. A longer item falls back to the
+  argv write rather than leaving Claude Code with a rotated-away refresh
+  token; a non-zero `returned <status>` on stderr counts as a failure even
+  with exit 0). `src/api.ts`: usage
+  endpoint client (`UsageError`). HTTP 403 with `error.type` `forbidden` is
+  Anthropic refusing the network or region before authentication (code
+  `forbidden`, key face "Region blocked / Check proxy"); other 403s stay
+  `http`.
+- Claude login state: a refresh runs under Claude Code's own refresh lock
+  (`src/cliLock.ts`, shared with Kimi: proper-lockfile directories
+  `<folder>/.oauth_refresh.lock`, then the legacy `<realpath(folder)>.lock`,
+  stale after 60 s; the folder is the one holding the `.credentials.json`,
+  else `CLAUDE_SECURESTORAGE_CONFIG_DIR` / `CLAUDE_CONFIG_DIR` / `~/.claude`,
+  and without it nothing is locked). The holder stops touching the lock after
+  `maxHoldMs` (40 s) and only removes a lock that is still its own (inode);
+  each token request has a 15 s deadline, and one that timed out is never
+  sent to the other endpoint. While Claude Code holds the lock its new token
+  is used; without the lock, or with a store the plugin cannot write, nothing
+  is refreshed. A pair that could not be written back is kept and written by
+  the next refresh instead of posting the rotated-away token. After a 401 the
+  rejected token is passed along (`rejectedToken`), so a token Claude Code
+  stored since is used rather than refreshed again.
+  Like Claude Code, a refresh token the endpoints answer `invalid_grant` is
+  never posted again (in-memory set, by hash), the answer's
+  `refresh_token_expires_in` / `scope` update `refreshTokenExpiresAt` /
+  `scopes` (absent ones keep the stored values), and a store whose two tokens
+  Claude Code cleared means it signed out. Both are
+  `ClaudeLoginExpiredError`, which `fetchUsage` reports as `unauthorized`
+  ("Login expired / Run claude to log in"); "Not logged in"
+  (`no-credentials`) is only for no credentials at all.
+- Claude proxy: FlexDesigner's `fetch` reads neither proxy variables nor the
+  macOS system proxy, so the usage and token requests go through
+  `proxiedFetch` (`src/proxy.ts`). Route: the `claudeProxy` global setting
+  (empty/`auto`, `direct`/`none`/`off`, `http://[user:pass@]host:port`),
+  else `HTTPS_PROXY` / `HTTP_PROXY` minus `NO_PROXY`, else the system proxy
+  (`/usr/sbin/scutil --proxy`, darwin only); parsing in `src/proxyConfig.ts`,
+  automatic routes cached per host for 60 s. `src/proxyTunnel.ts`: CONNECT
+  tunnel with Node's http/https/tls (default certificate checks, SNI; no
+  `agent` on the tunnelled request, or Node ignores `createConnection`).
+  Only a failed CONNECT phase falls back to one direct `fetch`; an error after
+  the request went into the tunnel is a `RequestSentError` and is never
+  retried, and the token refresh then skips its fallback endpoint too (a
+  refresh token must not go out twice). Logs and errors never carry the
+  proxy's credentials.
   `src/usage.ts`, `src/types.ts`: usage response and metrics
   (`remainingPercent` for the dual face).
   `src/session.ts` (transcript parser, status derivation),

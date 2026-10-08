@@ -1,6 +1,13 @@
 import { logger } from '@eniac/flexdesigner';
 
-import { getAccessToken } from './credentials';
+import {
+  CLAUDE_REQUESTS,
+  ClaudeLoginExpiredError,
+  RefreshOptions,
+  getAccessToken,
+} from './credentials';
+import { readTextPrefix } from './httpText';
+import { proxiedFetch } from './proxy';
 import { safeErrorMessage } from './redact';
 import { UsageData } from './types';
 
@@ -14,11 +21,22 @@ const HEADERS = {
   'User-Agent': 'claude-code/2.1.5',
 };
 
+// Anthropic's JSON error bodies are tiny; a 403 body is never read further
+const ERROR_BODY_MAX = 16 * 1024;
+
+export type UsageErrorCode =
+  | 'no-credentials'
+  | 'unauthorized'
+  | 'rate-limited'
+  /** HTTP 403 "forbidden": requests from this network or region are refused */
+  | 'forbidden'
+  | 'http'
+  | 'network';
+
 export class UsageError extends Error {
   constructor(
     message: string,
-    public readonly code:
-      'no-credentials' | 'unauthorized' | 'rate-limited' | 'http' | 'network',
+    public readonly code: UsageErrorCode,
     /** Seconds until the rate limit lifts, from the Retry-After header. */
     public readonly retryAfterSeconds?: number
   ) {
@@ -26,11 +44,20 @@ export class UsageError extends Error {
   }
 }
 
-async function requestUsage(token: string): Promise<Response> {
+export type FetchUsageOptions = {
+  /** Claude Code credentials file override (the credentialsPath setting) */
+  credentialsPath?: string;
+  /** The claudeProxy setting (src/proxy.ts): empty or auto, direct, or a URL */
+  proxy?: string;
+};
+
+async function requestUsage(token: string, proxy?: string): Promise<Response> {
   try {
-    return await fetch(USAGE_URL, {
-      headers: { ...HEADERS, Authorization: `Bearer ${token}` },
-    });
+    return await proxiedFetch(
+      USAGE_URL,
+      { headers: { ...HEADERS, Authorization: `Bearer ${token}` } },
+      { proxy, logger: logger ?? undefined, label: CLAUDE_REQUESTS }
+    );
   } catch (error) {
     throw new UsageError(
       `Network error: ${safeErrorMessage(error)}`,
@@ -39,9 +66,43 @@ async function requestUsage(token: string): Promise<Response> {
   }
 }
 
-export async function fetchUsage(credentialsPath?: string): Promise<UsageData> {
-  const token = await getAccessToken(credentialsPath, {
+/** `error.type` of an Anthropic JSON error body, or null. */
+async function errorType(response: Response): Promise<string | null> {
+  const text = await readTextPrefix(response, ERROR_BODY_MAX);
+  try {
+    const parsed = JSON.parse(text) as { error?: { type?: unknown } } | null;
+    const type = parsed?.error?.type;
+    return typeof type === 'string' ? type : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * getAccessToken, with a login Claude Code can no longer refresh (signed out,
+ * refresh token rejected) reported as an expired login ('unauthorized').
+ */
+async function accessToken(
+  credentialsPath: string | undefined,
+  options: RefreshOptions
+): Promise<string | null> {
+  try {
+    return await getAccessToken(credentialsPath, options);
+  } catch (error) {
+    if (error instanceof ClaudeLoginExpiredError) {
+      throw new UsageError(error.message, 'unauthorized');
+    }
+    throw error;
+  }
+}
+
+export async function fetchUsage({
+  credentialsPath,
+  proxy,
+}: FetchUsageOptions = {}): Promise<UsageData> {
+  const token = await accessToken(credentialsPath, {
     logger: logger ?? undefined,
+    proxy,
   });
   if (!token) {
     throw new UsageError(
@@ -50,17 +111,19 @@ export async function fetchUsage(credentialsPath?: string): Promise<UsageData> {
     );
   }
 
-  let response = await requestUsage(token);
+  let response = await requestUsage(token, proxy);
 
   // Expired/revoked token despite a plausible stored expiry: force one
   // refresh through the stored refresh token and retry once
   if (response.status === 401) {
-    const refreshed = await getAccessToken(credentialsPath, {
+    const refreshed = await accessToken(credentialsPath, {
       force: true,
+      rejectedToken: token,
       logger: logger ?? undefined,
+      proxy,
     });
     if (refreshed && refreshed !== token) {
-      response = await requestUsage(refreshed);
+      response = await requestUsage(refreshed, proxy);
     }
   }
 
@@ -76,6 +139,14 @@ export async function fetchUsage(credentialsPath?: string): Promise<UsageData> {
       'Rate limited by the usage endpoint.',
       'rate-limited',
       Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    );
+  }
+  // Anthropic's edge refuses some networks and regions before it looks at
+  // the token: {"error":{"type":"forbidden","message":"Request not allowed"}}
+  if (response.status === 403 && (await errorType(response)) === 'forbidden') {
+    throw new UsageError(
+      'Usage request refused (HTTP 403 forbidden): Anthropic does not accept requests from this network or region. Check the Claude proxy setting or your system proxy.',
+      'forbidden'
     );
   }
   if (!response.ok) {
