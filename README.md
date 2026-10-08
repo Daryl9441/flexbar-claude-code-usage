@@ -216,7 +216,11 @@ The plugin reads the OAuth token that Claude Code stores on your machine (`~/.cl
 
 One usage request serves all keys, at most one request every 30 seconds. If the endpoint rate-limits the plugin (HTTP 429), it honors the server's `Retry-After`: keys show a countdown until usage data returns, and no requests are made until then.
 
-When the stored token expires, the plugin refreshes it the same way Claude Code does (via the stored refresh token) and writes the new token pair back to the credential store — so the meters keep working even if you only use the Claude desktop app and never run the CLI. If the refresh token itself has been revoked, keys ask you to log in with Claude Code again.
+When the stored token expires, the plugin refreshes it the same way Claude Code does (via the stored refresh token) and writes the new token pair back to the credential store — so the meters keep working even if you only use the Claude desktop app and never run the CLI. The refresh takes Claude Code's own refresh lock (in the folder of the credentials it refreshes), so the plugin does not refresh while Claude Code does, and it writes the new pair back only if Claude Code has not signed out or logged in again meanwhile. If the refresh token itself has expired or been revoked (the token endpoint answers `invalid_grant`), or Claude Code has signed out because of that, keys show **Login expired · Run claude to log in**: run `claude` in a terminal and log in again (`/login`). Claude Code logins end after a fixed time even while they are refreshed, so this happens now and then. **Not logged in** means no Claude Code credentials were found at all.
+
+FlexDesigner starts the plugin without your shell's proxy variables, and its built-in `fetch` ignores the macOS system proxy, so the plugin picks the proxy for the Claude requests itself: the **Claude proxy** setting, else `HTTPS_PROXY` (minus `NO_PROXY`) from FlexDesigner's environment, else the macOS system proxy (the Proxies page of your network's settings; its HTTP and HTTPS proxies, not a PAC file or SOCKS). Requests go through the proxy's CONNECT tunnel, encrypted end to end to Anthropic. When the proxy cannot be reached the request is sent directly instead; a request that already went through the proxy is never repeated, not even to the token refresh's fallback endpoint. The FlexDesigner log notes the route once per host (e.g. `Claude requests to api.anthropic.com: via system proxy 127.0.0.1:7890`) and again when it changes.
+
+Where Anthropic does not accept connections from your network or region, the usage endpoint answers HTTP 403 "forbidden" before it even looks at the token. Claude Usage keys then show **Region blocked · Check proxy**, and the settings page says so: set **Claude proxy**, or turn on the system proxy.
 
 Requirements:
 
@@ -225,7 +229,7 @@ Requirements:
 
 ## Privacy
 
-- The plugin reads your Claude Code credentials locally (`~/.claude/.credentials.json`, `CLAUDE_CODE_OAUTH_TOKEN`, or the macOS Keychain) and sends them only to Anthropic's own endpoints: the usage endpoint on `api.anthropic.com`, and the OAuth token endpoint (`platform.claude.com`, falling back to `console.anthropic.com`) when it refreshes an expired token.
+- The plugin reads your Claude Code credentials locally (`~/.claude/.credentials.json`, `CLAUDE_CODE_OAUTH_TOKEN`, or the macOS Keychain) and sends them only to Anthropic's own endpoints: the usage endpoint on `api.anthropic.com`, and the OAuth token endpoint (`platform.claude.com`, falling back to `console.anthropic.com`) when it refreshes an expired token. With a proxy (see [How it works](#how-it-works)) the connection runs through it, but encrypted end to end: the proxy sees only the host name. A proxy password in the **Claude proxy** setting is stored in plain text in FlexDesigner's plugin settings, like every other setting, and sent to the proxy (not to Anthropic). A refreshed Keychain item is written through `security -i` with the token pair on its standard input, so it never shows up in the process list (an item longer than about 2 KB falls back to the old command-line write, rather than leaving Claude Code with a used-up refresh token).
 - Tokens are never logged or shown on a key; error messages are redacted before they reach the FlexDesigner log or the settings page. A refreshed token pair is written back only to the credential store it came from.
 - The Claude Sessions key reads transcripts and session status locally and sends nothing anywhere.
 - The Claude New Session key only hands a `claude://` link to your system's opener and sends nothing anywhere; its log messages leave out the project folder.
@@ -248,6 +252,7 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Refresh interval | 180 s | How often usage is polled, for every provider (minimum 60 s) |
 | Credentials file | auto-detect | Override path to `.credentials.json` (useful with `CLAUDE_CONFIG_DIR`) |
 | Claude Code folder | auto-detect | Override `~/.claude` for Claude Sessions keys |
+| Claude proxy | auto | Proxy for the Claude usage and token requests: empty or `auto` uses `HTTPS_PROXY`, else the macOS system proxy; `direct` (or `none`, `off`) uses none; or an HTTP proxy such as `http://127.0.0.1:7890` (`http://user:password@host:port` with a login). SOCKS and PAC are not supported |
 | Kimi Code folder | auto-detect | Override `$KIMI_CODE_HOME` or `~/.kimi-code` (login, sessions, `bin/kimi`) |
 | Kimi desktop app data folder | auto-detect | Override the Kimi app's data folder (`~/Library/Application Support/kimi-desktop` on macOS) |
 | Refresh an expired Kimi Code login | on | Let Kimi Usage refresh and write back an expired Kimi Code login; off keeps it read-only |

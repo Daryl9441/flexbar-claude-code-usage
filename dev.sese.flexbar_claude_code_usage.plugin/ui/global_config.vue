@@ -41,6 +41,16 @@
                         ></v-text-field>
                     </v-col>
                     <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.claudeProxy"
+                            :label="$t('Config.ClaudeProxy')"
+                            :hint="$t('Config.ClaudeProxyHint')"
+                            placeholder="auto · direct · http://127.0.0.1:7890"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
                         <p class="text-subtitle-2 mt-2">Kimi</p>
                     </v-col>
                     <v-col cols="12">

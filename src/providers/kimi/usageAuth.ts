@@ -21,19 +21,10 @@
  * parsed with a JSON.parse whose error never quotes the input.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import {
-  chmod,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rmdir,
-  stat,
-  unlink,
-  utimes,
-} from 'node:fs/promises';
+import { chmod, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
+import { LockTimings, acquireCliLock } from '../../cliLock';
 import { safeErrorMessage } from '../../redact';
 import { ProviderError } from '../kit';
 import { KeyText, Lang } from '../types';
@@ -53,17 +44,6 @@ const EXPIRY_MARGIN_MS = 60_000;
 /** Largest token file read */
 const MAX_TOKEN_FILE_BYTES = 64 * 1024;
 const REFRESH_TIMEOUT_MS = 15_000;
-
-export type LockTimings = {
-  /** Attempts while another process holds the lock */
-  retries: number;
-  /** Wait between attempts */
-  delayMs: number;
-  /** A lock untouched this long is abandoned (proper-lockfile `stale`) */
-  staleMs: number;
-  /** How often a held lock's mtime is refreshed */
-  updateMs: number;
-};
 
 export const CLI_LOCK: LockTimings = {
   retries: 20,
@@ -220,52 +200,6 @@ export const refreshOff = () =>
     'The Kimi Code login has expired and refreshing it is turned off. Run kimi once to refresh it.',
     { keyText: LOGIN_TEXT.refreshOff }
   );
-
-// --- the CLI's refresh lock ------------------------------------------------------
-
-/**
- * Takes the proper-lockfile lock `<target>.lock` the CLI uses (a directory
- * created with mkdir; abandoned after `staleMs` without an mtime update).
- * Resolves to a release function, or null when another process kept it.
- */
-export async function acquireCliLock(
-  target: string,
-  timings: LockTimings,
-  sleep: (ms: number) => Promise<void>
-): Promise<(() => Promise<void>) | null> {
-  const lockDir = `${target}.lock`;
-  await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  for (let attempt = 0; attempt <= timings.retries; attempt++) {
-    try {
-      await mkdir(lockDir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let stale = false;
-      try {
-        const info = await stat(lockDir);
-        stale = info.mtimeMs < Date.now() - timings.staleMs;
-      } catch {
-        stale = true; // released meanwhile: try again right away
-      }
-      if (stale) {
-        await rmdir(lockDir).catch(() => undefined);
-      } else if (attempt < timings.retries) {
-        await sleep(timings.delayMs);
-      }
-      continue;
-    }
-    const touch = setInterval(() => {
-      const time = new Date();
-      utimes(lockDir, time, time).catch(() => undefined);
-    }, timings.updateMs);
-    touch.unref?.();
-    return async () => {
-      clearInterval(touch);
-      await rmdir(lockDir).catch(() => undefined);
-    };
-  }
-  return null;
-}
 
 /** Writes the token file the way the CLI's FileTokenStorage does. */
 async function writeTokenFile(

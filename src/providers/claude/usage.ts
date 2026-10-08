@@ -33,6 +33,9 @@ export function claudeErrorText(error: unknown): KeyText {
         return { title: 'Login expired', message: 'Run claude to log in' };
       case 'rate-limited':
         return { title: 'Rate limited', message: 'Retrying later' };
+      case 'forbidden':
+        // HTTP 403 "forbidden": Anthropic refuses this network or region
+        return { title: 'Region blocked', message: 'Check proxy' };
       case 'http':
         return {
           title: 'Usage error',
@@ -46,7 +49,10 @@ export function claudeErrorText(error: unknown): KeyText {
 }
 
 async function fetchMetrics(config: PluginConfig): Promise<UsageMetric[]> {
-  const usage = await fetchUsage(config?.credentialsPath);
+  const usage = await fetchUsage({
+    credentialsPath: config?.credentialsPath,
+    proxy: config?.claudeProxy,
+  });
   return METRICS.flatMap(id => {
     const snapshot = getMetricSnapshot(usage, id);
     return snapshot ? [{ id, ...snapshot }] : [];
