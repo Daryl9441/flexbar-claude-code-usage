@@ -1,7 +1,7 @@
 {
     "name": "AI Coding Usage",
     "uuid": "dev.sese.flexbar_claude_code_usage",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "author": "Sese-Schneider",
     "entry": "backend/plugin.cjs",
     "description": "Display your Claude Code, Kimi, Gemini and Antigravity usage limits and sessions on your Flexbar",
@@ -164,9 +164,7 @@
                     "keyType": "default",
                     "clickable": true,
                     "platform": [
-                        "windows",
-                        "mac",
-                        "linux"
+                        "mac"
                     ]
                 },
                 "style": {
@@ -174,9 +172,7 @@
                     "width": 120
                 },
                 "data": {
-                    "folder": "",
-                    "target": "auto",
-                    "cliMode": "new"
+                    "target": "code-app"
                 }
             },
             {
@@ -308,9 +304,7 @@
                     "keyType": "default",
                     "clickable": true,
                     "platform": [
-                        "windows",
-                        "mac",
-                        "linux"
+                        "mac"
                     ]
                 },
                 "style": {
@@ -318,11 +312,7 @@
                     "width": 120
                 },
                 "data": {
-                    "target": "auto",
-                    "folder": "",
-                    "mode": "default",
-                    "resume": false,
-                    "sandbox": false
+                    "target": "app"
                 }
             }
         ]
@@ -458,19 +448,13 @@
             },
             "KimiNewSession": {
                 "Title": "Kimi New Session",
-                "Tip": "Opens a new Kimi Code session in a terminal, or Kimi Work in the Kimi app",
+                "Tip": "Opens a new session in Kimi Code App on macOS",
                 "UI": {
-                    "folder": "Project folder (Kimi Code)",
-                    "folderHint": "Absolute path or ~/…; Kimi Code starts there (empty: your home folder). The Kimi app takes no folder",
                     "lang": "Key text language",
-                    "target": "Open in",
-                    "targetAuto": "Automatic",
-                    "targetDesktop": "Kimi Work (Kimi app)",
-                    "targetCli": "Kimi Code in a terminal",
-                    "cliMode": "Kimi Code mode",
-                    "cliModeNew": "New session",
-                    "cliModeContinue": "Continue the last session",
-                    "cliModePlan": "Plan mode"
+                    "appHint": "Uses Kimi Code App’s New Session action. FlexDesigner needs macOS Accessibility access. Select the project in the app; unsent drafts are preserved.",
+                    "testSession": "Open new session",
+                    "testOpened": "New session action completed",
+                    "testFailed": "Could not create a new session; check the key error or plugin log"
                 }
             },
             "GeminiUsage": {
@@ -625,28 +609,13 @@
             },
             "AntigravityNewSession": {
                 "Title": "Antigravity New Session",
-                "Tip": "Opens a new Antigravity conversation: agy in Terminal, or brings up the Antigravity app or IDE",
+                "Tip": "Creates and verifies a new empty conversation in Antigravity App on macOS",
                 "UI": {
-                    "folder": "Project folder (optional)",
-                    "folderHint": "Absolute path or ~/…; leave empty for your home folder",
                     "lang": "Key text language",
-                    "target": "Open in",
-                    "targetAuto": "Automatic (agy if installed, else the app)",
-                    "targetTerminal": "Terminal (agy CLI)",
-                    "targetApp": "Antigravity app (macOS)",
-                    "targetIde": "Antigravity IDE (folder, macOS)",
-                    "mode": "Permissions",
-                    "modeDefault": "Ask for review (default)",
-                    "modeAcceptEdits": "Auto-approve edits",
-                    "modePlan": "Plan (no changes)",
-                    "modeSkip": "Skip all permissions (dangerous)",
-                    "skipWarning": "agy runs every command and edit without asking",
-                    "resume": "Continue the latest conversation",
-                    "sandbox": "Terminal sandbox",
-                    "terminalHint": "Opens Terminal and runs agy in the folder: a new conversation.",
-                    "appHint": "Brings up the Antigravity app (starting it if needed). Antigravity has no link for a new conversation: press ⌘N in the app.",
-                    "ideHint": "Opens the folder in the Antigravity IDE; start a conversation in its agent panel.",
-                    "autoHint": "Runs agy in Terminal when it is installed; otherwise, on macOS, brings up the Antigravity app (⌘N for a new conversation) or opens the folder in the IDE."
+                    "appHint": "Opens Antigravity App and selects New Conversation. Requires existing macOS Accessibility access for FlexDesigner; denied access is reported. Select the project in the app.",
+                    "testSession": "Open new session",
+                    "testOpened": "New session action completed",
+                    "testFailed": "Could not create a new session; check the key error or plugin log"
                 }
             }
         },
@@ -780,19 +749,13 @@
             },
             "KimiNewSession": {
                 "Title": "Kimi 新建会话",
-                "Tip": "在终端中打开新的 Kimi Code 会话，或在 Kimi App 中打开 Kimi Work",
+                "Tip": "在 macOS 的 Kimi Code App 中打开新会话",
                 "UI": {
-                    "folder": "项目文件夹（Kimi Code）",
-                    "folderHint": "绝对路径或 ~/…；Kimi Code 在此启动（留空则为主目录）。Kimi App 不支持指定文件夹",
                     "lang": "按键文字语言",
-                    "target": "打开方式",
-                    "targetAuto": "自动",
-                    "targetDesktop": "Kimi Work（Kimi App）",
-                    "targetCli": "在终端中运行 Kimi Code",
-                    "cliMode": "Kimi Code 模式",
-                    "cliModeNew": "新会话",
-                    "cliModeContinue": "继续上次会话",
-                    "cliModePlan": "计划模式"
+                    "appHint": "使用 Kimi Code App 的新建会话操作，需要 FlexDesigner 的 macOS 辅助功能权限。请在 App 内选择项目；未发送草稿会保留。",
+                    "testSession": "打开新会话",
+                    "testOpened": "新会话动作已完成",
+                    "testFailed": "无法新建会话，请查看按键错误或插件日志"
                 }
             },
             "GeminiUsage": {
@@ -947,28 +910,13 @@
             },
             "AntigravityNewSession": {
                 "Title": "Antigravity 新建会话",
-                "Tip": "打开新的 Antigravity 对话：在终端中运行 agy，或打开 Antigravity App / IDE",
+                "Tip": "在 macOS 的 Antigravity App 中新建并验证空会话",
                 "UI": {
-                    "folder": "项目文件夹（可选）",
-                    "folderHint": "绝对路径或 ~/…；留空则使用主目录",
                     "lang": "按键文字语言",
-                    "target": "打开方式",
-                    "targetAuto": "自动（已安装 agy 时用 agy，否则用 App）",
-                    "targetTerminal": "终端（agy CLI）",
-                    "targetApp": "Antigravity App（macOS）",
-                    "targetIde": "Antigravity IDE（文件夹，macOS）",
-                    "mode": "权限模式",
-                    "modeDefault": "需审核（默认）",
-                    "modeAcceptEdits": "自动批准编辑",
-                    "modePlan": "计划（不做修改）",
-                    "modeSkip": "跳过所有权限确认（危险）",
-                    "skipWarning": "agy 会不经询问执行所有命令和编辑",
-                    "resume": "继续最近的对话",
-                    "sandbox": "终端沙箱",
-                    "terminalHint": "打开终端并在该文件夹中运行 agy：新的对话。",
-                    "appHint": "打开 Antigravity App（如未运行则启动）。Antigravity 没有新建对话的链接：请在 App 中按 ⌘N。",
-                    "ideHint": "在 Antigravity IDE 中打开该文件夹；在其智能体面板中开始对话。",
-                    "autoHint": "已安装 agy 时在终端中运行 agy；否则在 macOS 上打开 Antigravity App（按 ⌘N 新建对话）或在 IDE 中打开该文件夹。"
+                    "appHint": "打开 Antigravity App 并选择 New Conversation。需要 FlexDesigner 已有的 macOS 辅助功能权限；权限被拒绝时显示错误。请在 App 内选择项目。",
+                    "testSession": "打开新会话",
+                    "testOpened": "新会话动作已完成",
+                    "testFailed": "无法新建会话，请查看按键错误或插件日志"
                 }
             }
         }

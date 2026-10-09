@@ -147,6 +147,7 @@ npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Co
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
 npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
 npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
+npm run test:mac-app-newsession   # native App action, empty-view checks and settings-page Test (all stubbed)
 npm run test:claude-proxy     # Claude proxy routing (claudeProxy, HTTPS_PROXY/NO_PROXY, scutil), CONNECT tunnel + fallback, 403 forbidden, Keychain write via security -i (fetch and child_process stubbed, loopback servers only)
 npm run test:claude-login     # Claude login state: signed out, invalid_grant, refresh lock, deadlines, write-back (fetch, child_process and Keychain stubbed)
 npm run check:privacy         # privacy scan of tracked files + staged changes
@@ -210,8 +211,11 @@ outside the repository with `assert` changed to `with` in
 - Generic key groups: `src/usageKey.ts` (`UsageKeys`: polling, rate-limit
   lockout, usage faces), `src/sessionKey.ts` (`SessionKeys`; a press lists
   the running sessions, paged by `ListPager`), `src/newSessionKey.ts`
-  (`NewSessionKeys`; URL, command or terminal targets). Without a provider
-  the session and new-session groups default to Claude.
+  (`NewSessionKeys`; URL, command, terminal or native macOS App targets).
+  Kimi and Antigravity settings-page Test buttons send `new-session-test`
+  with their cid and reuse `press` through a preview key; they do not change
+  device keys or layouts. Without a provider the session and new-session
+  groups default to Claude.
 - Claude: `src/credentialStore.ts` reads Claude Code's OAuth credentials
   (env, `~/.claude/.credentials.json`, macOS Keychain) and writes a refreshed
   pair back (atomic private file replace; Keychain under the item's own
@@ -288,7 +292,13 @@ outside the repository with `assert` changed to `with` in
   (Kimi Code `state.json` and `wire.jsonl` journals), `sessionDesktop.ts`
   (Kimi Work stores, daemon state, sqlite titles via `node:sqlite`,
   read-only), `sessionFs.ts`, `session.ts` (`sessionProvider`).
-  `newSession.ts`: terminal running `kimi` or `kimi-work://open`.
+  `newSession.ts`: macOS Kimi Code App only, using `mac-app-new-session` with
+  fixed bundle `com.kimi.code.desktop`. The shared native helper presses
+  File > New Session (文件 > 新建会话) and verifies the new-session route and
+  a focused, empty composer. Old target, CLI-mode and folder settings are
+  ignored. No app-argument, ordinary Kimi app or CLI fallback; missing App,
+  non-macOS, Accessibility and verification failures are reported. Restored
+  unsent drafts are preserved and reported, never submitted or erased.
 - Gemini (`src/providers/gemini/`): `paths.ts` (Gemini home, `geminiPath`).
   Usage: `usage.ts` (`usageSource`: metrics, caching, keep-last), `usageCreds.ts`
   (`oauth_creds.json` read-only, in-memory refresh), `usageCli.ts` (finds the
@@ -324,11 +334,17 @@ outside the repository with `assert` changed to `with` in
   `sessionProto.ts` (protobuf reader for `agy`'s `raw_summary`),
   `sessionSummary.ts` (facts and states, `task.md` progress),
   `sessionCli.ts` (`findAgy`, app bundle ids). New session: `newSession.ts`
-  (`target`: `agy` in Terminal with fixed presets, `open -b` for the app or
-  the IDE on macOS; `configure` gets the global settings for the 'auto'
-  subtitle). Tests block fetch, http/https, net and child_process (only
-  `mkfifo` runs, for named-pipe fixtures): a test never reaches a real
-  Antigravity language server or process.
+  always targets the standalone macOS App (`com.google.antigravity`) through
+  `mac-app-new-session`; old auto, CLI and IDE targets, folders and CLI
+  presets are ignored. `src/macAppNewSession.ts` activates that exact bundle,
+  invokes its New Conversation link with native `AXPress`, and reports
+  success only after verifying the new-view URL and a focused, empty Message
+  input. Accessibility permission failures, unavailable UI and unverified
+  views fail; existing unsent drafts are preserved and reported. No CLI or
+  IDE fallback, prompt submission or project creation. Tests block fetch,
+  http/https, net and child_process (only `mkfifo` runs, for named-pipe
+  fixtures): a test never reaches a real Antigravity language server or
+  process.
 - Key-group hooks a provider may use: `UsageSource.substituteMetric` (a
   reported metric to draw instead of one the fetch did not return; logged
   once per key), `UsageSource.missingText` (text for a metric the fetch did
@@ -347,8 +363,12 @@ outside the repository with `assert` changed to `with` in
   shell; errors drop the query so folder paths never reach the log),
   `src/launch.ts` (commands via `execFile`; terminals: macOS opens a
   self-deleting `.command` script with `open -a Terminal`, every word
-  single-quoted). Tests stub every launcher: never open a link, a terminal or
-  an app from a test.
+  single-quoted), `src/macAppNewSession.ts` (fixed Kimi Code and Antigravity
+  bundles; JXA AppKit/Accessibility via `osascript`, no keyboard input or
+  System Events Automation grant). Kimi and Antigravity New Session are
+  macOS only, with no CLI fallback. Both native App actions fail on missing
+  Accessibility access without requesting a new permission. Tests stub every
+  launcher: never open a link, a terminal or an app from a test.
 - `src/redact.ts`: credential redaction for logs and key text.
 - `dev.sese.flexbar_claude_code_usage.plugin/`: `manifest.json` (keys, `local`
   strings for `en` and `zh-CN`), `ui/*.vue` key settings (file name = last

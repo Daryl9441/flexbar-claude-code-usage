@@ -1,5 +1,5 @@
 {
-    "version": "0.4.0",
+    "version": "0.4.1",
     "scripts": {
         "build": "rollup -c",
         "dev": "npm-run-all plugin:unlink plugin:link -p plugin:watch plugin:debug",
@@ -28,7 +28,8 @@
         "check:privacy": "node scripts/check-privacy.mjs",
         "check:privacy:history": "node scripts/check-privacy.mjs --history",
         "check:privacy:all": "node scripts/check-privacy.mjs --history \"HEAD --branches --remotes=origin --not --remotes=upstream\"",
-        "setup:hooks": "git config core.hooksPath .githooks"
+        "setup:hooks": "git config core.hooksPath .githooks",
+        "test:mac-app-newsession": "tsc --outDir .test-build-mac-app-newsession --rootDir src --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/macAppNewSession.ts src/newSessionKey.ts && node --test scripts/test-mac-app-newsession.mjs"
     },
     "type": "commonjs",
     "dependencies": {

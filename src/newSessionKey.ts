@@ -16,6 +16,10 @@ import {
   runCommand,
 } from './launch';
 import {
+  MacAppNewSessionOpener,
+  openMacAppNewSession,
+} from './macAppNewSession';
+import {
   CLAUDE_NEW_SESSION_STRINGS,
   NewSessionState,
   NewSessionStrings,
@@ -37,6 +41,7 @@ import {
   NewSessionLauncher,
   NewSessionRequest,
   PluginConfig,
+  UiMessage,
 } from './providers/types';
 
 export const NEW_SESSION_CID = keyCid('claude', 'newsession');
@@ -142,6 +147,8 @@ export type NewSessionKeyDeps = {
   run?: CommandRunner;
   /** Opens a terminal target (default: built on `run`; tests pass a stub) */
   terminal?: TerminalOpener;
+  /** Opens and verifies an App's new conversation page (tests inject a stub). */
+  macAppNewSession?: MacAppNewSessionOpener;
   /** Platform targets are built for (default: this one) */
   platform?: NodeJS.Platform;
   /** Renders a key face (defaults to renderNewSessionKey) */
@@ -184,6 +191,7 @@ export class NewSessionKeys implements KeyGroup {
   private readonly launch: Launcher;
   private readonly run: CommandRunner;
   private readonly terminal: TerminalOpener;
+  private readonly macAppNewSession: MacAppNewSessionOpener;
   private readonly render: typeof renderNewSessionKey;
   private readonly now: () => number;
   private readonly timings: NewSessionTimings;
@@ -203,6 +211,7 @@ export class NewSessionKeys implements KeyGroup {
     this.terminal =
       deps.terminal ??
       createTerminalOpener({ platform: deps.platform, run: this.run });
+    this.macAppNewSession = deps.macAppNewSession ?? openMacAppNewSession;
     this.render = deps.render ?? renderNewSessionKey;
     this.now = deps.now ?? Date.now;
     this.timings = { ...DEFAULT_TIMINGS, ...deps.timings };
@@ -279,8 +288,29 @@ export class NewSessionKeys implements KeyGroup {
     await this.redraw();
   }
 
-  async message(): Promise<unknown> {
-    return undefined;
+  async message(payload?: UiMessage): Promise<unknown> {
+    if (
+      payload?.data !== 'new-session-test' ||
+      payload.cid !== this.cid ||
+      !['kimi', 'antigravity'].some(id =>
+        this.cid.endsWith(`.${id}_newsession`)
+      )
+    )
+      return undefined;
+    const key: Key = {
+      uid: -1,
+      cid: this.cid,
+      width: 120,
+      data:
+        payload.settings && typeof payload.settings === 'object'
+          ? (payload.settings as Record<string, unknown>)
+          : {},
+    };
+    // The settings-page Test button uses the same press handler without
+    // changing or sending a device key, its layout, or its display settings.
+    const success = await this.press('UI-PREVIEW', key);
+    const error = this.feedback.get('UI-PREVIEW#-1')?.title;
+    return { success, ...(error ? { error } : {}) };
   }
 
   /**
@@ -330,6 +360,9 @@ export class NewSessionKeys implements KeyGroup {
         this.provider.launcher.target(request))();
       this.deps.logger?.info?.(`New Session key: opening ${appName}`);
       await this.open(target);
+      if (target.kind === 'mac-app-new-session') {
+        this.deps.logger?.info?.(`New Session key: verified ${appName}`);
+      }
       return true;
     } catch (error) {
       const text = error instanceof Error ? error.message : `${error}`;
@@ -359,6 +392,8 @@ export class NewSessionKeys implements KeyGroup {
         });
       case 'terminal':
         return this.terminal(target.command, target.cwd);
+      case 'mac-app-new-session':
+        return this.macAppNewSession(target.bundleId);
       default:
         throw new Error('Unknown launch target');
     }

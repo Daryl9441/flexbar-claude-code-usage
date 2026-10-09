@@ -110,18 +110,13 @@ When the Kimi Code login has expired, the key refreshes it with the CLI's own pr
 | Idle after | 15 min | When a finished session counts as idle |
 | Key text language, Show project name, Show Kimi mark | | As on the Claude key |
 
-**Kimi New Session** opens Kimi Code in a terminal window, or Kimi Work in the Kimi app (`kimi-work://open`, which takes no folder; the key then shows "Kimi Work" instead of a folder name).
+**Kimi New Session** opens a new session in **Kimi Code App** on macOS (bundle `com.kimi.code.desktop`). It activates the exact App and invokes **File → New Session** through macOS Accessibility. Success requires verification of the new-session view and a focused, empty message input. The ordinary Kimi app and the `kimi` terminal client are never used by this key.
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| Open in | Automatic | Automatic: Kimi Code in a terminal when a folder is set and the CLI is installed, else the Kimi app, else Kimi Code in your home folder. Or always Kimi Work, or always Kimi Code |
-| Kimi Code mode | New session | New session, continue the last session (`--continue`), or plan mode (`--plan`) |
-| Project folder | empty | Where Kimi Code starts (empty: your home folder) |
-| Key text language | FlexDesigner language | English or Simplified Chinese |
+The key keeps its existing cid and language. Old target, terminal mode and folder settings are ignored. Select the project in Kimi Code App. FlexDesigner needs existing macOS Accessibility access; missing access or an unverifiable view shows an error. If the App restores an unsent draft, the key reports **Draft preserved** and leaves it intact; it never submits or erases it. There is no app-argument or CLI fallback.
 
-A failed tap says why on the key: "Folder not found", "Kimi app not found" or "Kimi not found" ("Cannot open Kimi" when Kimi was found but would not open). With **Open in** set to Kimi Code, a `kimi` the key cannot find in the usual install folders is still started from the terminal's `PATH` (e.g. under nvm); the terminal says so if it is not there.
+Use **Open new session** in either New Session key's settings page to test the same press handler without changing the device layout.
 
-Requirements: the Kimi Code CLI logged in (`kimi login`) with a Kimi Code plan for plan limits, and/or the Kimi desktop app for Kimi Work. The legacy Python `kimi-cli` (`~/.kimi`) is not read.
+Requirements: Kimi Code App installed in `/Applications` or `~/Applications`; macOS; Accessibility access for FlexDesigner. The native action recognizes **File → New Session** / **文件 → 新建会话** and **Message input** / **消息输入框**. A missing app or unsupported platform shows an error. The usage and session keys retain their existing sources.
 
 ## Gemini keys
 
@@ -145,7 +140,7 @@ Only Gemini CLI's "Login with Google" on a **Gemini Code Assist Standard or Ente
 | Follow running Gemini CLIs | on | Read the process list; off judges from the session files only |
 | Project filter, Idle after, Key text language, Show project name, Show Gemini mark | | As on the Claude key |
 
-**Gemini New Session** opens a terminal window running the Gemini CLI in the key's folder: on macOS a temporary `.command` script (it deletes itself; one Terminal never ran is removed a minute later) opened in Terminal, on Windows a `cmd` window, on Linux `x-terminal-emulator`. Every argument is passed as-is, never through a shell string. On Windows a program path with a character `cmd.exe` would act on (`& | < > ^ % ! ( ) "`) is refused rather than run. Kimi New Session opens Kimi Code the same way.
+**Gemini New Session** opens a terminal window running the Gemini CLI in the key's folder: on macOS a temporary `.command` script (it deletes itself; one Terminal never ran is removed a minute later) opened in Terminal, on Windows a `cmd` window, on Linux `x-terminal-emulator`. Every argument is passed as-is, never through a shell string. On Windows a program path with a character `cmd.exe` would act on (`& | < > ^ % ! ( ) "`) is refused rather than run.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -188,23 +183,16 @@ States follow Antigravity's own interface: a question for you shows as **Questio
 
 Cost: a 5-second tick checks a few file times per data folder; `ps` runs at most every 10 seconds (30 seconds when `agy` is not installed) and `lsof` once per new process; the language server is asked when its files change, on a key press, every 10 seconds while a conversation is active and every 60 seconds otherwise. Nothing runs while Antigravity is not installed.
 
-**Antigravity New Session** opens a new conversation:
+**Antigravity New Session** creates a new empty conversation in the standalone **Antigravity App** on macOS (bundle `com.google.antigravity`). It activates the exact app and invokes the real **New Conversation** sidebar link through Accessibility, then verifies the new page and empty message input. Starting the app alone is not treated as success. No prompt is submitted.
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| Open in | Automatic | Automatic: `agy` in a terminal window when it is installed, else (on macOS) the Antigravity app, else the IDE. Or always the terminal (`agy`), the app or the IDE (both macOS only) |
-| Permissions | Ask for review (default) | For `agy`: ask for review, auto-approve edits (`--mode accept-edits`), plan (`--mode plan`), or skip all permissions (`--dangerously-skip-permissions`, with a warning on the settings page) |
-| Continue the latest conversation | off | For `agy`: start with `--continue` |
-| Terminal sandbox | off | For `agy`: start with `--sandbox` |
-| Project folder | empty | Where `agy` starts, or the folder the IDE opens (empty: your home folder) |
-| Key text language | FlexDesigner language | English or Simplified Chinese |
+FlexDesigner needs existing macOS Accessibility access. The action checks access without prompting or granting it. Missing access, an app that is still loading, a failed action, or an unverifiable page shows an error. If the app preserves an unsent draft, the key reports **Draft preserved** and leaves it intact. This integration currently recognizes the installed app's English **New Conversation** and **Message input** accessibility labels.
 
-The terminal opens like Gemini New Session's (a self-deleting `.command` script on macOS, every word quoted). Antigravity has no link that starts a new conversation, so **the app** target only brings the app up (`open -b com.google.antigravity`, starting it if needed) and the key's subtitle says "App · ⌘N": press ⌘N there. **The IDE** target opens the folder in the IDE (`open -b com.google.antigravity-ide <folder>`); start the conversation in its agent panel. A failed tap says why on the key: "Folder not found", "agy not found", "App not found", "IDE not found", "Antigravity not found", or "macOS only" for the app and IDE targets on Linux and Windows (their subtitle says so too). `agy` is found through the **Antigravity CLI program** setting, else `PATH`, `~/.local/bin` and Homebrew's folders; an Automatic key's subtitle uses that setting too, before the first press.
+Existing buttons keep their cid, language and stored settings. Old auto, terminal, IDE, folder, resume and permission-mode settings are ignored by the App's new conversation action; there is no CLI or IDE fallback. Select the project inside the App. Usage and session keys retain their existing sources.
 
 Requirements and limitations:
 
 - Antigravity installed and signed in. The usage key needs the app or the IDE running; the session key follows `agy` on its own.
-- macOS for the app and IDE targets of the New Session key. Finding the language servers needs `ps` and `lsof` (macOS; Linux when `lsof` is installed). On Windows the usage key shows "Not supported" and the session key reads the summary databases only, without knowing what still runs.
+- macOS for the App New Session key. Finding the language servers needs `ps` and `lsof` (macOS; Linux when `lsof` is installed). On Windows the usage key shows "Not supported" and the session key reads the summary databases only, without knowing what still runs.
 - The usage key cannot tell a key press from a poll, so a press refetches but does not force a refresh from Google.
 - Which steps wait for you comes from the language server's answer; for `agy` it comes from the CLI's summary database, which may only be written when a turn ends, so a running `agy` turn can show its previous state until then.
 - Antigravity's summaries carry no error state, so the red **Error** state does not occur.

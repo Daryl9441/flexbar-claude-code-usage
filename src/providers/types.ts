@@ -346,6 +346,7 @@ export type NewSessionState = 'ready' | 'opening' | 'error';
 export type LaunchTarget =
   | { kind: 'url'; url: string }
   | { kind: 'command'; file: string; args: string[]; cwd?: string }
+  | { kind: 'mac-app-new-session'; bundleId: string }
   | { kind: 'terminal'; command: string[]; cwd: string | null };
 
 export type NewSessionRequest = {

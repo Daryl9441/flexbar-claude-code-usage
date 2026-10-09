@@ -1370,7 +1370,7 @@ describe('Antigravity session source', () => {
 });
 
 describe('Antigravity New Session launcher', () => {
-  const request = (data, extra = {}) => ({
+  const request = (data = {}, extra = {}) => ({
     data,
     rawFolder: data.folder ?? '',
     folder: data.folder ? data.folder.replace(/^~/, '/Users/you') : null,
@@ -1381,160 +1381,172 @@ describe('Antigravity New Session launcher', () => {
   });
   const launcher = (opts = {}) =>
     NS.createAntigravityLauncher({
-      isDirectory: dir => dir.startsWith('/Users/you/') && !dir.includes('missing'),
-      findCli: () => ('cli' in opts ? opts.cli : '/Users/you/.local/bin/agy'),
       appInstalled: product => (opts.apps ?? ['app', 'ide']).includes(product),
       platform: opts.platform ?? 'darwin',
-      home: () => '/Users/you',
     });
-  const keyTitle = (fn, lang = 'en') => {
+  const appTarget = { kind: 'mac-app-new-session', bundleId: 'com.google.antigravity' };
+  const keyError = fn => {
     try {
       fn();
     } catch (error) {
       assert.ok(error instanceof Kit.ProviderError, `${error}`);
-      return error.extra.keyText[lang].title;
+      return error;
     }
     assert.fail('no error');
   };
 
-  test('auto: agy in a terminal when installed, else the app, else the IDE', () => {
-    assert.deepEqual(launcher().target(request({ folder: '~/code/demo-app' })), {
-      kind: 'terminal',
-      command: ['/Users/you/.local/bin/agy'],
-      cwd: '/Users/you/code/demo-app',
-    });
-    assert.deepEqual(launcher().target(request({})).cwd, '/Users/you', 'home folder by default');
-    assert.deepEqual(launcher({ cli: null }).target(request({ folder: '~/code/demo-app' })), {
-      kind: 'command',
-      file: '/usr/bin/open',
-      args: ['-b', 'com.google.antigravity'],
-    });
-    assert.deepEqual(launcher({ cli: null, apps: ['ide'] }).target(request({ folder: '~/code/demo-app' })), {
-      kind: 'command',
-      file: '/usr/bin/open',
-      args: ['-b', 'com.google.antigravity-ide', '/Users/you/code/demo-app'],
-    });
-    assert.equal(keyTitle(() => launcher({ cli: null, apps: [] }).target(request({}))), 'Antigravity not found');
-    assert.equal(keyTitle(() => launcher().target(request({ folder: '~/missing' })), 'zh'), '未找到文件夹');
-  });
-
-  test('terminal-cli: fixed presets only', () => {
-    const t = data => launcher().target(request({ target: 'terminal-cli', ...data })).command.slice(1);
-    assert.deepEqual(t({}), []);
-    assert.deepEqual(t({ resume: true }), ['--continue']);
-    assert.deepEqual(t({ mode: 'accept-edits' }), ['--mode', 'accept-edits']);
-    assert.deepEqual(t({ mode: 'plan', sandbox: true }), ['--mode', 'plan', '--sandbox']);
-    assert.deepEqual(t({ mode: 'skip-permissions' }), ['--dangerously-skip-permissions']);
-    assert.deepEqual(t({ mode: 'default' }), []);
-    assert.deepEqual(t({ mode: '--model x; rm -rf ~', resume: 'yes', sandbox: 1 }), [], 'no free text');
-    assert.deepEqual(t({ mode: 'constructor' }), []);
-    assert.equal(keyTitle(() => launcher({ cli: null }).target(request({ target: 'terminal-cli' }))), 'agy not found');
-    assert.equal(keyTitle(() => launcher().target(request({ target: 'terminal-cli', folder: '~/missing' }))), 'Folder not found');
-  });
-
-  test('app and IDE targets (macOS)', () => {
-    assert.deepEqual(launcher().target(request({ target: 'app', folder: '~/code/demo-app' })).args, ['-b', 'com.google.antigravity']);
-    assert.deepEqual(launcher().target(request({ target: 'ide' })).args, ['-b', 'com.google.antigravity-ide']);
-    assert.equal(keyTitle(() => launcher({ apps: [] }).target(request({ target: 'app' }))), 'App not found');
-    assert.equal(keyTitle(() => launcher({ apps: [] }).target(request({ target: 'ide' })), 'zh'), '未找到 IDE');
-    assert.equal(keyTitle(() => launcher().target(request({ target: 'ide', folder: '~/missing' }))), 'Folder not found');
-  });
-
-  test('off macOS: the app and the IDE say "macOS only", auto needs agy', () => {
-    const linux = { platform: 'linux' };
-    const error = fn => {
-      try {
-        fn();
-      } catch (e) {
-        return e;
-      }
-      assert.fail('no error');
-    };
-    const app = error(() => launcher(linux).target(request({ target: 'app' }, linux)));
-    assert.equal(app.code, 'unsupported');
-    assert.deepEqual(app.extra.keyText.en.title, 'macOS only');
-    assert.deepEqual(app.extra.keyText.zh.title, '仅限 macOS');
-    assert.equal(keyTitle(() => launcher(linux).target(request({ target: 'ide' }, linux))), 'macOS only');
-    assert.equal(keyTitle(() => launcher({ ...linux, cli: null }).target(request({}, linux))), 'agy not found');
-    assert.equal(launcher(linux).target(request({}, linux)).kind, 'terminal', 'agy works anywhere');
-    // the subtitles say so before a press
-    assert.equal(launcher(linux).subtitle({ target: 'app' }, null, 'en'), 'macOS only');
-    assert.equal(launcher(linux).subtitle({ target: 'ide' }, 'demo-app', 'zh'), '仅限 macOS');
-    assert.equal(launcher({ ...linux, cli: null }).subtitle({}, 'demo-app', 'en'), 'demo-app');
-  });
-
-  test('subtitles: the folder, or where the app opens; auto names what a press opens', () => {
+  test('new and legacy keys always request a new standalone App conversation', () => {
     const l = launcher();
-    assert.equal(l.subtitle({ target: 'app' }, 'demo-app', 'en'), 'App · ⌘N');
-    assert.equal(l.subtitle({ target: 'app' }, null, 'zh'), 'App · ⌘N');
-    assert.equal(l.subtitle({ target: 'ide' }, null, 'en'), 'IDE');
-    assert.equal(l.subtitle({ target: 'ide' }, 'demo-app', 'en'), 'demo-app');
-    assert.equal(l.subtitle({ target: 'terminal-cli' }, null, 'en'), null);
-    assert.equal(l.subtitle({}, 'demo-app', 'en'), 'demo-app', 'auto: agy');
-    const noAgy = launcher({ cli: null });
-    assert.equal(noAgy.subtitle({}, 'demo-app', 'en'), 'App · ⌘N', 'auto: the app');
-    assert.equal(launcher({ cli: null, apps: ['ide'] }).subtitle({}, null, 'en'), 'IDE');
-    assert.equal(launcher({ cli: null, apps: [] }).subtitle({}, 'demo-app', 'en'), 'demo-app');
-    // a press decides with the global settings, and the face follows it
-    let found = null;
-    const custom = () =>
-      NS.createAntigravityLauncher({
-        isDirectory: () => true,
-        findCli: (_request, config) => (config.antigravityPath ? found : null),
-        appInstalled: () => true,
-        platform: 'darwin',
-        home: () => '/Users/you',
-      });
-    const l2 = custom();
-    assert.equal(l2.subtitle({}, 'demo-app', 'en'), 'App · ⌘N');
-    found = '/opt/custom/agy';
-    l2.target(request({ folder: '~/code/demo-app' }, { config: { antigravityPath: '/opt/custom/agy' } }));
-    assert.equal(l2.subtitle({}, 'demo-app', 'en'), 'demo-app');
-    assert.equal(l2.needsConfig, true);
-    // …and so does the face before any press, once the settings are known
-    const l3 = custom();
-    l3.configure({ antigravityPath: '/opt/custom/agy' });
-    assert.equal(l3.subtitle({}, 'demo-app', 'en'), 'demo-app');
-    // a changed setting is looked at again
-    l3.configure({});
-    assert.equal(l3.subtitle({}, 'demo-app', 'en'), 'App · ⌘N');
+    for (const target of [undefined, 'auto', 'terminal-cli', 'app', 'ide', 'other', 'constructor']) {
+      const data = { target, folder: '~/missing', resume: true, mode: 'skip-permissions', sandbox: true };
+      assert.equal(NS.targetOf(data), 'app');
+      assert.deepEqual(l.target(request(data, { config: { antigravityPath: '/opt/custom/agy' } })), appTarget);
+    }
+    assert.equal(NS.targetOf(null), 'app');
+    assert.equal(NS.targetOf(undefined), 'app');
+    assert.equal(l.needsConfig, undefined, 'the new-session key needs no CLI or account configuration');
   });
 
-  test('the key group hands the global settings to the launcher, on load and on change', async () => {
+  test('legacy CLI fields and global program settings are never inspected', () => {
+    const forbidden = () => assert.fail('a legacy CLI setting was accessed');
+    const data = { target: 'terminal-cli' };
+    for (const field of ['folder', 'mode', 'resume', 'sandbox']) {
+      Object.defineProperty(data, field, { get: forbidden });
+    }
+    const config = {};
+    Object.defineProperty(config, 'antigravityPath', { get: forbidden });
+    const checked = [];
+    const l = NS.createAntigravityLauncher({
+      platform: 'darwin',
+      appInstalled: (product, home) => {
+        checked.push([product, home]);
+        return true;
+      },
+    });
+    assert.deepEqual(l.target({ ...request(), data, config }), appTarget);
+    assert.deepEqual(checked, [['app', '/Users/you']], 'only the standalone App is checked');
+  });
+
+  test('missing App fails even when the IDE is installed; every legacy target reports it', () => {
+    for (const target of [undefined, 'auto', 'terminal-cli', 'app', 'ide']) {
+      const error = keyError(() => launcher({ apps: ['ide'] }).target(request({ target })));
+      assert.equal(error.code, 'not-installed');
+      assert.equal(error.extra.keyText.en.title, 'App not found');
+      assert.equal(error.extra.keyText.zh.title, '未找到 App');
+    }
+  });
+
+  test('off macOS all target settings fail without probing programs or folders', () => {
+    const l = NS.createAntigravityLauncher({
+      platform: 'linux',
+      appInstalled: () => assert.fail('non-macOS must not probe an app'),
+    });
+    for (const target of [undefined, 'auto', 'terminal-cli', 'app', 'ide']) {
+      const error = keyError(() => l.target(request({ target }, { platform: 'linux' })));
+      assert.equal(error.code, 'unsupported');
+      assert.equal(error.extra.keyText.en.title, 'macOS only');
+      assert.equal(error.extra.keyText.zh.title, '仅限 macOS');
+      assert.equal(l.subtitle({ target }, 'demo-app', 'en'), 'macOS only');
+      assert.equal(l.subtitle({ target }, null, 'zh'), '仅限 macOS');
+    }
+  });
+
+  test('the subtitle names the App action for every old target and ignores its folder', () => {
+    const l = launcher();
+    for (const target of [undefined, 'auto', 'terminal-cli', 'app', 'ide']) {
+      assert.equal(l.subtitle({ target }, 'demo-app', 'en'), 'Antigravity App');
+      assert.equal(l.subtitle({ target }, null, 'zh'), 'Antigravity App');
+    }
+  });
+
+  test('legacy key presses keep their cid and reach only the new-session App helper', async () => {
     const cid = Kit.keyCid('antigravity', 'newsession');
     const hooks = drawHooks();
-    const configs = [];
-    let loads = 0;
-    const l = launcher();
-    const real = l.configure.bind(l);
-    l.configure = config => {
-      configs.push(config);
-      real(config);
-    };
+    const opened = [];
     const keys = new NewSessionKeys({
       ...hooks.deps,
-      provider: { cid, brand: ANTIGRAVITY_BRAND, launcher: l },
-      loadConfig: async () => {
-        loads++;
-        return { antigravityPath: '/opt/custom/agy' };
-      },
-      launch: async () => assert.fail('nothing opens'),
-      run: async () => assert.fail('nothing opens'),
-      terminal: async () => assert.fail('nothing opens'),
+      provider: { cid, brand: ANTIGRAVITY_BRAND, launcher: launcher() },
+      macAppNewSession: async bundleId => opened.push(bundleId),
+      launch: async () => assert.fail('no link opens'),
+      run: async () => assert.fail('activation alone is not a new session'),
+      terminal: async () => assert.fail('no CLI fallback'),
+      loadConfig: async () => assert.fail('no CLI configuration is loaded'),
       home: '/Users/you',
       platform: 'darwin',
+      timings: { openingMs: 5, errorMs: 5 },
     });
-    const key = { uid: 1, cid, width: 120, data: {} };
-    await keys.alive(SERIAL, [key]);
-    await keys.alive(SERIAL, [key]);
-    assert.deepEqual(configs, [{ antigravityPath: '/opt/custom/agy' }], 'loaded once');
-    assert.equal(loads, 1);
-    await keys.configure({ antigravityPath: '/opt/other/agy' });
-    assert.deepEqual(configs.at(-1), { antigravityPath: '/opt/other/agy' });
-    await hooks.settle();
-    await keys.dead(SERIAL, []);
+    const keyList = [undefined, 'auto', 'terminal-cli', 'app', 'ide'].map((target, uid) => ({
+      uid, cid, width: 120,
+      data: { target, folder: '~/missing', resume: true, mode: 'plan', sandbox: true },
+    }));
+    try {
+      await keys.alive(SERIAL, keyList);
+      for (const key of keyList) assert.equal(await keys.press(SERIAL, key), true);
+      await hooks.settle();
+      assert.deepEqual(opened, keyList.map(() => 'com.google.antigravity'));
+      for (const [, image] of hooks.sent) assert.deepEqual(pngSize(image), [120, 60]);
+    } finally {
+      await keys.dead(SERIAL, []);
+    }
   });
 
+  test('a denied App action fails the press and shows an error without any fallback', async () => {
+    const cid = Kit.keyCid('antigravity', 'newsession');
+    const hooks = drawHooks();
+    const views = [];
+    let attempts = 0;
+    const keys = new NewSessionKeys({
+      ...hooks.deps,
+      provider: { cid, brand: ANTIGRAVITY_BRAND, launcher: launcher() },
+      macAppNewSession: async () => {
+        attempts++;
+        throw new Kit.ProviderError('unsupported', 'Accessibility permission is required', {
+          keyText: { en: { title: 'Allow Accessibility', message: '' }, zh: { title: '允许辅助功能', message: '' } },
+        });
+      },
+      launch: async () => assert.fail('no link fallback'),
+      run: async () => assert.fail('no plain activation fallback'),
+      terminal: async () => assert.fail('no CLI fallback'),
+      render: (_width, view) => { views.push(view); return 'FAKE image'; },
+      home: '/Users/you',
+      platform: 'darwin',
+      timings: { errorMs: 10_000 },
+    });
+    const key = { uid: 1, cid, width: 120, data: { target: 'terminal-cli' } };
+    try {
+      await keys.alive(SERIAL, [key]);
+      assert.equal(await keys.press(SERIAL, key), false);
+      await hooks.settle();
+      assert.equal(attempts, 1);
+      assert.equal(views.at(-1).state, 'error');
+      assert.equal(views.at(-1).title, 'Allow Accessibility');
+    } finally {
+      await keys.dead(SERIAL, []);
+    }
+  });
+
+  test('settings UI preserves saved data while removing obsolete CLI controls', async () => {
+    const vue = fs.readFileSync(path.join(here, '..', 'dev.sese.flexbar_claude_code_usage.plugin', 'ui', 'antigravity_newsession.vue'), 'utf8');
+    const script = vue.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(script);
+    const { default: settings } = await import(`data:text/javascript;base64,${Buffer.from(script).toString('base64')}`);
+    for (const target of [undefined, 'auto', 'terminal-cli', 'app', 'ide']) {
+      const modelValue = {
+        cid: Kit.keyCid('antigravity', 'newsession'),
+        data: { target, folder: '~/missing', mode: 'plan', resume: true, sandbox: true, lang: 'zh', showMark: false },
+      };
+      const saved = structuredClone(modelValue);
+      const emitted = [];
+      settings.mounted.call({ modelValue, $i18n: { locale: 'en' }, $emit: (...args) => emitted.push(args) });
+      assert.deepEqual(modelValue, saved);
+      assert.equal(modelValue.cid, Kit.keyCid('antigravity', 'newsession'));
+      assert.deepEqual(emitted, []);
+    }
+    assert.doesNotMatch(vue, /v-model="modelValue\.data\.(?:folder|mode|resume|sandbox|target)"/);
+  });
+});
+
+describe('Antigravity installation helpers used by usage and session monitoring', () => {
   test('agy lookup: the setting, else PATH and the usual folders', () => {
     const exe = new Set(['/Users/you/.local/bin/agy', '/opt/custom/agy']);
     const isExecutable = f => exe.has(f);
@@ -1547,50 +1559,5 @@ describe('Antigravity New Session launcher', () => {
     assert.equal(Cli.findAgy({ setting: null, home: '/Users/you', platform: 'darwin', env: {}, isExecutable: () => false }), null);
     assert.equal(Cli.bundleInstalled('ide', '/Users/you', dir => dir === '/Users/you/Applications/Antigravity IDE.app'), true);
     assert.equal(Cli.bundleInstalled('app', '/Users/you', () => false), false);
-  });
-
-  test('a press goes through the key group to a stubbed opener', async () => {
-    const cid = Kit.keyCid('antigravity', 'newsession');
-    const hooks = drawHooks();
-    const opened = [];
-    const keys = new NewSessionKeys({
-      ...hooks.deps,
-      provider: { cid, brand: ANTIGRAVITY_BRAND, launcher: launcher() },
-      launch: async url => opened.push(['url', url]),
-      run: async command => opened.push(['run', command]),
-      terminal: async (command, cwd) => opened.push(['terminal', command, cwd]),
-      home: '/Users/you',
-      platform: 'darwin',
-      timings: { openingMs: 5, errorMs: 5 },
-    });
-    const key = { uid: 1, cid, width: 120, data: { folder: '~/work/demo-app', mode: 'plan' } };
-    const appKey = { uid: 2, cid, width: 120, data: { target: 'app' } };
-    await keys.alive(SERIAL, [key, appKey]);
-    assert.equal(await keys.press(SERIAL, key), true);
-    assert.equal(await keys.press(SERIAL, appKey), true);
-    await hooks.settle();
-    assert.deepEqual(opened, [
-      ['terminal', ['/Users/you/.local/bin/agy', '--mode', 'plan'], '/Users/you/work/demo-app'],
-      ['run', { file: '/usr/bin/open', args: ['-b', 'com.google.antigravity'] }],
-    ]);
-    for (const [, image] of hooks.sent) assert.deepEqual(pngSize(image), [120, 60]);
-    await keys.dead(SERIAL, []);
-  });
-
-  test('the default launcher fails cleanly when nothing is installed', async () => {
-    try {
-      const target = await NS.newSessionLauncher.target({
-        data: { target: 'terminal-cli' },
-        rawFolder: '',
-        folder: null,
-        home: empty,
-        platform: 'darwin',
-        config: { antigravityPath: path.join(empty, 'no-agy') },
-      });
-      assert.fail(`unexpected target ${target.kind}`);
-    } catch (error) {
-      assert.ok(error instanceof Kit.ProviderError, `${error}`);
-      assert.equal(error.extra.keyText.en.title, 'agy not found');
-    }
   });
 });

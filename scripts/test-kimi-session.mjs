@@ -38,7 +38,6 @@ const F = req('providers/kimi/sessionFs.js');
 const NS = req('providers/kimi/newSession.js');
 const Kit = req('providers/kit.js');
 const View = req('sessionView.js');
-const Launch = req('launch.js');
 const { SessionKeys } = req('sessionKey.js');
 const { NewSessionKeys } = req('newSessionKey.js');
 const { KIMI_BRAND } = req('providers/kimi/brand.js');
@@ -943,179 +942,165 @@ describe('Session Status key with the Kimi provider', () => {
 // ===================================================================================
 
 describe('Kimi New Session launcher', () => {
-  const HOME = '/Users/you';
+  const TEST_HOME = '/Users/you';
   const request = (data = {}, extra = {}) => ({
     data,
     rawFolder: data.folder ?? '',
-    folder: data.folder ? path.join(HOME, data.folder.replace(/^~\//, '')) : null,
-    home: HOME,
+    folder: data.folder ? path.join(TEST_HOME, data.folder.replace(/^~\//, '')) : null,
+    home: TEST_HOME,
     platform: 'darwin',
     ...extra,
   });
-  const launcher = (files, env = {}) =>
-    NS.createKimiLauncher({
-      exists: file => files.includes(file),
-      // every synthetic folder exists except the ones named "missing"
-      isDirectory: dir => !/missing/.test(dir),
-      env,
-    });
-  const CLI = '/Users/you/.kimi-code/bin/kimi';
-  const APP = '/Applications/Kimi.app';
+  const launcher = files => NS.createKimiLauncher({ exists: file => files.includes(file) });
+  const APP = '/Applications/Kimi Code.app';
+  const EXPECTED = {
+    kind: 'mac-app-new-session',
+    bundleId: 'com.kimi.code.desktop',
+  };
 
-  test('auto: folder + CLI opens a terminal in the folder', () => {
-    const target = launcher([CLI, APP]).target(request({ folder: '~/code/demo-app' }));
-    assert.deepEqual(target, { kind: 'terminal', command: [CLI], cwd: '/Users/you/code/demo-app' });
+  test('opens Kimi Code App through its verified native new-session action', () => {
+    const app = launcher([APP]);
+    assert.equal(NS.KIMI_CODE_BUNDLE_ID, 'com.kimi.code.desktop');
+    assert.deepEqual(app.target(request()), EXPECTED);
+    assert.deepEqual(app.target(request()), EXPECTED, 'each press requests the native new-session action');
   });
 
-  test('auto: no folder opens Kimi Work in the app', () => {
-    assert.deepEqual(launcher([CLI, APP]).target(request()), { kind: 'url', url: 'kimi-work://open' });
-    assert.deepEqual(
-      launcher(['/Users/you/Library/Application Support/kimi-desktop']).target(request({ folder: '~/x' })),
-      { kind: 'url', url: 'kimi-work://open' },
-      'folder without CLI: the app'
-    );
-  });
-
-  test('auto: CLI only opens a terminal in the home folder', () => {
-    assert.deepEqual(launcher([CLI]).target(request()), { kind: 'terminal', command: [CLI], cwd: null });
-  });
-
-  test('cliMode adds --continue or --plan', () => {
-    assert.deepEqual(launcher([CLI]).target(request({ cliMode: 'continue' })).command, [CLI, '--continue']);
-    assert.deepEqual(launcher([CLI]).target(request({ cliMode: 'plan', target: 'cli' })).command, [CLI, '--plan']);
-    assert.deepEqual(NS.launchOptions({}), { target: 'auto', cliMode: 'new' });
-  });
-
-  test('nothing installed: a ProviderError, forced CLI falls back to PATH', () => {
-    assert.throws(() => launcher([]).target(request()), e => e instanceof Kit.ProviderError && e.code === 'not-installed');
-    assert.throws(() => launcher([CLI]).target(request({ target: 'desktop' })), Kit.ProviderError);
-    assert.deepEqual(launcher([]).target(request({ target: 'cli' })).command, ['kimi']);
-    assert.deepEqual(launcher(['/Users/you/.kimi-code']).target(request()).command, ['kimi'], 'CLI home without a known program');
-  });
-
-  test('program search: KIMI_INSTALL_DIR first, npm folders, never the legacy shim', () => {
-    const custom = '/opt/kimi/bin/kimi';
-    assert.equal(launcher([custom, CLI], { KIMI_INSTALL_DIR: '/opt/kimi' }).target(request({ target: 'cli' })).command[0], custom);
-    assert.equal(launcher(['/opt/homebrew/bin/kimi']).target(request({ target: 'cli' })).command[0], '/opt/homebrew/bin/kimi');
-    assert.equal(launcher(['/Users/you/.local/bin/kimi']).target(request({ target: 'cli' })).command[0], 'kimi');
-    const win = NS.cliCandidates('C:\\Users\\you', 'win32', { APPDATA: 'C:\\Users\\you\\AppData\\Roaming' });
-    assert.equal(win[0], 'C:\\Users\\you\\.kimi-code\\bin\\kimi.exe');
-    assert.ok(win.includes('C:\\Users\\you\\AppData\\Roaming\\npm\\kimi.cmd'));
-  });
-
-  test('program search: the kimiDir setting stands in for KIMI_CODE_HOME', () => {
-    const custom = '/Users/you/kimi-home/bin/kimi';
-    const config = { kimiDir: '~/kimi-home' };
-    assert.equal(launcher([custom]).target(request({ target: 'cli' }, { config })).command[0], custom);
-    // the setting's folder without a program: kimi on the terminal's PATH
-    assert.deepEqual(
-      launcher(['/Users/you/kimi-home']).target(request({}, { config })).command,
-      ['kimi']
-    );
-    // no setting: the default home only
-    assert.equal(launcher([custom]).target(request({ target: 'cli' }, { config: {} })).command[0], 'kimi');
-  });
-
-  test('the real launcher only builds a target (nothing is opened)', async () => {
-    try {
-      const target = await NS.newSessionLauncher.target(request({ target: 'cli' }));
-      assert.equal(target.kind, 'terminal');
-    } catch (error) {
-      assert.ok(error instanceof Kit.ProviderError, `${error}`);
+  test('all old targets and CLI modes resolve to the Kimi Code App', () => {
+    for (const target of [undefined, 'auto', 'desktop', 'cli', 'app', 'unknown']) {
+      for (const cliMode of [undefined, 'new', 'continue', 'plan', 'unknown']) {
+        assert.deepEqual(launcher([APP]).target(request({ target, cliMode })), EXPECTED);
+      }
     }
   });
 
-  test('the key opens the target through the stubs and shows errors', async () => {
+  test('old folder settings cannot reopen a historical workspace session', () => {
+    for (const folder of ['~/code/demo-app', '~/missing', "~/it's here/$(synthetic-command);你好"]) {
+      const target = launcher([APP]).target(request({ target: 'cli', cliMode: 'continue', folder }));
+      assert.deepEqual(target, EXPECTED);
+      assert.ok(!Object.hasOwn(target, 'args'));
+      assert.ok(!JSON.stringify(target).includes(folder));
+    }
+  });
+
+  test('ordinary Kimi, CLI installations and data folders never count as the app', () => {
+    const oldFiles = [
+      '/Applications/Kimi.app',
+      '/Users/you/Applications/Kimi.app',
+      '/Users/you/Library/Application Support/kimi-desktop',
+      '/Users/you/Library/Application Support/kimi-code-app',
+      '/Users/you/.kimi-code',
+      '/Users/you/.kimi-code/bin/kimi',
+      '/opt/homebrew/bin/kimi',
+      '/usr/local/bin/kimi',
+    ];
+    const probed = [];
+    const app = NS.createKimiLauncher({ exists: file => { probed.push(file); return oldFiles.includes(file); } });
+    for (const target of ['auto', 'desktop', 'cli']) {
+      assert.throws(() => app.target(request({ target })), e => e instanceof Kit.ProviderError && e.code === 'not-installed');
+    }
+    assert.deepEqual([...new Set(probed)], [APP, '/Users/you/Applications/Kimi Code.app']);
+  });
+
+  test('an app in the user Applications folder uses the same exact bundle id', () => {
+    assert.deepEqual(launcher(['/Users/you/Applications/Kimi Code.app']).target(request()), EXPECTED);
+    assert.deepEqual(NS.desktopCandidates(TEST_HOME), [APP, '/Users/you/Applications/Kimi Code.app']);
+  });
+
+  test('the old kimiDir setting cannot select a CLI program or app cache', () => {
+    const config = { kimiDir: '~/kimi-home', kimiDesktopDir: '~/old-app-cache' };
+    assert.deepEqual(launcher([APP]).target(request({ target: 'cli' }, { config })), EXPECTED);
+    assert.throws(
+      () => launcher(['/Users/you/kimi-home/bin/kimi']).target(request({}, { config })),
+      e => e instanceof Kit.ProviderError && e.code === 'not-installed'
+    );
+    assert.ok(!NS.newSessionLauncher.needsConfig);
+  });
+
+  test('unsupported platforms report an error without checking or launching a CLI', () => {
+    const app = NS.createKimiLauncher({ exists: () => { assert.fail('off macOS must not inspect app paths'); } });
+    for (const platform of ['win32', 'linux']) {
+      for (const target of ['auto', 'desktop', 'cli']) {
+        assert.throws(() => app.target(request({ target }, { platform })), e => e instanceof Kit.ProviderError && e.code === 'unsupported');
+      }
+    }
+  });
+
+  test('the key dispatches only verified native actions and never commands, URLs or terminals', async () => {
     const cid = Kit.keyCid('kimi', 'newsession');
     const opened = [];
-    const sent = [];
     let chain = Promise.resolve();
-    const make = files =>
-      new NewSessionKeys({
-        enqueue: task => (chain = chain.then(task).catch(() => undefined)),
-        send: async (_s, key, image) => sent.push([key.uid, image]),
-        isOffline: () => false,
-        keyWidth: key => key.width,
-        bgColor: () => undefined,
-        provider: { cid, brand: KIMI_BRAND, launcher: launcher(files) },
-        launch: async url => opened.push(['url', url]),
-        run: async command => opened.push(['run', command]),
-        terminal: async (command, cwd) => opened.push(['terminal', command, cwd]),
-        home: HOME,
-        platform: 'darwin',
-        timings: { openingMs: 5, errorMs: 5, debounceMs: 0 },
-      });
-    let keys = make([CLI, APP]);
-    const key = { uid: 1, cid, width: 120, data: { folder: '~/code/demo-app', lang: 'en' } };
+    const make = (files, failNative = false) => new NewSessionKeys({
+      enqueue: task => (chain = chain.then(task).catch(() => undefined)),
+      send: async () => undefined,
+      isOffline: () => false,
+      keyWidth: key => key.width,
+      bgColor: () => undefined,
+      provider: { cid, brand: KIMI_BRAND, launcher: launcher(files) },
+      launch: async () => assert.fail('Kimi New Session must not open a URL'),
+      run: async () => assert.fail('Kimi New Session must not fall back to open or app arguments'),
+      macAppNewSession: async bundleId => {
+        opened.push(bundleId);
+        if (failNative) throw new Error('synthetic native verification failure');
+      },
+      terminal: async () => assert.fail('Kimi New Session must not open a terminal'),
+      home: TEST_HOME,
+      platform: 'darwin',
+      timings: { openingMs: 5, errorMs: 5, debounceMs: 0 },
+    });
+    let keys = make([APP]);
+    const key = { uid: 1, cid, width: 120, data: { folder: '~/missing', target: 'cli', cliMode: 'continue', lang: 'en' } };
     await keys.alive(SERIAL, [key]);
     assert.equal(await keys.press(SERIAL, key), true);
-    assert.deepEqual(opened.pop(), ['terminal', [CLI], '/Users/you/code/demo-app']);
-    const noFolder = { uid: 2, cid, width: 120, data: { lang: 'zh' } };
+    assert.deepEqual(opened.pop(), EXPECTED.bundleId);
+    const noFolder = { uid: 2, cid, width: 120, data: { target: 'desktop', lang: 'zh' } };
     await keys.alive(SERIAL, [noFolder]);
     assert.equal(await keys.press(SERIAL, noFolder), true);
-    assert.deepEqual(opened.pop(), ['url', 'kimi-work://open']);
+    assert.deepEqual(opened.pop(), EXPECTED.bundleId);
     await keys.dead(SERIAL, []);
     keys = make([]);
     await keys.alive(SERIAL, [key]);
     assert.equal(await keys.press(SERIAL, key), false);
     assert.equal(opened.length, 0);
     await keys.dead(SERIAL, []);
-    assert.equal(NS.newSessionLauncher.strings.error.en, 'Cannot open Kimi');
-    assert.equal(NS.newSessionLauncher.strings.error.zh, '无法打开 Kimi');
-    assert.equal(NS.newSessionLauncher.needsConfig, true);
+    keys = make([APP], true);
+    await keys.alive(SERIAL, [key]);
+    assert.equal(await keys.press(SERIAL, key), false);
+    assert.deepEqual(opened, [EXPECTED.bundleId], 'a verification error cannot fall back to another target');
+    await keys.dead(SERIAL, []);
+    assert.equal(NS.newSessionLauncher.strings.error.en, 'Cannot open Kimi Code App');
+    assert.equal(NS.newSessionLauncher.strings.error.zh, '无法打开 Kimi Code App');
   });
 
-  test('failures name their cause on the key', () => {
+  test('failures name Kimi Code App or the unsupported platform on the key', () => {
     const titleOf = fn => {
-      try {
-        fn();
-      } catch (error) {
+      try { fn(); } catch (error) {
         assert.ok(error instanceof Kit.ProviderError, `${error}`);
         const text = error.extra.keyText;
         return [text.en.title, text.zh.title];
       }
       assert.fail('no error');
     };
-    assert.deepEqual(
-      titleOf(() => launcher([CLI]).target(request({ folder: '~/missing' }))),
-      ['Folder not found', '未找到文件夹']
-    );
-    assert.deepEqual(
-      titleOf(() => launcher([]).target(request({ folder: '~/missing', target: 'cli' }))),
-      ['Folder not found', '未找到文件夹'],
-      'a forced CLI checks the folder too'
-    );
-    assert.deepEqual(
-      titleOf(() => launcher([CLI]).target(request({ target: 'desktop' }))),
-      ['Kimi app not found', '未找到 Kimi App']
-    );
-    assert.deepEqual(titleOf(() => launcher([]).target(request())), ['Kimi not found', '未找到 Kimi']);
+    assert.deepEqual(titleOf(() => launcher([]).target(request())), ['Kimi Code App missing', '未找到 Kimi Code App']);
+    assert.deepEqual(titleOf(() => launcher([APP]).target(request({}, { platform: 'linux' }))), ['macOS only', '仅限 macOS']);
   });
 
-  test('Kimi Work keys name the app instead of a folder', () => {
+  test('subtitles name the App even for keys with an ignored folder', () => {
     const subtitle = NS.newSessionLauncher.subtitle;
-    assert.equal(subtitle({ target: 'desktop', folder: '~/code/demo-app' }, 'demo-app', 'en'), 'Kimi Work');
-    assert.equal(subtitle({ target: 'auto' }, 'demo-app', 'zh'), 'demo-app');
-    assert.equal(subtitle({ target: 'cli' }, null, 'en'), null);
+    for (const target of [undefined, 'auto', 'desktop', 'cli']) {
+      assert.equal(subtitle({ target, folder: '~/code/demo-app' }, 'demo-app', 'en'), 'Kimi Code App');
+      assert.equal(subtitle({ target }, null, 'zh'), 'Kimi Code App');
+    }
   });
 
-  test('without a home folder in the request, the user\'s is searched', () => {
-    const program = path.join(empty, '.kimi-code', 'bin', 'kimi');
-    const target = launcher([program]).target(request({ target: 'cli' }, { home: undefined }));
-    assert.equal(target.command[0], program);
-    const app = path.join(empty, 'Library', 'Application Support', 'kimi-desktop');
-    assert.deepEqual(launcher([app]).target(request({ target: 'desktop' }, { home: undefined })), {
-      kind: 'url',
-      url: 'kimi-work://open',
-    });
+  test('without a home folder in the request, only the user App bundle is searched', () => {
+    const app = path.join(empty, 'Applications', 'Kimi Code.app');
+    assert.deepEqual(launcher([app]).target(request({ target: 'cli' }, { home: undefined })), EXPECTED);
   });
 
-  test('keys built by the registry find Kimi under the user\'s home', async () => {
-    // HOME is the empty temp folder: give it a Kimi Code install
-    const program = path.join(empty, '.kimi-code', 'bin', 'kimi');
-    fs.mkdirSync(path.dirname(program), { recursive: true });
-    fs.writeFileSync(program, '');
-    const project = tmp('registry-project');
+  test('registry keys keep their cid and open Kimi Code App from a legacy config', async () => {
+    // The test HOME is empty: give it a synthetic Kimi Code App bundle.
+    const app = path.join(empty, 'Applications', 'Kimi Code.app');
+    fs.mkdirSync(app, { recursive: true });
     const opened = [];
     const groups = Registry.createKeyGroups({
       enqueue: async task => task(),
@@ -1126,38 +1111,26 @@ describe('Kimi New Session launcher', () => {
       loadConfig: async () => ({}),
       pollIntervalMs: () => 3_600_000,
       logger: null,
-      // stubs only: nothing is opened (NewSessionKeys deps)
-      launch: async url => opened.push(['url', url]),
-      run: async command => opened.push(['run', command]),
-      terminal: async (command, cwd) => opened.push(['terminal', command, cwd]),
+      launch: async () => assert.fail('registry must not open old Kimi Work URL'),
+      run: async () => assert.fail('registry must not fall back to open or app arguments'),
+      macAppNewSession: async bundleId => opened.push(bundleId),
+      terminal: async () => assert.fail('registry must not open kimi CLI'),
       platform: 'darwin',
       timings: { openingMs: 5, errorMs: 5, debounceMs: 0 },
     });
     const cid = Kit.keyCid('kimi', 'newsession');
+    assert.equal(cid, 'dev.sese.flexbar_claude_code_usage.kimi_newsession');
     const group = groups.find(g => g.cid === cid);
-    const key = { uid: 1, cid, width: 120, data: { folder: project, target: 'cli' } };
-    await group.alive(SERIAL, [key]);
-    assert.equal(await group.press(SERIAL, key), true);
-    assert.deepEqual(opened, [['terminal', [program], project]]);
-    await group.dead(SERIAL, []);
-    fs.rmSync(path.join(empty, '.kimi-code'), { recursive: true, force: true });
+    const key = { uid: 1, cid, width: 120, data: { folder: '~/missing', target: 'cli', cliMode: 'plan' } };
+    try {
+      await group.alive(SERIAL, [key]);
+      assert.equal(await group.press(SERIAL, key), true);
+      assert.deepEqual(opened, [EXPECTED.bundleId]);
+    } finally {
+      await group.dead(SERIAL, []);
+      fs.rmSync(app, { recursive: true, force: true });
+    }
   });
 
-  test('a terminal target becomes a quoted script, never shell text', async () => {
-    const writes = [];
-    const runs = [];
-    const open = Launch.createTerminalOpener({
-      platform: 'darwin',
-      tmpDir: '/tmp/fake',
-      writeFile: async (file, data, mode) => writes.push({ file, data, mode }),
-      run: async command => runs.push(command),
-      unlink: async () => undefined,
-    });
-    const target = launcher([CLI]).target(request({ folder: "~/it's here", cliMode: 'plan' }));
-    await open(target.command, target.cwd);
-    assert.equal(writes.length, 1);
-    assert.match(writes[0].data, /cd -- '\/Users\/you\/it'\\''s here'/);
-    assert.match(writes[0].data, /exec '\/Users\/you\/\.kimi-code\/bin\/kimi' '--plan'/);
-    assert.equal(runs[0].file, '/usr/bin/open');
-  });
+
 });

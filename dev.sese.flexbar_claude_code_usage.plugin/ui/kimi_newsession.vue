@@ -2,43 +2,9 @@
     <v-container>
         <v-row>
             <v-col cols="12">
-                <v-text-field
-                    v-model="modelValue.data.folder"
-                    :label="$t('KimiNewSession.UI.folder')"
-                    :hint="$t('KimiNewSession.UI.folderHint')"
-                    persistent-hint
-                    placeholder="~/projects/my-app"
-                    clearable
-                    outlined
-                    class="mx-2"
-                ></v-text-field>
-            </v-col>
-        </v-row>
-        <v-row>
-            <v-col cols="6">
-                <v-select
-                    v-model="modelValue.data.target"
-                    :items="targetOptions"
-                    :label="$t('KimiNewSession.UI.target')"
-                    item-title="title"
-                    item-value="value"
-                    hide-details
-                    outlined
-                    class="mx-2"
-                ></v-select>
-            </v-col>
-            <v-col cols="6">
-                <v-select
-                    v-model="modelValue.data.cliMode"
-                    :items="cliModeOptions"
-                    :label="$t('KimiNewSession.UI.cliMode')"
-                    :disabled="modelValue.data.target === 'desktop'"
-                    item-title="title"
-                    item-value="value"
-                    hide-details
-                    outlined
-                    class="mx-2"
-                ></v-select>
+                <v-alert type="info" class="mx-2">
+                    {{ $t('KimiNewSession.UI.appHint') }}
+                </v-alert>
             </v-col>
         </v-row>
         <v-row>
@@ -55,6 +21,14 @@
                 ></v-select>
             </v-col>
         </v-row>
+        <v-row>
+            <v-col cols="12">
+                <v-btn :loading="testing" :disabled="testing" @click="testSession" class="mx-2">
+                    {{ $t('KimiNewSession.UI.testSession') }}
+                </v-btn>
+                <p class="text-caption mx-2">{{ testStatus }}</p>
+            </v-col>
+        </v-row>
     </v-container>
 </template>
 
@@ -68,6 +42,7 @@ export default {
         },
     },
     emits: ["update:modelValue"],
+    data() { return { testing: false, testStatus: "" }; },
     computed: {
         langOptions() {
             return [
@@ -75,26 +50,30 @@ export default {
                 { title: "简体中文", value: "zh" },
             ];
         },
-        targetOptions() {
-            return [
-                { title: this.$t("KimiNewSession.UI.targetAuto"), value: "auto" },
-                { title: this.$t("KimiNewSession.UI.targetDesktop"), value: "desktop" },
-                { title: this.$t("KimiNewSession.UI.targetCli"), value: "cli" },
-            ];
-        },
-        cliModeOptions() {
-            return [
-                { title: this.$t("KimiNewSession.UI.cliModeNew"), value: "new" },
-                { title: this.$t("KimiNewSession.UI.cliModeContinue"), value: "continue" },
-                { title: this.$t("KimiNewSession.UI.cliModePlan"), value: "plan" },
-            ];
+    },
+    methods: {
+        async testSession() {
+            this.testing = true;
+            this.testStatus = "";
+            try {
+                const response = await this.$fd.sendToBackend({
+                    data: "new-session-test",
+                    cid: "dev.sese.flexbar_claude_code_usage.kimi_newsession",
+                    settings: this.modelValue.data,
+                });
+                const lang = String(this.$i18n.locale || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+                this.testStatus = response?.success
+                    ? this.$t("KimiNewSession.UI.testOpened")
+                    : response?.error?.[lang] || this.$t("KimiNewSession.UI.testFailed");
+            } catch {
+                this.testStatus = this.$t("KimiNewSession.UI.testFailed");
+            } finally {
+                this.testing = false;
+            }
         },
     },
     mounted() {
         const data = this.modelValue.data;
-        if (data.folder === undefined || data.folder === null) data.folder = "";
-        if (data.target === undefined) data.target = "auto";
-        if (data.cliMode === undefined) data.cliMode = "new";
         // key text follows the FlexDesigner language until changed here
         if (data.lang === undefined) {
             const locale = String(this.$i18n.locale || "");
