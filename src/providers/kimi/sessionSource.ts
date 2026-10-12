@@ -21,6 +21,7 @@ import {
 } from '../../session';
 import { runningItem, unavailableNotice } from '../kit';
 import {
+  AutomationBoard,
   KeyData,
   Logger,
   SessionNotice,
@@ -28,6 +29,7 @@ import {
   SessionSource,
 } from '../types';
 
+import { KimiAutomations } from './automations';
 import { KIMI_BRAND } from './brand';
 import { CliCandidate, CliSessions } from './sessionCli';
 import { DesktopCandidate, DesktopSessions } from './sessionDesktop';
@@ -94,6 +96,7 @@ export type KimiSourceOptions = {
 export class KimiSessionSource implements SessionSource {
   readonly cli: CliSessions;
   readonly desktop: DesktopSessions;
+  readonly automationsReader: KimiAutomations;
   private filters: string[] = [''];
   private runningWindowMs = 0;
   private watchers = new Map<string, FSWatcher>();
@@ -111,6 +114,7 @@ export class KimiSessionSource implements SessionSource {
   constructor(private readonly options: KimiSourceOptions) {
     this.cli = new CliSessions(options.codeHome);
     this.desktop = new DesktopSessions(options.desktopDir);
+    this.automationsReader = new KimiAutomations(options.desktopDir);
   }
 
   start() {
@@ -188,6 +192,18 @@ export class KimiSessionSource implements SessionSource {
       );
     }
     return sortRunning(out).slice(0, MAX_RUNNING);
+  }
+
+  /**
+   * Kimi Work's scheduled tasks for the press rotation's last page, or null
+   * for CLI-only keys, keys that turn the page off, and computers without
+   * the Kimi desktop app (the key's session face already says so).
+   */
+  automations(data?: KeyData): AutomationBoard | null {
+    const { source } = keyOptions(data);
+    if (source === 'cli' || data?.automationsPage === false) return null;
+    if (this.found && !this.found.desktop) return null;
+    return this.automationsReader.board(Date.now());
   }
 
   /** Why a key with these settings finds nothing, per its `source`. */
@@ -302,6 +318,7 @@ export class KimiSessionSource implements SessionSource {
   private async doRefresh(mode: RefreshMode) {
     this.ensureWatch();
     await this.desktop.readStores();
+    await this.automationsReader.sync();
     if (mode === 'watch') {
       await this.desktop.syncDirty();
     } else {

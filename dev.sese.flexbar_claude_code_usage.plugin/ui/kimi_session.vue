@@ -41,6 +41,20 @@
             </v-col>
         </v-row>
         <v-row>
+            <v-col cols="12">
+                <v-switch
+                    v-model="modelValue.data.automationsPage"
+                    :label="$t('KimiSession.UI.automationsPage')"
+                    :hint="$t('KimiSession.UI.automationsPageHint')"
+                    persistent-hint
+                    :disabled="modelValue.data.source === 'cli'"
+                    hide-details="auto"
+                    class="mx-2"
+                    @update:model-value="scheduleCheck"
+                ></v-switch>
+            </v-col>
+        </v-row>
+        <v-row>
             <v-col cols="6">
                 <v-text-field
                     v-model.number="modelValue.data.idleMinutes"
@@ -163,6 +177,7 @@ export default {
         if (data.projectFilter === undefined) data.projectFilter = "";
         if (data.source === undefined) data.source = "auto";
         if (data.includeAutomations === undefined) data.includeAutomations = false;
+        if (data.automationsPage === undefined) data.automationsPage = true;
         if (data.idleMinutes === undefined) data.idleMinutes = 15;
         if (data.showProject === undefined) data.showProject = true;
         if (data.showMark === undefined) data.showMark = true;

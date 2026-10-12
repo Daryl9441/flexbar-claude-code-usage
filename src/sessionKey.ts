@@ -9,6 +9,7 @@ import { CLAUDE_BRAND } from './providers/claude/brand';
 import { claudeSessionProvider } from './providers/claude/session';
 import { keyCid, markOptions, staticSessionSource } from './providers/kit';
 import {
+  AutomationBoard,
   Brand,
   Key,
   KeyData,
@@ -22,12 +23,17 @@ import {
   SessionSource,
   UiMessage,
 } from './providers/types';
-import { renderSessionKey, renderSessionList } from './sessionRender';
+import {
+  renderAutomationList,
+  renderSessionKey,
+  renderSessionList,
+} from './sessionRender';
 import {
   LIST_TIMEOUT_MS,
   Lang,
   ListPager,
   SessionView,
+  buildAutomationsView,
   buildListView,
   buildNoticeView,
   buildSessionView,
@@ -151,8 +157,9 @@ export class SessionKeys implements KeyGroup {
   }
 
   /**
-   * Key press: show the running-sessions list, then its next page; a press
-   * on the last page goes back to the normal view. Also rescans now.
+   * Key press: show the running-sessions list, then its next page; the
+   * provider's scheduled-tasks board (when it has one) is the last page, and
+   * a press past it goes back to the normal view. Also rescans now.
    */
   async press(serialNumber: string, pressed: Key) {
     const keys = this.keys.get(serialNumber);
@@ -160,7 +167,8 @@ export class SessionKeys implements KeyGroup {
     if (keys && index >= 0) keys[index] = pressed;
     const id = `${serialNumber}#${pressed.uid}`;
     const now = Date.now();
-    const page = this.pager.press(id, now, this.listPagesFor(pressed, now));
+    const pages = this.pagesFor(pressed, now);
+    const page = this.pager.press(id, now, pages.lists + pages.board);
     // back to the normal view once the list times out
     clearTimeout(this.listTimers.get(id));
     this.listTimers.delete(id);
@@ -333,12 +341,31 @@ export class SessionKeys implements KeyGroup {
     this.ticker = null;
   }
 
-  /** Pages of the running-sessions list on this key now (at least 1). */
-  private listPagesFor(key: Key, now: number): number {
-    if (!this.monitor || !this.ready) return 1;
+  /**
+   * Pages of the press rotation on this key now: the running-sessions list
+   * (at least 1), then the provider's scheduled-tasks board (0 when the
+   * provider or the key's settings have none).
+   */
+  private pagesFor(key: Key, now: number): { lists: number; board: number } {
+    if (!this.monitor || !this.ready) return { lists: 1, board: 0 };
     const { filter, idleMs } = settingsOf(key, this.brand);
-    const count = this.running(filter, now, idleMs, key?.data ?? {}).length;
-    return listPages(count, this.deps.keyWidth(key));
+    const data = key?.data ?? {};
+    const width = this.deps.keyWidth(key);
+    const count = this.running(filter, now, idleMs, data).length;
+    const board = this.board(data);
+    return {
+      lists: listPages(count, width),
+      board: board ? Math.max(1, listPages(board.items.length, width)) : 0,
+    };
+  }
+
+  /** The provider's scheduled tasks for a key's settings, when it has any. */
+  private board(data: KeyData): AutomationBoard | null {
+    try {
+      return this.monitor?.automations?.(data) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private running(filter: string, now: number, idleMs: number, data: KeyData) {
@@ -385,8 +412,9 @@ export class SessionKeys implements KeyGroup {
   }
 
   /**
-   * What a key shows now: the running-sessions list while it is open, else
-   * the latest session. Equal signatures give equal images.
+   * What a key shows now: the running-sessions list while it is open, then
+   * the scheduled-tasks board for the rotation's last pages, else the latest
+   * session. Equal signatures give equal images.
    */
   private viewFor(serialNumber: string, key: Key, now: number) {
     const settings = settingsOf(key, this.brand);
@@ -396,10 +424,36 @@ export class SessionKeys implements KeyGroup {
     const page = this.pager.pageOf(id, now);
 
     if (page !== null && this.monitor && this.ready) {
+      const data = key?.data ?? {};
       const list = buildListView(
-        this.running(settings.filter, now, settings.idleMs, key?.data ?? {}),
+        this.running(settings.filter, now, settings.idleMs, data),
         { lang: settings.lang, width, page }
       );
+      const board = page < list.pages ? null : this.board(data);
+      if (board) {
+        const view = buildAutomationsView(board, {
+          lang: settings.lang,
+          width,
+          page: page - list.pages,
+          now,
+        });
+        return {
+          id,
+          signature: JSON.stringify([
+            'board',
+            view,
+            width,
+            bgColor,
+            settings.marks.markColor,
+          ]),
+          render: () =>
+            renderAutomationList(width, view, {
+              bgColor,
+              markColor: settings.marks.markColor,
+            }),
+        };
+      }
+      // the board left the rotation mid-press: the clamped list page
       return {
         id,
         signature: JSON.stringify([

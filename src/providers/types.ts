@@ -240,6 +240,38 @@ export type SessionNotice = {
   tone?: 'idle' | 'error';
 };
 
+/**
+ * One scheduled task on a session key's automations page, as plain facts;
+ * the view model (src/sessionView.ts) decides states, colours and labels.
+ */
+export type AutomationItem = {
+  id: string;
+  title: string;
+  /** False: the task is paused (kept, grey) */
+  enabled: boolean;
+  /** Cron text of a schedule trigger; null for a manual task */
+  cron: string | null;
+  /** IANA timezone the cron fires in (and times are shown in) */
+  timezone: string | null;
+  /** The next computed fire (ms), or null when unknown */
+  nextRunAt: number | null;
+  /** A run is under way right now */
+  running: boolean;
+  /** The latest finished run failed */
+  failed: boolean;
+  /** When the latest run started or finished (ms), or null */
+  lastRunAt: number | null;
+  /** Last change the app reported (ms), or null */
+  updatedAt: number | null;
+};
+
+/** The tasks of a provider's automation store, for the press rotation. */
+export type AutomationBoard = {
+  /** False: the store could not be read (the page says so instead) */
+  available: boolean;
+  items: AutomationItem[];
+};
+
 export type SessionSourceOptions = {
   /** provider.location(config), resolved once per source */
   location: string;
@@ -293,6 +325,12 @@ export interface SessionSource {
    * `data` is the settings of the key asking (key.data).
    */
   notice?(data?: KeyData): SessionNotice | null;
+  /**
+   * The provider's scheduled tasks for the page a press rotation ends with
+   * (src/sessionView.ts buildAutomationsView), or null when the provider has
+   * none or the key's settings hide the page: the rotation then skips it.
+   */
+  automations?(data?: KeyData): AutomationBoard | null;
   /**
    * The product a key with these settings follows, named on its "Loading…"
    * and "No sessions · Start …" faces (default: the brand's productName).

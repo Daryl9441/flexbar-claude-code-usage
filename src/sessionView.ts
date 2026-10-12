@@ -4,7 +4,11 @@
  * after a press. Pure (no canvas), so it is testable and doubles as the
  * redraw signature — a key is only redrawn when its view changes.
  */
-import type { Localized } from './providers/types';
+import type {
+  AutomationBoard,
+  AutomationItem,
+  Localized,
+} from './providers/types';
 import {
   RunningGroup,
   RunningSession,
@@ -68,6 +72,17 @@ const STRINGS = {
     days: (n: number) => `${n}d`,
     noRunning: 'No running sessions',
     untitled: 'Untitled session',
+    automationRunning: 'Running',
+    automationDue: 'Due',
+    automationScheduled: 'Scheduled',
+    automationManual: 'Manual',
+    automationOff: 'Off',
+    automationFailed: 'failed',
+    automationInMinutes: 'in {n}m',
+    automationTomorrow: 'Tmrw',
+    automationWeekdays: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat',
+    noAutomations: 'No scheduled tasks',
+    automationsUnavailable: 'Scheduled tasks unavailable',
   },
   zh: {
     working: '进行中',
@@ -92,6 +107,17 @@ const STRINGS = {
     days: (n: number) => `${n}天`,
     noRunning: '没有运行中的会话',
     untitled: '未命名会话',
+    automationRunning: '运行中',
+    automationDue: '到点',
+    automationScheduled: '已排期',
+    automationManual: '手动',
+    automationOff: '已停用',
+    automationFailed: '失败',
+    automationInMinutes: '{n}分钟后',
+    automationTomorrow: '明天',
+    automationWeekdays: '周日,周一,周二,周三,周四,周五,周六',
+    noAutomations: '暂无定时任务',
+    automationsUnavailable: '无法读取定时任务',
   },
 };
 
@@ -364,4 +390,265 @@ export class ListPager {
   close(test: (id: string) => boolean = () => true) {
     for (const id of [...this.open.keys()]) if (test(id)) this.open.delete(id);
   }
+}
+
+// --- scheduled-tasks board (key press rotation) --------------------------------
+
+/** A row of the scheduled-tasks page: a dot, the task title, a time label. */
+export type AutomationRow = {
+  tone: ViewTone;
+  title: string;
+  /** Right-aligned: the next run, or the state ("Running", "Manual") */
+  timeLabel: string;
+  /** True for inert tasks (manual, off): the title is dimmed */
+  dimmed: boolean;
+};
+
+export type AutomationsView = {
+  /** The rows of the page shown, filled column by column */
+  rows: AutomationRow[];
+  /** Zero-based page shown */
+  page: number;
+  pages: number;
+  /** Columns the rows are laid out in */
+  columns: number;
+  /** Shown instead of rows when there are no tasks (or they unreadable) */
+  empty: string;
+  /** Tasks in all, for the "+N" math of future layouts */
+  total: number;
+};
+
+/** Display state of one task, ranked: running, scheduled, manual, off. */
+type AutomationState = 'running' | 'due' | 'scheduled' | 'manual' | 'off';
+
+function automationState(item: AutomationItem, now: number): AutomationState {
+  if (!item.enabled) return 'off';
+  if (item.running) return 'running';
+  if (item.cron && item.nextRunAt !== null) {
+    return item.nextRunAt <= now ? 'due' : 'scheduled';
+  }
+  if (item.cron) return 'scheduled'; // its next run could not be computed
+  return 'manual';
+}
+
+const STATE_RANK: Record<AutomationState, number> = {
+  running: 0,
+  due: 1,
+  scheduled: 1,
+  manual: 2,
+  off: 3,
+};
+
+const STATE_TONE: Record<AutomationState, ViewTone> = {
+  running: 'working',
+  due: 'working',
+  scheduled: 'done',
+  manual: 'idle',
+  off: 'idle',
+};
+
+/** Per-task view facts up to ordering; a failed latest run turns the dot red. */
+function automationRow(
+  item: AutomationItem,
+  now: number,
+  lang: Lang
+): AutomationRow & { state: AutomationState } {
+  const s = STRINGS[lang];
+  const state = automationState(item, now);
+  let timeLabel: string;
+  switch (state) {
+    case 'running': {
+      const next =
+        item.nextRunAt !== null && item.nextRunAt > now
+          ? formatNextRun(item.nextRunAt, now, lang, item.timezone)
+          : '';
+      timeLabel = next
+        ? `${s.automationRunning} · ${next}`
+        : s.automationRunning;
+      break;
+    }
+    case 'due':
+      timeLabel = s.automationDue;
+      break;
+    case 'scheduled':
+      timeLabel =
+        item.nextRunAt !== null
+          ? formatNextRun(item.nextRunAt, now, lang, item.timezone)
+          : s.automationScheduled;
+      break;
+    case 'manual':
+      timeLabel = s.automationManual;
+      break;
+    default:
+      timeLabel = s.automationOff;
+  }
+  // the latest run failed (and nothing is running): red, marked label
+  const failed = item.failed && state !== 'running' && state !== 'off';
+  return {
+    tone: failed ? 'error' : STATE_TONE[state],
+    title: item.title || s.untitled,
+    timeLabel: failed ? `✗ ${timeLabel || s.automationFailed}` : timeLabel,
+    dimmed: state === 'manual' || state === 'off',
+    state,
+  };
+}
+
+/**
+ * The scheduled-tasks page of a key press: running tasks first, then
+ * scheduled ones by their next run, then manual and paused ones, paged like
+ * the running-sessions list (listLayout). Pure: the clock is an argument.
+ */
+export function buildAutomationsView(
+  board: AutomationBoard,
+  options: { lang: Lang; width: number; page: number; now: number }
+): AutomationsView {
+  const s = STRINGS[options.lang];
+  const layout = listLayout(options.width);
+  const { perPage } = layout;
+  const items = (board.items ?? [])
+    .map((item, index) => ({
+      row: automationRow(item, options.now, options.lang),
+      item,
+      index,
+    }))
+    .sort((a, b) => {
+      const rank = STATE_RANK[a.row.state] - STATE_RANK[b.row.state];
+      if (rank !== 0) return rank;
+      if (a.row.state === 'running') {
+        const delta = (b.item.lastRunAt ?? 0) - (a.item.lastRunAt ?? 0);
+        if (delta !== 0) return delta;
+      } else if (a.row.state === 'due' || a.row.state === 'scheduled') {
+        const delta =
+          (a.item.nextRunAt ?? Infinity) - (b.item.nextRunAt ?? Infinity);
+        if (delta !== 0) return delta;
+      } else {
+        const delta = (b.item.updatedAt ?? 0) - (a.item.updatedAt ?? 0);
+        if (delta !== 0) return delta;
+      }
+      return a.index - b.index; // stable: ties never swap between redraws
+    });
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  const columns =
+    pages > 1
+      ? layout.columns
+      : Math.min(
+          layout.columns,
+          Math.max(1, Math.ceil(items.length / LIST_ROWS))
+        );
+  const page = Math.min(Math.max(0, Math.floor(options.page) || 0), pages - 1);
+  const rows = items
+    .slice(page * perPage, (page + 1) * perPage)
+    .map(({ row }) => ({
+      tone: row.tone,
+      title: row.title,
+      timeLabel: row.timeLabel,
+      dimmed: row.dimmed,
+    }));
+  return {
+    rows,
+    page,
+    pages,
+    columns,
+    empty: items.length
+      ? ''
+      : board.available
+        ? s.noAutomations
+        : s.automationsUnavailable,
+    total: items.length,
+  };
+}
+
+// --- next-run labels -------------------------------------------------------------
+
+const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+const zonedFormatters = new Map<string, Intl.DateTimeFormat | null>();
+
+type ZonedParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+};
+
+/** Wall-clock parts in the task's timezone (or the local one when unknown). */
+function zonedParts(ms: number, timezone: string | null): ZonedParts | null {
+  const key = timezone ?? '';
+  let formatter = zonedFormatters.get(key);
+  if (formatter === undefined) {
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', {
+        ...(timezone ? { timeZone: timezone } : {}),
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false,
+      });
+    } catch {
+      formatter = null; // an unknown timezone: no parts, no next-run label
+    }
+    zonedFormatters.set(key, formatter);
+  }
+  if (!formatter) return null;
+  try {
+    const byType: Record<string, string> = {};
+    for (const part of formatter.formatToParts(new Date(ms))) {
+      byType[part.type] = part.value;
+    }
+    return {
+      year: Number(byType.year),
+      month: Number(byType.month),
+      day: Number(byType.day),
+      hour: Number(byType.hour) % 24,
+      minute: Number(byType.minute),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * The next run as a short label: "in 25m" under an hour ahead, then "14:30"
+ * (today), "Tmrw 09:00", "Tue 09:00" (within 6 days) or "10/12 09:00", all
+ * in the task's timezone and by its calendar days. Empty when the timezone
+ * cannot be read.
+ */
+export function formatNextRun(
+  nextRunAt: number,
+  now: number,
+  lang: Lang,
+  timezone: string | null
+): string {
+  const s = STRINGS[lang];
+  if (nextRunAt - now < 60 * MINUTE_MS) {
+    const minutes = Math.min(
+      59,
+      Math.max(1, Math.ceil((nextRunAt - now) / MINUTE_MS))
+    );
+    return s.automationInMinutes.replace('{n}', String(minutes));
+  }
+  const next = zonedParts(nextRunAt, timezone);
+  const here = zonedParts(now, timezone);
+  if (!next || !here) return '';
+  const time = `${pad2(next.hour)}:${pad2(next.minute)}`;
+  const dayStart = (p: ZonedParts) => Date.UTC(p.year, p.month - 1, p.day);
+  const days = Math.round((dayStart(next) - dayStart(here)) / DAY_MS);
+  if (days === 0) return time;
+  if (days === 1) return `${s.automationTomorrow} ${time}`;
+  if (days > 1 && days <= 6) {
+    // the weekday of the wall date in the task's own timezone
+    const weekdays = s.automationWeekdays.split(',');
+    const dow = new Date(
+      Date.UTC(next.year, next.month - 1, next.day)
+    ).getUTCDay();
+    return `${weekdays[dow]} ${time}`;
+  }
+  return `${pad2(next.month)}/${pad2(next.day)} ${time}`;
 }

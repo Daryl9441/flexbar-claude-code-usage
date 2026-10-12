@@ -1134,3 +1134,327 @@ describe('Kimi New Session launcher', () => {
 
 
 });
+
+// --- scheduled-tasks board ------------------------------------------------------
+
+const A = req('providers/kimi/automations.js');
+const Cron = req('providers/kimi/cronNext.js');
+
+/** Writes synthetic blueprint automations under a desktop fixture root. */
+function automationsFixture(root, tasks) {
+  const base = path.join(root, 'daimon-share', 'daimon', 'agents', 'main', 'blueprint', 'automations');
+  for (const [n, spec] of Object.entries(tasks)) {
+    const dir = path.join(base, `automation_${uuid(Number(n))}`);
+    const latestRunId = spec.latest ? `run_${uuid(100 + Number(n))}` : null;
+    const activeRunId = spec.active ? `run_${uuid(200 + Number(n))}` : null;
+    writeJson(path.join(dir, 'automation.json'), {
+      version: 1,
+      automation: {
+        automationId: `automation_${uuid(Number(n))}`,
+        type: 'regular',
+        title: spec.title,
+        description: 'synthetic description, never read',
+        enabled: spec.enabled !== false,
+        trigger: spec.cron
+          ? { kind: 'schedule', cron: spec.cron, timezone: spec.timezone ?? 'Asia/Shanghai' }
+          : { kind: 'manual' },
+        execution: { kind: 'agent', prompt: 'synthetic prompt, never read' },
+        latestRunId,
+        latestSuccessfulRunId: spec.latest?.status === 'succeeded' ? latestRunId : null,
+        activeRunId,
+        updatedAt: new Date(spec.updatedAt ?? Date.now()).toISOString(),
+      },
+    });
+    for (const [runId, run] of [[latestRunId, spec.latest], [activeRunId, spec.active]]) {
+      if (!runId || !run) continue;
+      writeJson(path.join(dir, 'runs', runId, 'run.json'), {
+        version: 1,
+        run: {
+          runId,
+          status: run.status,
+          startedAt: new Date(run.startedAt).toISOString(),
+          completedAt: run.completedAt ? new Date(run.completedAt).toISOString() : null,
+          logs: ['synthetic log line, never read'],
+        },
+      });
+    }
+  }
+  return base;
+}
+
+describe('cron next run', () => {
+  const SH = 'Asia/Shanghai';
+  const at = s => Date.parse(s);
+
+  test('daily, monthly and weekday schedules in a timezone', () => {
+    // 2026-10-12 is a Monday
+    assert.equal(
+      Cron.nextRunOf('0 10 * * *', SH, at('2026-10-12T09:30:00+08:00')),
+      at('2026-10-12T10:00:00+08:00')
+    );
+    // the minute that is already under way is past
+    assert.equal(
+      Cron.nextRunOf('0 10 * * *', SH, at('2026-10-12T10:00:30+08:00')),
+      at('2026-10-13T10:00:00+08:00')
+    );
+    assert.equal(
+      Cron.nextRunOf('0 10 2 * *', SH, at('2026-10-12T00:00:00+08:00')),
+      at('2026-11-02T10:00:00+08:00')
+    );
+    assert.equal(
+      Cron.nextRunOf('0 3 * * 1-5', SH, at('2026-10-09T18:00:00+08:00')), // Friday
+      at('2026-10-12T03:00:00+08:00') // Monday
+    );
+    // a schedule fires at most once a minute, on its own timezone's clock
+    assert.equal(
+      Cron.nextRunOf('0 10 * * *', 'America/New_York', at('2026-10-12T09:30:00-04:00')),
+      at('2026-10-12T10:00:00-04:00')
+    );
+  });
+
+  test('steps, lists, ranges and the day-of-month/weekday OR rule', () => {
+    const SH = 'Asia/Shanghai';
+    const at = s => Date.parse(s);
+    assert.equal(Cron.nextRunOf('*/20 * * * *', SH, at('2026-10-12T10:00:30+08:00')), at('2026-10-12T10:20:00+08:00'));
+    assert.equal(Cron.nextRunOf('5,25 1,2 * * *', SH, at('2026-10-12T01:06:00+08:00')), at('2026-10-12T01:25:00+08:00'));
+    assert.equal(Cron.nextRunOf('0 0 1 * 1', SH, at('2026-10-13T00:00:00+08:00')), at('2026-10-19T00:00:00+08:00'), 'Tuesday: next Monday');
+    assert.equal(Cron.nextRunOf('0 0 1 * 1', SH, at('2026-10-19T00:00:01+08:00')), at('2026-10-26T00:00:00+08:00'), 'then the next Monday');
+    assert.equal(Cron.nextRunOf('0 0 1 * 1', SH, at('2026-10-27T00:00:00+08:00')), at('2026-11-01T00:00:00+08:00'), 'then the 1st');
+    // 7 is Sunday too
+    assert.equal(Cron.nextRunOf('0 0 * * 0', SH, at('2026-10-12T00:00:00+08:00')), Cron.nextRunOf('0 0 * * 7', SH, at('2026-10-12T00:00:00+08:00')));
+  });
+
+  test('unsupported or impossible schedules yield null', () => {
+    const at = Date.parse('2026-10-12T00:00:00+08:00');
+    assert.equal(Cron.nextRunOf('0 10', 'Asia/Shanghai', at), null);
+    assert.equal(Cron.nextRunOf('0 9 * * MON', 'Asia/Shanghai', at), null);
+    assert.equal(Cron.nextRunOf('0 0 30 2 *', 'Asia/Shanghai', at), null);
+    assert.equal(Cron.nextRunOf('0 10 * * *', 'Not/AZone', at), null);
+    assert.equal(Cron.nextRunOf('', 'Asia/Shanghai', at), null);
+    assert.equal(Cron.nextRunOf(null, 'Asia/Shanghai', at), null);
+  });
+});
+
+describe('Kimi Work scheduled tasks (blueprint automations)', () => {
+  test('tasks and their latest/active runs are read, next runs computed', async () => {
+    const root = tmp('desktop');
+    const now = Date.now();
+    automationsFixture(root, {
+      1: { title: 'Synthetic daily', cron: '0 10 * * *', latest: { status: 'succeeded', startedAt: now - 24 * 60 * MIN, completedAt: now - 24 * 60 * MIN + MIN } },
+      2: { title: 'Synthetic running', cron: '0 22 * * 1-5', active: { status: 'running', startedAt: now - 2 * MIN } },
+      3: { title: 'Synthetic failed', cron: '0 3 * * 1-5', latest: { status: 'failed', startedAt: now - 60 * MIN, completedAt: now - 59 * MIN } },
+      4: { title: 'Synthetic manual', cron: null },
+      5: { title: 'Synthetic off', cron: '0 9 * * *', enabled: false },
+    });
+    const source = await scan({ desktopDir: root });
+    const board = source.automations({});
+    assert.equal(board.available, true);
+    assert.equal(board.items.length, 5);
+    const byId = Object.fromEntries(board.items.map(i => [i.title, i]));
+    assert.equal(byId['Synthetic running'].running, true);
+    assert.equal(byId['Synthetic failed'].failed, true);
+    assert.equal(byId['Synthetic manual'].cron, null);
+    assert.equal(byId['Synthetic off'].enabled, false);
+    assert.equal(byId['Synthetic off'].nextRunAt, null);
+    const next = byId['Synthetic daily'].nextRunAt;
+    assert.ok(next > now && next <= now + 25 * 60 * MIN, 'next daily run within a day');
+    // key settings gate the page
+    assert.equal(source.automations({ source: 'cli' }), null);
+    assert.equal(source.automations({ automationsPage: false }), null);
+  });
+
+  test('a stale active run no longer counts as running', async () => {
+    const root = tmp('desktop');
+    const now = Date.now();
+    automationsFixture(root, {
+      1: { title: 'Synthetic stuck', cron: '0 10 * * *', active: { status: 'running', startedAt: now - 30 * 60 * MIN } },
+    });
+    const source = await scan({ desktopDir: root });
+    const [item] = source.automations({}).items;
+    assert.equal(item.running, false);
+  });
+
+  test('missing store: unavailable, empty', async () => {
+    const reader = new A.KimiAutomations(path.join(empty, 'no-desktop'));
+    await reader.sync();
+    const board = reader.board(Date.now());
+    assert.equal(board.available, false);
+    assert.deepEqual(board.items, []);
+  });
+});
+
+describe('scheduled-tasks board view', () => {
+  const item = (over = {}) => ({
+    id: over.id ?? 'automation_x',
+    title: over.title ?? 'Synthetic task',
+    enabled: over.enabled ?? true,
+    cron: 'cron' in over ? over.cron : '0 10 * * *',
+    timezone: 'Asia/Shanghai',
+    nextRunAt: 'nextRunAt' in over ? over.nextRunAt : null,
+    running: over.running ?? false,
+    failed: over.failed ?? false,
+    lastRunAt: over.lastRunAt ?? null,
+    updatedAt: over.updatedAt ?? null,
+  });
+
+  test('ordering: running, then by next run, then manual and off', () => {
+    const now = Date.parse('2026-10-12T09:00:00+08:00');
+    const board = {
+      available: true,
+      items: [
+        item({ id: 'a4', title: 'Off', enabled: false, nextRunAt: null }),
+        item({ id: 'a3', title: 'Manual', cron: null, nextRunAt: null }),
+        item({ id: 'a2', title: 'Later', nextRunAt: now + 5 * 3600_000 }),
+        item({ id: 'a1', title: 'Sooner', nextRunAt: now + 3600_000 }),
+        item({ id: 'a0', title: 'Active', running: true, nextRunAt: now + 2 * 3600_000 }),
+      ],
+    };
+    const view = View.buildAutomationsView(board, { lang: 'en', width: 520, page: 0, now });
+    assert.deepEqual(view.rows.map(r => r.title), ['Active', 'Sooner', 'Later', 'Manual', 'Off']);
+    assert.deepEqual(view.rows.map(r => r.tone), ['working', 'done', 'done', 'idle', 'idle']);
+    assert.equal(view.empty, '');
+  });
+
+  test('labels: running, due, failed and next runs, in English and Chinese', () => {
+    const now = Date.parse('2026-10-12T09:00:00+08:00'); // a Monday
+    const mk = items => View.buildAutomationsView({ available: true, items }, { lang: 'en', width: 520, page: 0, now });
+    assert.equal(mk([item({ running: true, nextRunAt: now + 25 * 3600_000 })]).rows[0].timeLabel, 'Running · Tmrw 10:00');
+    assert.equal(mk([item({ nextRunAt: now - MIN })]).rows[0].timeLabel, 'Due');
+    assert.equal(mk([item({ failed: true, nextRunAt: now + 60_000 })]).rows[0].timeLabel, '✗ in 1m');
+    assert.equal(mk([item({ nextRunAt: now + 30 * 60_000 })]).rows[0].timeLabel, 'in 30m');
+    assert.equal(mk([item({ nextRunAt: now + 3 * 3600_000 })]).rows[0].timeLabel, '12:00');
+    assert.equal(mk([item({ cron: null, nextRunAt: null })]).rows[0].timeLabel, 'Manual');
+    assert.equal(mk([item({ enabled: false, nextRunAt: null })]).rows[0].timeLabel, 'Off');
+    const zh = View.buildAutomationsView(
+      { available: true, items: [item({ nextRunAt: now + 25 * 3600_000 })] },
+      { lang: 'zh', width: 520, page: 0, now }
+    );
+    assert.equal(zh.rows[0].timeLabel, '明天 10:00');
+    const weekday = View.buildAutomationsView(
+      { available: true, items: [item({ nextRunAt: now + 4 * 24 * 3600_000 })] }, // Friday
+      { lang: 'zh', width: 520, page: 0, now }
+    );
+    assert.equal(weekday.rows[0].timeLabel, '周五 09:00');
+  });
+
+  test('empty and unavailable faces; paging like the running list', () => {
+    const now = Date.now();
+    const emptyView = View.buildAutomationsView({ available: true, items: [] }, { lang: 'zh', width: 240, page: 0, now });
+    assert.equal(emptyView.empty, '暂无定时任务');
+    const unavailable = View.buildAutomationsView({ available: false, items: [] }, { lang: 'en', width: 240, page: 0, now });
+    assert.equal(unavailable.empty, 'Scheduled tasks unavailable');
+    const items = Array.from({ length: 7 }, (_, i) => item({ id: `a${i}`, title: `Task ${i}`, nextRunAt: now + (i + 2) * 3600_000 }));
+    const paged = View.buildAutomationsView({ available: true, items }, { lang: 'en', width: 240, page: 1, now });
+    assert.equal(paged.pages, 3); // one column of three rows at 240 px
+    assert.equal(paged.rows.length, 3);
+    assert.equal(paged.rows[0].title, 'Task 3');
+    const clamped = View.buildAutomationsView({ available: true, items }, { lang: 'en', width: 240, page: 9, now });
+    assert.equal(clamped.page, 2);
+  });
+});
+
+describe('Session Status key rotation with the scheduled-tasks board', () => {
+  /** A stub SessionSource: one running session, a board of two tasks. */
+  function fakeMonitor(options, board) {
+    return {
+      start() { options.onChange(); },
+      stop() {},
+      async rescan() {},
+      setFilters() {},
+      setRunningWindow() {},
+      getStatus: () => ({ status: { state: 'working', confident: true, hasQuestion: false, question: null, options: [], detail: null, tool: null, progress: null, title: 'Synthetic session', project: 'demo', branch: null, sessionId: 's', lastActivity: Date.now(), turnStartedAt: null, since: null, background: false, live: true }, others: 0 }),
+      listRunning: () => [],
+      automations: () => board,
+    };
+  }
+
+  async function rotation(board) {
+    const cid = Kit.keyCid('kimi', 'session');
+    const sent = [];
+    let chain = Promise.resolve();
+    const keys = new SessionKeys({
+      enqueue: task => (chain = chain.then(task).catch(() => undefined)),
+      send: async (_serial, key, image) => sent.push(image),
+      isOffline: () => false,
+      keyWidth: key => key.width,
+      bgColor: () => undefined,
+      loadConfig: async () => ({}),
+      provider: {
+        cid,
+        brand: KIMI_BRAND,
+        sessions: {
+          location: () => 'stub',
+          create: options => fakeMonitor(options, board),
+          describe: async () => ({ success: true, projectsDir: null, state: null, project: null, title: null, others: 0 }),
+        },
+      },
+    });
+    const settle = async () => {
+      for (let i = 0; i < 20; i++) {
+        await chain;
+        await sleep(25);
+      }
+    };
+    return { keys, sent, settle };
+  }
+
+  test('press rotates normal -> list -> board -> normal', async () => {
+    const now = Date.now();
+    const board = {
+      available: true,
+      items: [1, 2].map(n => ({
+        id: `automation_${n}`,
+        title: `Synthetic task ${n}`,
+        enabled: true,
+        cron: '0 10 * * *',
+        timezone: 'Asia/Shanghai',
+        nextRunAt: now + n * 3600_000,
+        running: false,
+        failed: false,
+        lastRunAt: null,
+        updatedAt: now,
+      })),
+    };
+    const { keys, sent, settle } = await rotation(board);
+    const cid = Kit.keyCid('kimi', 'session');
+    const key = { uid: 1, cid, width: 240, data: { lang: 'en' } };
+    try {
+      await keys.alive(SERIAL, [key]);
+      await settle();
+      const normal = sent.at(-1);
+      await keys.press(SERIAL, key); // the running list
+      await settle();
+      const list = sent.at(-1);
+      assert.notEqual(list, normal);
+      await keys.press(SERIAL, key); // the scheduled-tasks board
+      await settle();
+      const boardImage = sent.at(-1);
+      assert.notEqual(boardImage, normal);
+      assert.notEqual(boardImage, list);
+      await keys.press(SERIAL, key); // back to the normal face
+      await settle();
+      assert.equal(sent.at(-1), normal);
+    } finally {
+      await keys.dead(SERIAL, []);
+    }
+  });
+
+  test('without a board the rotation is list -> normal as before', async () => {
+    const { keys, sent, settle } = await rotation(null);
+    const cid = Kit.keyCid('kimi', 'session');
+    const key = { uid: 1, cid, width: 240, data: { lang: 'en' } };
+    try {
+      await keys.alive(SERIAL, [key]);
+      await settle();
+      const normal = sent.at(-1);
+      await keys.press(SERIAL, key);
+      await settle();
+      assert.notEqual(sent.at(-1), normal); // the list
+      await keys.press(SERIAL, key);
+      await settle();
+      assert.equal(sent.at(-1), normal); // straight back, no board page
+    } finally {
+      await keys.dead(SERIAL, []);
+    }
+  });
+});

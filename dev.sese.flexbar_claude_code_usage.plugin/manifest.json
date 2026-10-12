@@ -153,7 +153,8 @@
                     "showProject": true,
                     "showMark": true,
                     "source": "auto",
-                    "includeAutomations": false
+                    "includeAutomations": false,
+                    "automationsPage": true
                 }
             },
             {
@@ -433,7 +434,7 @@
             },
             "KimiSession": {
                 "Title": "Kimi Sessions",
-                "Tip": "Shows whether your latest Kimi Code session or Kimi Work task is working, done, or waiting for you; press to list running sessions",
+                "Tip": "Shows whether your latest Kimi Code session or Kimi Work task is working, done, or waiting for you; press to rotate through running sessions and the scheduled-tasks board",
                 "UI": {
                     "projectFilter": "Project filter",
                     "projectFilterHint": "Part of the Kimi Code project path or the Kimi Work project; leave empty for the latest session",
@@ -448,7 +449,9 @@
                     "sourceAuto": "Kimi Code and Kimi Work",
                     "sourceDesktop": "Kimi Work (Kimi app)",
                     "sourceCli": "Kimi Code (CLI)",
-                    "includeAutomations": "Include scheduled tasks"
+                    "includeAutomations": "Include scheduled tasks",
+                    "automationsPage": "Scheduled tasks page",
+                    "automationsPageHint": "Pressing the key rotates through the running sessions and then the Kimi Work scheduled-tasks board"
                 }
             },
             "KimiNewSession": {
@@ -739,7 +742,7 @@
             },
             "KimiSession": {
                 "Title": "Kimi 会话",
-                "Tip": "显示最新的 Kimi Code 会话或 Kimi Work 任务是在进行中、已完成，还是在等你；按下可列出运行中的会话",
+                "Tip": "显示最新的 Kimi Code 会话或 Kimi Work 任务是在进行中、已完成，还是在等你；按下可轮换查看运行中的会话和定时任务看板",
                 "UI": {
                     "projectFilter": "项目筛选",
                     "projectFilterHint": "Kimi Code 项目路径或 Kimi Work 项目名的一部分；留空则显示最新的会话",
@@ -754,7 +757,9 @@
                     "sourceAuto": "Kimi Code 和 Kimi Work",
                     "sourceDesktop": "Kimi Work（Kimi App）",
                     "sourceCli": "Kimi Code（命令行）",
-                    "includeAutomations": "包含定时任务"
+                    "includeAutomations": "包含定时任务",
+                    "automationsPage": "定时任务看板页",
+                    "automationsPageHint": "按下按键时，在运行中会话列表之后轮换显示 Kimi Work 的定时任务看板"
                 }
             },
             "KimiNewSession": {

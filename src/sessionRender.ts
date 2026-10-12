@@ -14,6 +14,7 @@ import {
 } from './render';
 import {
   LIST_ROWS,
+  AutomationsView,
   ListView,
   SessionView,
   TONE_COLORS,
@@ -518,6 +519,132 @@ export async function renderSessionList(
     if (!title || title === '…') return;
     ctx.fillStyle = COLORS.text;
     ctx.fillText(title, textX, cy + 4);
+  });
+
+  if (pageText) {
+    ctx.font = PAGE_FONT;
+    ctx.fillStyle = COLORS.label;
+    ctx.textAlign = 'right';
+    const cy = top + (rows - 1) * LIST_ROW_HEIGHT + LIST_ROW_HEIGHT / 2;
+    ctx.fillText(pageText, rightX, cy + 3.5);
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
+// --- scheduled-tasks board ------------------------------------------------------
+
+/** Between a row's title and its time label */
+const BOARD_TIME_GAP = 6;
+/** Smallest title room before the time label is shortened instead */
+const BOARD_MIN_TITLE = 30;
+const BOARD_TIME_FONT = `11px ${FONT}`;
+
+/**
+ * Renders the scheduled-tasks page of a Session Status key: one row per
+ * task — a dot in the state colour, the title and the next run (or state)
+ * on the right — laid out like the running-sessions list, with the same
+ * page indicator. Rows of inert tasks (manual, off) are dimmed.
+ */
+export async function renderAutomationList(
+  width: number,
+  view: AutomationsView,
+  options: { bgColor?: string; markColor?: string }
+): Promise<string> {
+  const keyWidth = pixelWidth(width);
+  const canvas = createCanvas(keyWidth, KEY_HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = options.bgColor || COLORS.background;
+  ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
+  // whose tasks these are: the brand edge (none for Claude)
+  if (options.markColor) drawBrandEdge(ctx, keyWidth, options.markColor);
+
+  const pad = keyWidth < 140 ? 7 : 10;
+  const left = pad;
+  const rightX = keyWidth - pad;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  if (view.rows.length === 0) {
+    drawEmptyList(ctx, view.empty, left, rightX);
+    return canvas.toDataURL('image/png');
+  }
+
+  const rows = LIST_ROWS;
+  const columns = Math.max(1, view.columns);
+  const columnWidth =
+    (rightX - left - (columns - 1) * LIST_COLUMN_GAP) / columns;
+  const top = (KEY_HEIGHT - rows * LIST_ROW_HEIGHT) / 2;
+
+  // page indicator, bottom right; the last column's bottom row makes room
+  let pageText = '';
+  let pageWidth = 0;
+  if (view.pages > 1) {
+    pageText = `${view.page + 1}/${view.pages}`;
+    ctx.font = PAGE_FONT;
+    pageWidth = textWidth(ctx, pageText);
+  }
+
+  // faint rules between the columns that have rows
+  const used = Math.min(columns, Math.ceil(view.rows.length / rows));
+  ctx.fillStyle = COLORS.barTrack;
+  for (let col = 1; col < used; col++) {
+    const x =
+      left + col * (columnWidth + LIST_COLUMN_GAP) - LIST_COLUMN_GAP / 2;
+    ctx.fillRect(Math.round(x), top + 3, 1, rows * LIST_ROW_HEIGHT - 6);
+  }
+
+  view.rows.forEach((row, i) => {
+    const col = Math.floor(i / rows);
+    if (col >= columns) return;
+    const x = left + col * (columnWidth + LIST_COLUMN_GAP);
+    const right = x + columnWidth;
+    const cy = top + (i % rows) * LIST_ROW_HEIGHT + LIST_ROW_HEIGHT / 2;
+
+    ctx.fillStyle = TONE_COLORS[row.tone];
+    ctx.beginPath();
+    ctx.arc(x + DOT_RADIUS, cy, DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    const textX = x + LIST_TEXT_INSET;
+    let maxRight = right;
+    if (pageText && col === columns - 1 && i % rows === rows - 1) {
+      maxRight -= pageWidth + 6;
+    }
+
+    // the time label takes what it needs (up to half the row), the title
+    // keeps the rest
+    ctx.font = BOARD_TIME_FONT;
+    const label = ellipsize(
+      ctx,
+      row.timeLabel,
+      Math.max(0, maxRight - textX - BOARD_MIN_TITLE - BOARD_TIME_GAP)
+    );
+    const labelWidth = label ? textWidth(ctx, label) : 0;
+    if (label) {
+      ctx.fillStyle =
+        row.tone === 'working' || row.tone === 'error'
+          ? TONE_COLORS[row.tone]
+          : COLORS.label;
+      ctx.textAlign = 'right';
+      ctx.fillText(label, maxRight, cy + 4);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.font = LIST_FONT;
+    const title = ellipsize(
+      ctx,
+      row.title,
+      Math.max(
+        0,
+        maxRight - textX - (labelWidth ? labelWidth + BOARD_TIME_GAP : 0)
+      )
+    );
+    if (title && title !== '…') {
+      ctx.fillStyle = row.dimmed ? COLORS.label : COLORS.text;
+      ctx.fillText(title, textX, cy + 4);
+    }
   });
 
   if (pageText) {
