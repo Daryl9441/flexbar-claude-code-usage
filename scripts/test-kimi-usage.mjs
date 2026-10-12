@@ -41,6 +41,7 @@ const Api = req('providers/kimi/usageApi.js');
 const Auth = req('providers/kimi/usageAuth.js');
 const Cfg = req('providers/kimi/usageConfig.js');
 const Ctx = req('providers/kimi/usageContext.js');
+const Face = req('providers/kimi/usageFace.js');
 const Kit = req('providers/kit.js');
 const R = req('render.js');
 const { UsageKeys } = req('usageKey.js');
@@ -373,6 +374,23 @@ describe('usage payloads', () => {
     assert.equal(Api.percentFromRatio(Number.NaN), 0);
   });
 
+  test('membership total preserves the app percentage, separately from Code usage', () => {
+    const metrics = Api.parseUsagePayload({
+      usages: {
+        limit_month_total: { used_ratio: 0.5905, reset_time: '2026-10-21T00:00:00Z' },
+        limit_month_code: { used_ratio: 0.1 },
+        limit_5h: { used_ratio: 0 },
+        limit_7d: { used_ratio: 0 },
+      },
+    }, FIXED);
+    const monthly = metrics.find(m => m.id === 'monthly');
+    assert.equal(monthly.percent, 59.05);
+    assert.equal(Face.membershipRemaining(monthly), 40.95);
+    assert.equal(metrics.find(m => m.id === 'monthly_code').percent, 10);
+    assert.equal(metrics.find(m => m.id === '5h').percent, 0);
+    assert.equal(metrics.find(m => m.id === 'weekly').percent, 0);
+  });
+
   test('missing, partial and odd entries are skipped', () => {
     const metrics = Api.parseUsagePayload(
       {
@@ -409,7 +427,7 @@ describe('usage payloads', () => {
     assert.deepEqual(metrics, [
       { id: '5h', label: '5h', percent: 20, resetsAt: '2026-10-05T17:00:00.000Z' },
       { id: 'weekly', label: 'Weekly', percent: 12, resetsAt: '2026-10-11T00:00:00.000Z' },
-      { id: 'monthly', label: 'Month', percent: 34, resetsAt: null },
+      { id: 'monthly', label: 'Month', percent: 33.33, resetsAt: null },
       { id: 'limit_3600s', label: '1h', percent: 25, resetsAt: new Date(FIXED + 1_800_000).toISOString() },
       { id: 'limit_4', label: 'Burst', percent: 50, resetsAt: null },
     ]);
@@ -598,18 +616,18 @@ describe('what is installed', () => {
     const fetch = stubFetch({});
     const e = await U.fetchKimiUsage(t.config, deps(fetch)).catch(x => x);
     expectError('not-installed')(e);
-    assert.deepEqual(keyText(e), { title: 'Kimi not found', message: 'Install Kimi Code' });
-    assert.deepEqual(keyText(e, 'zh'), { title: '未找到 Kimi', message: '请安装 Kimi Code' });
+    assert.deepEqual(keyText(e), { title: 'Kimi not found', message: 'Install Kimi' });
+    assert.deepEqual(keyText(e, 'zh'), { title: '未找到 Kimi', message: '请安装 Kimi' });
     assert.equal(fetch.calls.length, 0);
   });
 
-  test('desktop app only, Kimi Work never used: "Log in with Kimi Code"', async () => {
+  test('desktop app only, Kimi Work never used: "Log in to Kimi"', async () => {
     const t = tree();
     fs.mkdirSync(t.desktop, { recursive: true });
     const e = await U.fetchKimiUsage(t.config, deps(stubFetch({}))).catch(x => x);
     expectError('not-configured')(e);
-    assert.deepEqual(keyText(e), { title: 'No usage data', message: 'Log in with Kimi Code' });
-    assert.deepEqual(keyText(e, 'zh'), { title: '暂无用量数据', message: '请登录 Kimi Code' });
+    assert.deepEqual(keyText(e), { title: 'No usage data', message: 'Log in to Kimi' });
+    assert.deepEqual(keyText(e, 'zh'), { title: '暂无用量数据', message: '请登录 Kimi' });
   });
 
   test('desktop app with a Kimi Work task: the context metric only', async () => {
@@ -620,7 +638,7 @@ describe('what is installed', () => {
     assert.deepEqual(metrics, [{ id: 'context', label: 'Context', percent: 35, resetsAt: null }]);
     assert.equal(fetch.calls.length, 0);
     // a key set to a plan limit can say why it has none
-    assert.deepEqual(U.usageSource.missingText('5h', 'en'), { title: 'No usage data', message: 'Log in with Kimi Code' });
+    assert.deepEqual(U.usageSource.missingText('5h', 'en'), { title: 'No usage data', message: 'Log in to Kimi' });
     assert.deepEqual(U.usageSource.missingText('context', 'zh'), { title: '暂无上下文数据', message: '请先使用 Kimi Work' });
   });
 
@@ -993,8 +1011,9 @@ describe('refreshing the Kimi Code login', () => {
 // --- the UsageSource ---------------------------------------------------------------
 
 describe('usageSource', () => {
-  test('contract: default metric is the first returned (5h)', () => {
-    assert.equal(U.usageSource.defaultMetric, '');
+  test('contract: default metric is membership remaining', () => {
+    assert.equal(U.usageSource.defaultMetric, 'membership');
+    assert.equal(U.usageSource.face, Face.kimiUsageFace);
     assert.equal(typeof U.usageSource.fetch, 'function');
     assert.equal(U.usageSource.minFetchGapMs, undefined, '30 s default gap');
   });
@@ -1004,10 +1023,12 @@ describe('usageSource', () => {
     const sub = U.usageSource.substituteMetric;
     assert.equal(sub('monthly_code', list(['5h', 'weekly'])), '5h');
     assert.equal(sub('extra', list(['5h', 'weekly', 'context'])), '5h');
-    assert.equal(sub('monthly', list(['weekly', 'limit_3600s', 'context'])), 'weekly');
+    assert.equal(sub('monthly', list(['weekly', 'limit_3600s', 'context'])), null);
     // the context keeps "No context data"; without plan limits (not logged
     // in, desktop app only) the key keeps saying why
     assert.equal(sub('context', list(['5h', 'weekly'])), null);
+    assert.equal(sub('membership', list(['5h', 'weekly', 'monthly_code', 'context'])), null);
+    assert.equal(sub('', list(['5h', 'weekly', 'context'])), null);
     assert.equal(sub('5h', list(['context'])), null);
     assert.equal(sub('weekly', []), null);
   });
@@ -1096,7 +1117,224 @@ function pngSize(dataUrl) {
   return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
 }
 
+describe('membership remaining face', () => {
+  const total = (percent, resetsAt = '2026-10-21T00:00:00.000Z') => ({
+    id: 'monthly', label: 'Month', percent, resetsAt,
+  });
+  const request = (metrics, over = {}) => ({
+    metric: 'membership', metrics, width: 240, showResetTime: false,
+    lang: 'en', data: { showMark: true }, ...over,
+  });
+
+  test('remaining is the complement of total used, including unused and exhausted quotas', () => {
+    assert.equal(Face.membershipRemaining(total(59.05)), 40.95);
+    assert.equal(Face.membershipRemaining(total(0)), 100);
+    assert.equal(Face.membershipRemaining(total(100)), 0);
+    assert.equal(Face.membershipRemaining(total(-1)), 100);
+    assert.equal(Face.membershipRemaining(total(101)), 0);
+    assert.equal(Face.membershipRemaining(total(59.054)), 40.95);
+    assert.equal(Face.membershipRemaining(total(Number.NaN)), null);
+    assert.equal(Face.membershipRemaining(total(Number.POSITIVE_INFINITY)), null);
+    assert.equal(Face.membershipRemaining(null), null);
+  });
+
+  test('Code-only quotas and context never provide a membership total', () => {
+    const codeOnly = ['5h', 'weekly', 'monthly_code', 'context'].map(id => ({
+      id, label: id, percent: 0, resetsAt: null,
+    }));
+    for (const metrics of [[], codeOnly, [total(Number.NaN)]]) {
+      assert.deepEqual(Face.kimiUsageFace(request(metrics)), {
+        text: { title: 'Total usage unavailable', message: 'Membership total not reported' },
+      });
+      assert.deepEqual(Face.kimiUsageFace(request(metrics, { metric: '', lang: 'zh' })), {
+        text: { title: '会员总额不可用', message: '未返回总会员额度' },
+      });
+    }
+  });
+
+  test('explicit Code and context choices retain the generic used-percentage face', () => {
+    const metrics = [total(59.05)];
+    for (const metric of ['5h', 'weekly', 'monthly', 'monthly_code', 'extra', 'context']) {
+      assert.equal(Face.kimiUsageFace(request(metrics, { metric })), null, metric);
+    }
+  });
+
+  test('reset text uses the local calendar date and the chosen key language', () => {
+    const reset = '2026-10-21T00:00:00.000Z';
+    const date = new Date(reset);
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    assert.equal(Face.formatMembershipReset(reset, 'en'), `Resets ${stamp}`);
+    assert.equal(Face.formatMembershipReset(reset, 'zh'), `${stamp} 重置`);
+    assert.equal(Face.formatMembershipReset(null, 'zh'), '');
+    assert.equal(Face.formatMembershipReset('not a date', 'en'), '');
+  });
+
+  test('membership images render at narrow and wide key sizes, with optional reset and mark', () => {
+    const metrics = [total(59.05)];
+    for (const lang of ['en', 'zh']) {
+      for (const width of [60, 120, 240, 460]) {
+        const image = Face.kimiUsageFace(request(metrics, { width, lang, showResetTime: true }));
+        assert.equal(typeof image.image, 'string');
+        assert.deepEqual(pngSize(image.image), [width, 60]);
+      }
+      const withReset = Face.kimiUsageFace(request(metrics, { lang, showResetTime: true })).image;
+      const noReset = Face.kimiUsageFace(request(metrics, { lang })).image;
+      assert.ok(withReset !== noReset, 'the reset setting changes the rendered face');
+      const noMark = Face.kimiUsageFace(request(metrics, { lang, data: { showMark: false } })).image;
+      assert.ok(noMark !== noReset, 'the mark setting changes the rendered face');
+      assert.ok(
+        Face.kimiUsageFace(request([total(0)], { lang })).image !==
+          Face.kimiUsageFace(request([total(100)], { lang })).image,
+        'unused and exhausted membership quotas draw different faces'
+      );
+    }
+  });
+});
+
+describe('Kimi usage settings', () => {
+  const pluginDir = path.join(here, '..', 'dev.sese.flexbar_claude_code_usage.plugin');
+  const manifest = JSON.parse(fs.readFileSync(path.join(pluginDir, 'manifest.json'), 'utf8'));
+  const source = fs.readFileSync(path.join(pluginDir, 'ui', 'kimi_usage.vue'), 'utf8');
+  const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const component = Function(script.replace('export default', 'return'))();
+  function settings(data = {}, lang = 'en', response = { success: true, metrics: [] }) {
+    const strings = manifest['local'][lang === 'zh' ? 'zh-CN' : 'en'];
+    const vm = {
+      ...component.data(), modelValue: { data }, $i18n: { locale: lang },
+      $fd: { sendToBackend: async () => response },
+      $t: (key, vars = {}) => {
+        let text = key.split('.').reduce((node, part) => node?.[part], strings);
+        assert.equal(typeof text, 'string', key);
+        for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, value);
+        return text;
+      },
+    };
+    for (const [name, method] of Object.entries(component.methods)) vm[name] = method.bind(vm);
+    for (const [name, compute] of Object.entries(component.computed)) {
+      Object.defineProperty(vm, name, { get: () => compute.call(vm) });
+    }
+    return vm;
+  }
+
+  test('new library keys and uninitialized settings default to membership remaining', async () => {
+    const key = manifest.keyLibrary.children.find(c => c.cid.endsWith('.kimi_usage'));
+    assert.equal(key.data.metric, 'membership');
+    for (const data of [{}, { metric: null }]) {
+      const vm = settings(data, 'zh');
+      component.mounted.call(vm);
+      await vm.check();
+      assert.equal(data.metric, 'membership');
+      assert.equal(data.lang, 'zh');
+      assert.equal(data.showResetTime, true);
+      assert.equal(data.showMark, true);
+    }
+  });
+
+  test('missing membership total stays selectable and shows its own unavailable explanation', async () => {
+    const metrics = ['5h', 'weekly', 'monthly_code'].map(id => ({ id, label: id, percent: 0, resetsAt: null }));
+    for (const lang of ['en', 'zh']) {
+      const vm = settings({ metric: '5h' }, lang, { success: true, metrics });
+      await vm.check();
+      const membership = vm.metricOptions.find(o => o.value === 'membership');
+      assert.ok(!membership.props?.disabled);
+      assert.match(membership.title, lang === 'zh' ? /总额不可用/ : /total unavailable/);
+      vm.pickMetric('membership');
+      assert.equal(vm.modelValue.data.metric, 'membership');
+      assert.equal(vm.substituteText, '');
+      assert.match(vm.membershipText, lang === 'zh' ? /尚未返回会员总额度/ : /not reported the total membership quota/);
+      const code = vm.metricOptions.find(o => o.value === '5h');
+      assert.ok(!code.props?.disabled);
+      assert.match(code.title, lang === 'zh' ? /Code.*已用/ : /Code.*used/);
+    }
+  });
+
+  test('a reported monthly total enables membership, while legacy default and explicit Code settings persist', async () => {
+    const metrics = [
+      { id: 'monthly', label: 'Month', percent: 59.05, resetsAt: null },
+      { id: '5h', label: '5h', percent: 0, resetsAt: null },
+    ];
+    for (const metric of ['', 'membership', '5h']) {
+      const data = { metric };
+      const vm = settings(data, 'en', { success: true, metrics });
+      component.mounted.call(vm);
+      await vm.check();
+      assert.equal(data.metric, metric);
+      assert.equal(vm.substituteText, '');
+      assert.ok(!vm.metricOptions.find(o => o.value === 'membership').props?.disabled);
+      assert.doesNotMatch(vm.metricOptions.find(o => o.value === 'membership').title, /unavailable/);
+      if (metric === '5h') assert.equal(vm.membershipText, '');
+      else assert.equal(vm.membershipText, 'Total membership remaining: 40.95%');
+    }
+  });
+
+  test('the Chinese membership summary displays the actual total remaining percentage', async () => {
+    const metrics = [
+      { id: 'monthly', label: 'Month', percent: 59.05, resetsAt: null },
+      { id: '5h', label: '5h', percent: 0, resetsAt: null },
+    ];
+    const vm = settings({ metric: 'membership' }, 'zh', { success: true, metrics });
+    await vm.check();
+    assert.equal(vm.membershipText, '会员总额剩余：40.95%');
+    metrics[0].percent = 75;
+    assert.equal(vm.membershipText, '会员总额剩余：25%');
+  });
+});
+
 describe('Kimi usage keys', () => {
+  test('default and membership keys show total remaining while explicit Code keys keep their used meters', async () => {
+    const t = tree();
+    login(t.code, { base: Date.now() });
+    const payload = structuredClone(CURRENT);
+    payload.usages.limit_month_total.used_ratio = 0.5905;
+    globalThis.fetch = async () => json(payload);
+    const { cid, keys, sent, settle } = keyGroup(t.config);
+    const data = { showResetTime: false, showMark: true, lang: 'en' };
+    const metrics = Api.parseUsagePayload(payload, FIXED);
+    try {
+      await keys.alive('FAKE-DEVICE-1', ['', 'membership', '5h', 'weekly'].map((metric, i) => ({
+        uid: i + 1, cid, width: 240, data: { ...data, metric },
+      })));
+      await settle();
+      const membership = Face.kimiUsageFace({
+        metric: 'membership', metrics, width: 240, showResetTime: false, lang: 'en', data,
+      }).image;
+      assert.ok(sent.get(1) === membership, 'the legacy default draws membership remaining');
+      assert.ok(sent.get(2) === membership, 'the explicit default draws membership remaining');
+      for (const [uid, id] of [[3, '5h'], [4, 'weekly']]) {
+        const metric = metrics.find(m => m.id === id);
+        const expected = await R.renderUsageKey(240, metric, {
+          showResetTime: false, ...Kit.markOptions(KIMI_BRAND, data),
+          bgColor: undefined, lang: 'en', dropVersion: true,
+        });
+        assert.ok(sent.get(uid) === expected, `${id} keeps its used-percentage meter`);
+        assert.ok(sent.get(uid) !== membership, `${id} is separate from membership remaining`);
+      }
+    } finally {
+      keys.stop();
+    }
+  });
+
+  test('missing total is unavailable for default, membership and total used keys despite Code and context data', async () => {
+    const t = tree();
+    login(t.code, { base: Date.now() });
+    writeDesktop(t.desktop, { usage: { [convKey(1)]: ctxEntry(0.4, FIXED) } });
+    globalThis.fetch = async () => json(LIVE);
+    const { cid, keys, sent, settle } = keyGroup(t.config);
+    try {
+      await keys.alive('FAKE-DEVICE-1', ['', 'membership', 'monthly'].map((metric, i) => ({
+        uid: i + 1, cid, width: 240, data: { metric, lang: 'zh', showResetTime: false },
+      })));
+      await settle();
+      const unavailable = messageFace(240, '会员总额不可用', '未返回总会员额度');
+      for (const uid of [1, 2, 3]) {
+        assert.ok(sent.get(uid) === unavailable, `key ${uid} cannot substitute a Code or context quota`);
+      }
+    } finally {
+      keys.stop();
+    }
+  });
+
   test('without Kimi data every key draws a face, without network', async () => {
     const t = tree();
     const { cid, keys, sent, settle } = keyGroup(t.config);
@@ -1227,8 +1465,7 @@ describe('Kimi usage keys', () => {
       assert.equal(globalThis.fetch.calls.length, 0);
       assert.equal(sent.get(1), messageFace(300, 'Not logged in', 'Run kimi login'));
       assert.equal(sent.get(2), messageFace(120, '未登录', '请运行 kimi login'));
-      assert.deepEqual(pngSize(sent.get(3)), [300, 60]); // the context meter
-      assert.notEqual(sent.get(3), messageFace(300, 'Not logged in', 'Run kimi login'));
+      assert.equal(sent.get(3), messageFace(300, 'Total usage unavailable', 'Membership total not reported'));
       assert.ok(!info.some(line => line.includes('is not reported')), info.join('\n'));
     } finally {
       keys.stop();

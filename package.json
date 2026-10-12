@@ -1,5 +1,5 @@
 {
-    "version": "0.4.1",
+    "version": "0.4.2",
     "scripts": {
         "build": "rollup -c",
         "dev": "npm-run-all plugin:unlink plugin:link -p plugin:watch plugin:debug",
@@ -29,7 +29,9 @@
         "check:privacy:history": "node scripts/check-privacy.mjs --history",
         "check:privacy:all": "node scripts/check-privacy.mjs --history \"HEAD --branches --remotes=origin --not --remotes=upstream\"",
         "setup:hooks": "git config core.hooksPath .githooks",
-        "test:mac-app-newsession": "tsc --outDir .test-build-mac-app-newsession --rootDir src --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/macAppNewSession.ts src/newSessionKey.ts && node --test scripts/test-mac-app-newsession.mjs"
+        "test:mac-app-newsession": "tsc --outDir .test-build-mac-app-newsession --rootDir src --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/macAppNewSession.ts src/newSessionKey.ts && node --test scripts/test-mac-app-newsession.mjs",
+        "test:kimi-desktop-token": "tsc --outDir .test-build-kimi-desktop-token --rootDir src --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/providers/kimi/usageDesktopToken.ts && node --test scripts/test-kimi-desktop-token.mjs",
+        "test:kimi-membership-api": "tsc --outDir .test-build-kimi-usage --rootDir src --module commonjs --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict --types node src/providers/kimi/usage.ts && node --test scripts/test-kimi-membership-api.mjs"
     },
     "type": "commonjs",
     "dependencies": {

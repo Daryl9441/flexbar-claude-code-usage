@@ -72,6 +72,11 @@ export function percentFromRatio(ratio: number): number {
   return Math.min(100, Math.max(0, Math.ceil(exact)));
 }
 
+/** Total membership usage keeps the subscription page's two decimal places. */
+export function percentFromTotalRatio(ratio: number): number {
+  return Math.round(Math.min(1, Math.max(0, ratio)) * 10_000) / 100;
+}
+
 /** An ISO reset time from a timestamp string, or null. */
 function isoTime(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
@@ -103,8 +108,10 @@ function quotaMetrics(usages: unknown): UsageMetric[] {
     const entry = usages[field];
     if (!isRecord(entry)) return [];
     const ratio = num(entry.used_ratio);
-    if (ratio === null) return [];
-    return [metric(id, percentFromRatio(ratio), isoTime(entry.reset_time))];
+    if (ratio === null || (id === 'monthly' && ratio < 0)) return [];
+    const percent =
+      id === 'monthly' ? percentFromTotalRatio(ratio) : percentFromRatio(ratio);
+    return [metric(id, percent, isoTime(entry.reset_time))];
   });
 }
 
@@ -194,7 +201,10 @@ function legacyReset(detail: Record<string, unknown>, now: number) {
   return null;
 }
 
-function legacyPercent(detail: Record<string, unknown>): number | null {
+function legacyPercent(
+  detail: Record<string, unknown>,
+  total = false
+): number | null {
   const limit = num(detail.limit);
   if (limit === null || limit <= 0) return null;
   let used = num(detail.used);
@@ -203,7 +213,10 @@ function legacyPercent(detail: Record<string, unknown>): number | null {
     if (remaining === null) return null;
     used = limit - remaining;
   }
-  return percentFromRatio(used / limit);
+  if (total && used < 0) return null;
+  return total
+    ? percentFromTotalRatio(used / limit)
+    : percentFromRatio(used / limit);
 }
 
 function legacyMetrics(
@@ -222,10 +235,10 @@ function legacyMetrics(
       if (!isRecord(item)) return;
       const detail = isRecord(item.detail) ? item.detail : item;
       const window = isRecord(item.window) ? item.window : {};
-      const percent = legacyPercent(detail);
-      if (percent === null) return;
       const seconds = windowSeconds(window, item, detail);
       const id = legacyId(seconds, index);
+      const percent = legacyPercent(detail, id === 'monthly');
+      if (percent === null) return;
       if (out.some(m => m.id === id)) return;
       const label =
         METRIC_LABEL[id] ?? legacyLabel(seconds, index, item, detail);

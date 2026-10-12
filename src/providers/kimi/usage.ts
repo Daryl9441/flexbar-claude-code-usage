@@ -5,17 +5,18 @@
  * (GET <baseUrl>/usages, ./usageApi.ts) with the CLI's own OAuth login
  * (./usageAuth.ts, endpoint and slot from ./usageConfig.ts): 5-hour, weekly,
  * monthly and the monthly Kimi Code share, plus the extra-usage booster
- * wallet. The Kimi desktop app keeps its plan data behind its own web
- * session, which this plugin never touches; the only desktop number is the
- * context fill of the current Kimi Work task (./usageContext.ts, local and
- * credential-free), added as the `context` metric.
+ * wallet. When that endpoint omits the total, ./usageMembership.ts reads
+ * the Kimi app's current access_token and queries its shared subscription
+ * pool. The desktop session stays read-only; renewal belongs to Kimi.
+ * Kimi Work context fill (./usageContext.ts) is a separate metric.
  *
  * | Found on this computer          | Metrics / key face                       |
  * | ------------------------------- | ---------------------------------------- |
- * | Kimi Code logged in             | 5h, weekly, … (+ context with Kimi Work) |
- * | … key set to a limit not on the | the default plan limit (5h when there),  |
- * |   plan (e.g. monthly_code)      |   with its own chip (substituteMetric)   |
- * | only Kimi Work context data     | context                                  |
+ * | Kimi Code logged in             | Membership total left by default         |
+ * | … total not reported            | Explicitly unavailable, no other quota   |
+ * | … other selected limit missing | An available plan limit with its chip    |
+ * |   (e.g. monthly_code)           |   (substituteMetric)                     |
+ * | only Kimi Work context data     | No total; context when selected          |
  * | Kimi Code folder, no login      | "Not logged in · Run kimi login"         |
  * | login rejected / tombstone      | "Login expired · Run kimi login"         |
  * | expired, refreshing turned off  | "Login expired · Run kimi to refresh"    |
@@ -40,7 +41,7 @@ import {
 } from '../types';
 
 import { kimiCodeHome, kimiDesktopDir } from './paths';
-import { parseUsagePayload, requestUsage } from './usageApi';
+import { orderMetrics, parseUsagePayload, requestUsage } from './usageApi';
 import {
   AuthDeps,
   CLI_LOCK,
@@ -50,6 +51,12 @@ import {
 } from './usageAuth';
 import { loadEndpoint } from './usageConfig';
 import { isDirectory, readContextMetric } from './usageContext';
+import {
+  MEMBERSHIP_METRIC,
+  kimiUsageFace,
+  membershipMissingText,
+} from './usageFace';
+import { fetchDesktopMembership } from './usageMembership';
 
 /** Fetches closer together than this reuse the last result in describe() */
 const DESCRIBE_CACHE_MS = 30_000;
@@ -65,12 +72,12 @@ const LABEL_ZH: Record<string, string> = {
 
 const TEXT = {
   notInstalled: {
-    en: { title: 'Kimi not found', message: 'Install Kimi Code' },
-    zh: { title: '未找到 Kimi', message: '请安装 Kimi Code' },
+    en: { title: 'Kimi not found', message: 'Install Kimi' },
+    zh: { title: '未找到 Kimi', message: '请安装 Kimi' },
   },
   desktopOnly: {
-    en: { title: 'No usage data', message: 'Log in with Kimi Code' },
-    zh: { title: '暂无用量数据', message: '请登录 Kimi Code' },
+    en: { title: 'No usage data', message: 'Log in to Kimi' },
+    zh: { title: '暂无用量数据', message: '请登录 Kimi' },
   },
   noLimits: {
     en: { title: 'No usage data', message: 'No limits reported' },
@@ -82,7 +89,9 @@ const TEXT = {
   },
 } satisfies Record<string, Record<Lang, KeyText>>;
 
-export type KimiUsageDeps = AuthDeps;
+export type KimiUsageDeps = AuthDeps & {
+  membershipFetch?: (desktopDir: string) => Promise<UsageMetric | null>;
+};
 
 export function defaultDeps(): KimiUsageDeps {
   return {
@@ -129,12 +138,46 @@ function cacheKey(config: PluginConfig, deps: KimiUsageDeps): string {
 }
 
 /**
- * Every Kimi limit available on this computer, plan limits first (5h is
- * the default), the Kimi Work context last.
+ * Every Kimi limit available on this computer, plan limits first and the
+ * Kimi Work context last. The default face reads only the monthly total.
  */
 export async function fetchKimiUsage(
   config: PluginConfig,
   deps: KimiUsageDeps = defaultDeps()
+): Promise<UsageMetric[]> {
+  const desktop = kimiDesktopDir(config, deps.platform, deps.env);
+  const membership = async () => {
+    try {
+      return await (deps.membershipFetch
+        ? deps.membershipFetch(desktop)
+        : fetchDesktopMembership(desktop, deps));
+    } catch {
+      return null;
+    }
+  };
+  let metrics: UsageMetric[];
+  try {
+    metrics = await fetchCodeUsage(config, deps);
+  } catch (error) {
+    // An app login can supply membership even without a usable Code login.
+    const total = await membership();
+    if (!total) throw error;
+    planGap = error instanceof ProviderError ? error : null;
+    const context = await readContextMetric(desktop).catch(() => null);
+    return context ? [total, context] : [total];
+  }
+  if (!metrics.some(metric => metric.id === 'monthly')) {
+    const total = await membership();
+    // Existing Code keys fall back through this order. The membership face
+    // finds the total by id and does not need it at the front of the list.
+    if (total) metrics = orderMetrics([...metrics, total]);
+  }
+  return metrics;
+}
+
+async function fetchCodeUsage(
+  config: PluginConfig,
+  deps: KimiUsageDeps
 ): Promise<UsageMetric[]> {
   const home = kimiCodeHome(config, deps.env);
   const desktop = kimiDesktopDir(config, deps.platform, deps.env);
@@ -156,7 +199,7 @@ export async function fetchKimiUsage(
       reason = (await isDirectory(desktop))
         ? new ProviderError(
             'not-configured',
-            'The Kimi desktop app keeps its plan usage to itself. Log in with Kimi Code (`kimi login`) for plan limits.',
+            'No usable Kimi app or Code login was found for usage.',
             { keyText: TEXT.desktopOnly }
           )
         : new ProviderError(
@@ -224,16 +267,23 @@ function logText(error: unknown): string {
 
 /**
  * The limit a key draws when its own is not on the user's plan (a plan
- * without the monthly limits, a turned-off booster wallet): the default plan
+ * without a Code-only limit, a turned-off booster wallet): an available plan
  * limit, i.e. the first one returned (5h when the plan has it), drawn with
- * its own chip. Never for the Kimi Work context, and never without plan
- * limits (not logged in, …): missingText words those.
+ * its own chip. Never for the membership total or Kimi Work context, and
+ * never without plan limits (not logged in, …): missingText words those.
  */
 function substituteMetric(
   metricId: string,
   metrics: UsageMetric[]
 ): string | null {
-  if (metricId === 'context') return null;
+  if (
+    metricId === MEMBERSHIP_METRIC ||
+    metricId === '' ||
+    metricId === 'monthly' ||
+    metricId === 'context'
+  ) {
+    return null;
+  }
   return metrics.find(m => m.id !== 'context')?.id ?? null;
 }
 
@@ -243,6 +293,13 @@ function substituteMetric(
  * this limit".
  */
 function missingText(metricId: string, lang: Lang): KeyText | null {
+  if (
+    metricId === MEMBERSHIP_METRIC ||
+    metricId === '' ||
+    metricId === 'monthly'
+  ) {
+    return membershipMissingText(lang);
+  }
   if (metricId === 'context') return TEXT.noContext[lang];
   const extra = planGap?.extra.keyText;
   if (!extra) return null;
@@ -264,8 +321,7 @@ export type KimiUsageSource = UsageSource & {
 };
 
 export const usageSource: KimiUsageSource = {
-  // '' = the first metric returned: 5h when the plan has it
-  defaultMetric: '',
+  defaultMetric: MEMBERSHIP_METRIC,
 
   fetch: config => fetchAndRemember(config ?? {}),
 
@@ -277,6 +333,8 @@ export const usageSource: KimiUsageSource = {
   substituteMetric,
 
   missingText,
+
+  face: kimiUsageFace,
 
   /**
    * The key's settings page ('usage-status'): the available metrics, or a

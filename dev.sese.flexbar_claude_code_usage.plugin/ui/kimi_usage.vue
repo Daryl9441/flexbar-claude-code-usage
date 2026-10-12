@@ -48,6 +48,9 @@
         <v-row>
             <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
+                <p v-if="membershipText" class="text-caption mx-2">
+                    {{ membershipText }}
+                </p>
                 <p v-if="substituteText" class="text-caption mx-2">
                     {{ substituteText }}
                 </p>
@@ -63,15 +66,11 @@
 </template>
 
 <script>
-// Kimi Usage key settings. The metric list is fixed (the backend's metric ids
-// in src/providers/kimi/usageApi.ts); limits only an older server reports are
-// appended from the backend's reply. Once the backend has answered with plan
-// limits, the ones the account does not report are marked and disabled: a
-// key set to one shows the default limit instead (usageSource.substituteMetric
-// in src/providers/kimi/usage.ts). Default and the current choice stay
-// selectable, and so do extra usage and the Kimi Work context, which depend
-// on the booster wallet and the desktop app rather than on the plan.
+// Membership remaining uses the monthly total (Kimi + Code). It stays
+// selectable when that total is missing; Code-only limits cannot replace it.
+// Other limits retain the backend's plan availability and substitution rules.
 const METRICS = [
+    { value: "membership", key: "metricMembership" },
     { value: "5h", key: "metric5h" },
     { value: "weekly", key: "metricWeekly" },
     { value: "monthly", key: "metricMonthly" },
@@ -136,6 +135,16 @@ export default {
                 if (value === "" || this.reported.includes(value)) {
                     return option;
                 }
+                if (value === "membership") {
+                    return this.reported.includes("monthly")
+                        ? option
+                        : {
+                              ...option,
+                              title: this.$t("KimiUsage.UI.metricNoMembership", {
+                                  metric: option.title,
+                              }),
+                          };
+                }
                 // the Kimi Work context comes from the desktop app, not the
                 // plan: it may appear later, so it stays selectable
                 if (value === "context") {
@@ -165,10 +174,39 @@ export default {
                 };
             });
         },
+        membershipText() {
+            const current = this.modelValue.data.metric;
+            if (current === "monthly") {
+                return this.metrics.length > 0 &&
+                    !this.metrics.some(m => m.id === "monthly")
+                    ? this.$t("KimiUsage.UI.membershipUnavailable")
+                    : "";
+            }
+            if (current && current !== "membership") return "";
+            const total = this.metrics.find(m => m.id === "monthly");
+            if (total && Number.isFinite(total.percent)) {
+                const used = Math.min(100, Math.max(0, total.percent));
+                return this.$t("KimiUsage.UI.membershipRemaining", {
+                    percent: Math.round((100 - used) * 100) / 100,
+                });
+            }
+            return this.$t(
+                this.metrics.length > 0 &&
+                    !this.metrics.some(m => m.id === "monthly")
+                    ? "KimiUsage.UI.membershipUnavailable"
+                    : "KimiUsage.UI.membershipHint"
+            );
+        },
         // the limit a key set to an unavailable plan limit shows instead
         substituteText() {
             const current = this.modelValue.data.metric;
-            if (!this.reported || !current || current === "context") {
+            if (
+                !this.reported ||
+                !current ||
+                current === "membership" ||
+                current === "monthly" ||
+                current === "context"
+            ) {
                 return "";
             }
             if (this.reported.includes(current)) return "";
@@ -237,7 +275,9 @@ export default {
     },
     mounted() {
         const data = this.modelValue.data;
-        if (data.metric === undefined || data.metric === null) data.metric = "";
+        if (data.metric === undefined || data.metric === null) {
+            data.metric = "membership";
+        }
         if (data.showResetTime === undefined) data.showResetTime = true;
         if (data.showMark === undefined) data.showMark = true;
         // key texts follow the FlexDesigner language until changed here
