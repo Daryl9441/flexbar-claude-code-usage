@@ -108,10 +108,13 @@ When the Kimi Code login has expired, the key refreshes it with the CLI's own pr
 
 **Kimi Sessions** works like the Claude Sessions key (same states, `+N`, press for the running list). It merges Kimi Code CLI sessions (`~/.kimi-code/sessions`) with the desktop app's Kimi Work tasks. Questions and approvals from Kimi Code 1.5 journals are known, not guessed; a sub-agent waiting for you shows on its parent session. Unread Kimi Work results stay "Done" for up to 12 hours; archived tasks are hidden.
 
+Pressing the key rotates one step further: after the running list, a **scheduled-tasks board** page shows Kimi Work's Blueprint automations — a state dot (blue running, red last run failed, green scheduled, grey manual/paused), the title and the next run per row, paged like the list, and the same 15 seconds without a press returns to the session face. Next runs are computed from each task's cron in its own timezone. The page is skipped for CLI-only keys and on computers without the Kimi desktop app.
+
 | Setting | Default | Description |
 | --- | --- | --- |
 | Sessions from | Kimi Code and Kimi Work | Both, only Kimi Work (the Kimi app), or only Kimi Code (CLI) |
-| Include scheduled tasks | off | Also show Kimi Work's scheduled tasks |
+| Include scheduled tasks | off | Also list Kimi Work's scheduled-task conversations as sessions |
+| Scheduled tasks page | on | End the press rotation with the scheduled-tasks board |
 | Project filter | empty | Part of the Kimi Code project path or the Kimi Work project |
 | Idle after | 15 min | When a finished session counts as idle |
 | Key text language, Show project name, Show Kimi mark | | As on the Claude key |

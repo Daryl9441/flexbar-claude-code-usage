@@ -292,6 +292,15 @@ outside the repository with `assert` changed to `with` in
   (Kimi Code `state.json` and `wire.jsonl` journals), `sessionDesktop.ts`
   (Kimi Work stores, daemon state, sqlite titles via `node:sqlite`,
   read-only), `sessionFs.ts`, `session.ts` (`sessionProvider`).
+  `automations.ts` (Kimi Work Blueprint scheduled tasks under
+  `daimon-share/daimon/agents/main/blueprint/automations/`, read-only via
+  `JsonFile`; a task's prompt, description and workspace and a run's logs
+  are never read) and `cronNext.ts` (five-field cron next run in an IANA
+  timezone via Intl, no dependency) back the Session key's
+  scheduled-tasks board: the press rotation's last page, off with the key's
+  `automationsPage: false`, skipped for `source: 'cli'` and when the
+  desktop app is absent, surfaced through the optional
+  `SessionSource.automations` hook (other providers unchanged).
   `newSession.ts`: macOS Kimi Code App only, using `mac-app-new-session` with
   fixed bundle `com.kimi.code.desktop`. The shared native helper presses
   File > New Session (文件 > 新建会话) and verifies the new-session route and
