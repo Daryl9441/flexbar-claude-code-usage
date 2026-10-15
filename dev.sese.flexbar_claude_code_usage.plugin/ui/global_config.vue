@@ -133,6 +133,38 @@
                             hide-details
                         ></v-text-field>
                     </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">Grok Bot</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.grokbotDir"
+                            :label="$t('Config.GrokbotDir')"
+                            :hint="$t('Config.GrokbotDirHint')"
+                            placeholder="~/Library/Application Support/Grok Bot"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.grokbotDataRoot"
+                            :label="$t('Config.GrokbotDataRoot')"
+                            :hint="$t('Config.GrokbotDataRootHint')"
+                            placeholder="~/.grokbot"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.cursorStateDb"
+                            :label="$t('Config.CursorStateDb')"
+                            :hint="$t('Config.CursorStateDbHint')"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
                 </v-row>
             </v-card-text>
             <v-card-actions>

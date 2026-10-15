@@ -13,7 +13,7 @@ A key can instead show one usage limit as a meter: the current percentage used, 
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
 ![Per-model meter](docs/media/render-v4-model-full.png)
 
-The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI) and [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI). They appear in FlexDesigner's key library under "AI Coding Usage", twelve keys in all.
+The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI), [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI) and [Grok Bot](#grok-bot-keys) (the Grok Bot desktop app). They appear in FlexDesigner's key library under "AI Coding Usage", fifteen keys in all.
 
 The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
 
@@ -207,6 +207,47 @@ Requirements and limitations:
 - Antigravity's summaries carry no error state, so the red **Error** state does not occur.
 - On keys narrower than about 180 px, the two-row dual face has no room for the group's name: use the default or a single-limit meter there, whose tag names the group.
 
+## Grok Bot keys
+
+Three keys show the [Grok Bot](https://cursor.com) desktop app (bundle `com.anysphere.sand`). This is the Cursor / SpaceXAI assistant, not Groq and not the Grok Build CLI under `~/.grok`. The mark is a generic rounded head drawn on the key (turn it off with **Show Grok Bot mark**).
+
+**Grok Bot Usage** shows how much of the weekly allowance is used, the same percentage the app's account menu calls "Weekly usage". It asks Cursor's dashboard (`GetSandUsageStatus` on `api2.cursor.sh`) with the Cursor app's access token, read from Cursor's `state.vscdb`. The request runs only when Grok Bot is installed: the same call would otherwise report whichever account Cursor is signed into. The local transcript mirror has no token counts, so this percentage is the only usage number.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Usage limit | Weekly (used) | The weekly allowance, as the percentage used |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show time until reset | on | Show the countdown until the allowance resets |
+| Show Grok Bot mark | on | Show the Grok Bot mark next to the meter |
+
+A key that cannot show a meter says why: "Not installed", "Not logged in" (sign in to the Cursor app with the account Grok Bot uses), "Login expired", "Cannot read login", "Pooled plan" (a shared enterprise allowance has no per-account reading), "No allowance", "Unreadable data", "Network error", "Usage error" or "Rate limited". A network or server error keeps the last meter. A pooled plan and an account with no included allowance are not drawn as 0%.
+
+![Grok Bot weekly usage (240 px)](docs/media/render-grokbot-usage.png)
+
+**Grok Bot Sessions** lists the bots in the app's local roster. A bot whose roster says it is waiting for you shows as **Question** ("Waiting for you"). A bot with recent activity shows as **Done** until **Idle after**. The app itself, when its session-marker pid still belongs to a Grok process, shows as **Idle** ("Grok Bot"): open, with no evidence it is generating. Local tasks counted by `local-exec-daemon.json` show as **Working** ("Local work"). The agent runs on Grok Bot's remote computer, and the transcript mirror has no live "still generating" flag, so a bot is never marked **Working** from a fresh transcript line. Chat text is not read onto the key.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Bot filter | empty | Part of a bot's name. Empty shows every recent bot, plus the app when it is open |
+| Idle after | 15 min | How long a finished bot stays on the key |
+| Follow the Grok Bot process | on | A marker or daemon pid counts only while that process name mentions Grok |
+| Key text language, Show bot name, Show Grok Bot mark | | As on the Claude key |
+
+Press the key for the list. Cost: a 5-second tick and a watch on the user-data folder and the data root. Nothing is sent off this computer.
+
+![Grok Bot waiting (240 px)](docs/media/render-grokbot-session.png)
+
+**Grok Bot** (the third key) opens the app with `grokbot://app/v1/open`. That link focuses the main window and accepts no prompt. There is no deep link that starts a blank chat, and the in-app New chat control can leave an existing draft in place, so this key does not press it and its face says **Open Grok Bot**, not "New Session".
+
+![Open Grok Bot (200 px)](docs/media/render-grokbot-open.png)
+
+Requirements and limitations:
+
+- Grok Bot installed. The usage key also needs the Cursor app signed in on this computer; it does not decrypt Grok Bot's own secret store.
+- The usage percentage is the Cursor account's Grok Bot weekly allowance. It is not a per-bot or per-chat meter.
+- Session status is what the local files can prove. An open app with no roster row waiting for you shows as Idle, not Working.
+- Windows and Linux can open the link when the app is registered for `grokbot://`. The usage and session keys read the same files on each platform; process names come from `ps` (macOS), `/proc` (Linux) or `tasklist` (Windows).
+
 ## How it works
 
 The plugin reads the OAuth token that Claude Code stores on your machine (`~/.claude/.credentials.json`, or the Keychain on macOS) and polls the same usage endpoint that Claude Code's own `/usage` command uses. Usage polling costs no tokens and nothing is sent anywhere except to `api.anthropic.com`.
@@ -234,6 +275,7 @@ Requirements:
 - Gemini Usage sends the Gemini CLI login only to Google (`oauth2.googleapis.com` to refresh the access token in memory, `cloudcode-pa.googleapis.com` for the quota) and never writes to `~/.gemini`.
 - The Kimi and Gemini Sessions keys only read local files (and, for Gemini, the process list); they write nothing and send nothing anywhere. Session titles and prompts never reach the log.
 - The Antigravity keys send nothing off this computer. They read Antigravity's local data and the process list, and ask the language server of the running Antigravity app or IDE on `127.0.0.1` only, with the CSRF token from its command line in a request header (never logged, shown or written anywhere). Antigravity Usage's request may make the language server refresh the quota from Google, as Antigravity does itself. They write nothing to Antigravity's data; account name, email and conversation titles never reach the log.
+- Grok Bot Usage sends the Cursor app's access token only to `api2.cursor.sh` (`GetSandUsageStatus`), over https, and only while Grok Bot is installed. The token is read from Cursor's state database and is never logged, shown or written back. Grok Bot's own encrypted secret store is not decrypted. Grok Bot Sessions and the open key only read local files (and, for the session key, whether a pid still belongs to a Grok process) or hand `grokbot://app/v1/open` to the system opener. Chat text is not logged.
 - No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
 
 ## Installation
@@ -258,8 +300,11 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Gemini Cloud project | empty | Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota (default `$GOOGLE_CLOUD_PROJECT`) |
 | Antigravity data folder | auto-detect | The folder holding `antigravity`, `antigravity-cli` and `antigravity-ide` (default `~/.gemini`) |
 | Antigravity CLI program, agy | auto-detect | Path to the `agy` program, if it is not found on `PATH`, `~/.local/bin` or Homebrew's folders |
+| Grok Bot user-data folder | auto-detect | Override the Electron userData folder that holds the session marker and client mirror |
+| Grok Bot data root | auto-detect | Override `$SAND_DATA_ROOT` or `~/.grokbot` (local-exec daemon) |
+| Cursor state database | auto-detect | Override Cursor's `state.vscdb` for the token Grok Bot Usage sends to Cursor |
 
-**Per key** (Claude Usage; the Kimi, Gemini and Antigravity keys are described above):
+**Per key** (Claude Usage; the Kimi, Gemini, Antigravity and Grok Bot keys are described above):
 
 | Setting | Default | Description |
 | --- | --- | --- |

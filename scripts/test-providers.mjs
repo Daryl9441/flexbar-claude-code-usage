@@ -108,6 +108,9 @@ const EXPECTED_CIDS = [
   `${PLUGIN}.antigravity_usage`,
   `${PLUGIN}.antigravity_session`,
   `${PLUGIN}.antigravity_newsession`,
+  `${PLUGIN}.grokbot_usage`,
+  `${PLUGIN}.grokbot_session`,
+  `${PLUGIN}.grokbot_newsession`,
 ];
 
 describe('key ids and manifest', () => {
@@ -119,7 +122,7 @@ describe('key ids and manifest', () => {
   const { local: locales } = manifest;
 
   test('keyCid keeps Claude ids and prefixes the others', () => {
-    const cids = ['claude', 'kimi', 'gemini', 'antigravity'].flatMap(p =>
+    const cids = ['claude', 'kimi', 'gemini', 'antigravity', 'grokbot'].flatMap(p =>
       ['usage', 'session', 'newsession'].map(k => Kit.keyCid(p, k))
     );
     assert.deepEqual(cids, EXPECTED_CIDS);
@@ -130,7 +133,7 @@ describe('key ids and manifest', () => {
   test('the registry lists the providers and one key group per cid, in order', () => {
     assert.deepEqual(
       Registry.PROVIDERS.map(p => p.id),
-      ['claude', 'kimi', 'gemini', 'antigravity']
+      ['claude', 'kimi', 'gemini', 'antigravity', 'grokbot']
     );
     assert.deepEqual(
       Registry.ROUTES.map(r => r.cid),

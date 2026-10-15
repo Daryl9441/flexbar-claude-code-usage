@@ -4,8 +4,9 @@ Guide for coding agents working on this repository: the **AI Coding Usage**
 plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
 `dev.sese.flexbar_claude_code_usage`), a fork of
 `Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
-status and new-session keys for Claude Code, Kimi, Gemini CLI and Google
-Antigravity (desktop app, IDE and the `agy` CLI).
+status and new-session keys for Claude Code, Kimi, Gemini CLI, Google
+Antigravity (desktop app, IDE and the `agy` CLI) and Grok Bot (the
+desktop app, bundle `com.anysphere.sand`).
 
 ## Privacy rules (mandatory)
 
@@ -147,6 +148,8 @@ npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Co
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
 npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
 npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
+npm run test:grokbot-usage        # Grok Bot usage: Cursor GetSandUsageStatus, token lookup, refusals (fetch and sqlite stubbed)
+npm run test:grokbot-session      # Grok Bot roster/marker/daemon scan and the open-app launcher (pids stubbed)
 npm run test:mac-app-newsession   # native App action, empty-view checks and settings-page Test (all stubbed)
 npm run test:claude-proxy     # Claude proxy routing (claudeProxy, HTTPS_PROXY/NO_PROXY, scutil), CONNECT tunnel + fallback, 403 forbidden, Keychain write via security -i (fetch and child_process stubbed, loopback servers only)
 npm run test:claude-login     # Claude login state: signed out, invalid_grant, refresh lock, deadlines, write-back (fetch, child_process and Keychain stubbed)
@@ -354,6 +357,21 @@ outside the repository with `assert` changed to `with` in
   http/https, net and child_process (only `mkfifo` runs, for named-pipe
   fixtures): a test never reaches a real Antigravity language server or
   process.
+- Grok Bot (`src/providers/grokbot/`): the desktop app (`com.anysphere.sand`),
+  not Groq and not the Grok Build CLI. `paths.ts` (Electron userData,
+  `$SAND_DATA_ROOT` / `~/.grokbot`, Cursor `state.vscdb`, `grokbot://app/v1/open`).
+  Usage: `usage.ts` (`usageSource`; POST
+  `api2.cursor.sh` `GetSandUsageStatus` only when the app is installed),
+  `usageAuth.ts` (Cursor `cursorAuth/accessToken` from `state.vscdb`,
+  read-only, WAL copied, never logged; Grok Bot safeStorage is not
+  decrypted), `usageDecode.ts` (weekly used %, pooled and no-allowance
+  refusals), `usageText.ts`. Sessions: `session.ts` (`sessionProvider`),
+  `sessionScan.ts` (roster and transcript timestamps only; message text
+  dropped), `sessionProcs.ts` (pid plus a short process name that mentions
+  Grok; the command line is never read). A bot is Question or Done; the
+  app process is Idle; local-exec inflight is Working. New session:
+  `newSession.ts` opens the activation URL and does not claim a blank
+  chat. `base32.ts` names the persistence slice files.
 - Key-group hooks a provider may use: `UsageSource.substituteMetric` (a
   reported metric to draw instead of one the fetch did not return; logged
   once per key), `UsageSource.missingText` (text for a metric the fetch did

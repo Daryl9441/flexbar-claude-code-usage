@@ -14,7 +14,8 @@ import type { Lang } from '../sessionView';
 
 export type { Lang, RunningSession, SessionState, SessionStatus };
 
-export type ProviderId = 'claude' | 'kimi' | 'gemini' | 'antigravity';
+export type ProviderId =
+  'claude' | 'kimi' | 'gemini' | 'antigravity' | 'grokbot';
 
 /** The three key types every provider has. */
 export type KeyKind = 'usage' | 'session' | 'newsession';
@@ -66,6 +67,15 @@ export type PluginConfig = {
   antigravityDir?: string;
   /** Antigravity CLI program (default: agy, found on PATH and common folders) */
   antigravityPath?: string;
+  /** Grok Bot Electron userData override (session marker and client mirror) */
+  grokbotDir?: string;
+  /** Grok Bot data root override (default $SAND_DATA_ROOT or ~/.grokbot) */
+  grokbotDataRoot?: string;
+  /**
+   * Cursor state database holding the access token Grok Bot's weekly
+   * allowance is read with (default: Cursor's globalStorage/state.vscdb)
+   */
+  cursorStateDb?: string;
   [key: string]: unknown;
 };
 

@@ -315,6 +315,73 @@
                 "data": {
                     "target": "app"
                 }
+            },
+            {
+                "title": "$GrokbotUsage.Title",
+                "tip": "$GrokbotUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.grokbot_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAKASURBVGiB7Zg9bFJRFMf/VD4KtK/1AQFKFWuiPkh18YMYSUyMg1MHY7pIdDC6mXTEdK5xcimOjhpNSjoZG42LibE2Ojm0CsbQYFkIBfpAeJTWDaUP23O54Cvx/bZ7cy7n/Lj3cQ/PMOp1b6OH6dO6AF50Aa3RBbRGF9AaXUBrdAGtMbIuMJv6MBH2IRQUIfkFOAQzVwHZgoKVVBFLyznMv02jXmdrzQwszdxpSUT0ugSfy9pOrXvyPVPCw+df8WklR15DPkLOIQtm7pzsWvEAMOa1Y+b2OJzDFvIassD0zSAEG/OJY0awm3AvEiDHkwS8DitCQZGnLibOjzvgddB2miTg99h4a2LG6+gnxREF7Lz1MNPRHajW6rz1MGM0GmhxnUi2Ud7Eu89Z5OUazgVEHB1pvWPJtIyPX9YxPGBC+JQTA1b+9NyfsJat4NaDJRTkWmNuavI4Ji8daop7+noVsXiiMT44aMbj6Fl4iGf9b3C3Ei/erzUVDwBPXqVUcc/erDaN1zcUvPyQ4U3PL1CuqJ+PUos5ubypjvvJ/2xxC5w4PKiaCxwRVHOSXx3Xao4VboErIQ8mwr7GeMRpbXmTTt8Iwi3+Pu9XL47i8hk3b/rO/ApFIxKiEWnXGJ/Livn7FzqRrome/z+gC2gNSSCZlrtfyQ6+/aDlJAts/cOX8FvbQIL4pZEEKkodC4v8tyaVhcUMqgrtkiM/A7F4EvkdLUM3KJRqmP2jZ9oLskBeVvAonmy3LjKxuaSqt9oNprcSACAKZty9dgySX4BryAJb/4F26mxQrtaRzVexnCpidi6BXFFhWs8ssN/4P+6B/YwuoDW6gNboAlqjC2hNzwv8AjW/pvSF+bvNAAAAAElFTkSuQmCC",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showResetTime": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$GrokbotSession.Title",
+                "tip": "$GrokbotSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.grokbot_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAKASURBVGiB7Zg9bFJRFMf/VD4KtK/1AQFKFWuiPkh18YMYSUyMg1MHY7pIdDC6mXTEdK5xcimOjhpNSjoZG42LibE2Ojm0CsbQYFkIBfpAeJTWDaUP23O54Cvx/bZ7cy7n/Lj3cQ/PMOp1b6OH6dO6AF50Aa3RBbRGF9AaXUBrdAGtMbIuMJv6MBH2IRQUIfkFOAQzVwHZgoKVVBFLyznMv02jXmdrzQwszdxpSUT0ugSfy9pOrXvyPVPCw+df8WklR15DPkLOIQtm7pzsWvEAMOa1Y+b2OJzDFvIassD0zSAEG/OJY0awm3AvEiDHkwS8DitCQZGnLibOjzvgddB2miTg99h4a2LG6+gnxREF7Lz1MNPRHajW6rz1MGM0GmhxnUi2Ud7Eu89Z5OUazgVEHB1pvWPJtIyPX9YxPGBC+JQTA1b+9NyfsJat4NaDJRTkWmNuavI4Ji8daop7+noVsXiiMT44aMbj6Fl4iGf9b3C3Ei/erzUVDwBPXqVUcc/erDaN1zcUvPyQ4U3PL1CuqJ+PUos5ubypjvvJ/2xxC5w4PKiaCxwRVHOSXx3Xao4VboErIQ8mwr7GeMRpbXmTTt8Iwi3+Pu9XL47i8hk3b/rO/ApFIxKiEWnXGJ/Livn7FzqRrome/z+gC2gNSSCZlrtfyQ6+/aDlJAts/cOX8FvbQIL4pZEEKkodC4v8tyaVhcUMqgrtkiM/A7F4EvkdLUM3KJRqmP2jZ9oLskBeVvAonmy3LjKxuaSqt9oNprcSACAKZty9dgySX4BryAJb/4F26mxQrtaRzVexnCpidi6BXFFhWs8ssN/4P+6B/YwuoDW6gNboAlqjC2hNzwv8AjW/pvSF+bvNAAAAAElFTkSuQmCC",
+                    "width": 240
+                },
+                "data": {
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showMark": true,
+                    "liveDetection": true
+                }
+            },
+            {
+                "title": "$GrokbotNewSession.Title",
+                "tip": "$GrokbotNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.grokbot_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAKASURBVGiB7Zg9bFJRFMf/VD4KtK/1AQFKFWuiPkh18YMYSUyMg1MHY7pIdDC6mXTEdK5xcimOjhpNSjoZG42LibE2Ojm0CsbQYFkIBfpAeJTWDaUP23O54Cvx/bZ7cy7n/Lj3cQ/PMOp1b6OH6dO6AF50Aa3RBbRGF9AaXUBrdAGtMbIuMJv6MBH2IRQUIfkFOAQzVwHZgoKVVBFLyznMv02jXmdrzQwszdxpSUT0ugSfy9pOrXvyPVPCw+df8WklR15DPkLOIQtm7pzsWvEAMOa1Y+b2OJzDFvIassD0zSAEG/OJY0awm3AvEiDHkwS8DitCQZGnLibOjzvgddB2miTg99h4a2LG6+gnxREF7Lz1MNPRHajW6rz1MGM0GmhxnUi2Ud7Eu89Z5OUazgVEHB1pvWPJtIyPX9YxPGBC+JQTA1b+9NyfsJat4NaDJRTkWmNuavI4Ji8daop7+noVsXiiMT44aMbj6Fl4iGf9b3C3Ei/erzUVDwBPXqVUcc/erDaN1zcUvPyQ4U3PL1CuqJ+PUos5ubypjvvJ/2xxC5w4PKiaCxwRVHOSXx3Xao4VboErIQ8mwr7GeMRpbXmTTt8Iwi3+Pu9XL47i8hk3b/rO/ApFIxKiEWnXGJ/Livn7FzqRrome/z+gC2gNSSCZlrtfyQ6+/aDlJAts/cOX8FvbQIL4pZEEKkodC4v8tyaVhcUMqgrtkiM/A7F4EvkdLUM3KJRqmP2jZ9oLskBeVvAonmy3LjKxuaSqt9oNprcSACAKZty9dgySX4BryAJb/4F26mxQrtaRzVexnCpidi6BXFFhWs8ssN/4P+6B/YwuoDW6gNboAlqjC2hNzwv8AjW/pvSF+bvNAAAAAElFTkSuQmCC",
+                    "width": 120
+                },
+                "data": {}
             }
         ]
     },
@@ -335,7 +402,7 @@
                 }
             },
             "Config": {
-                "Description": "Shows usage limits and session status for Claude Code, Kimi, Gemini and Antigravity from the logins and session files already on this computer, with no API key. Every setting below is optional: leave it empty for the default. The refresh interval applies to all of them.",
+                "Description": "Shows usage limits and session status for Claude Code, Kimi, Gemini, Antigravity and Grok Bot from the logins and session files already on this computer, with no API key of its own. Every setting below is optional: leave it empty for the default. The refresh interval applies to all of them.",
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
@@ -355,7 +422,13 @@
                 "GeminiCloudProjectHint": "Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota; empty uses $GOOGLE_CLOUD_PROJECT.",
                 "AntigravityDir": "Antigravity data folder (optional)",
                 "AntigravityDirHint": "The folder that holds antigravity, antigravity-cli and antigravity-ide; empty uses ~/.gemini.",
-                "AntigravityPath": "Antigravity CLI program, agy (optional)"
+                "AntigravityPath": "Antigravity CLI program, agy (optional)",
+                "GrokbotDir": "Grok Bot user-data folder (optional)",
+                "GrokbotDirHint": "The app's Electron userData folder (session marker and client mirror). Empty uses the platform default, such as ~/Library/Application Support/Grok Bot on macOS.",
+                "GrokbotDataRoot": "Grok Bot data root (optional)",
+                "GrokbotDataRootHint": "Where local-exec-daemon.json lives. Empty uses $SAND_DATA_ROOT or ~/.grokbot.",
+                "CursorStateDb": "Cursor state database (optional)",
+                "CursorStateDbHint": "Cursor's state.vscdb, read-only, for the access token Grok Bot's weekly allowance is requested with. Empty uses Cursor's own globalStorage database. Grok Bot and Cursor must be the same account."
             },
             "Session": {
                 "Title": "Claude Sessions",
@@ -625,6 +698,61 @@
                     "testOpened": "New session action completed",
                     "testFailed": "Could not create a new session; check the key error or plugin log"
                 }
+            },
+            "GrokbotUsage": {
+                "Title": "Grok Bot Usage",
+                "Tip": "Shows how much of Grok Bot's weekly allowance is used, from the Cursor account signed in on this computer",
+                "UI": {
+                    "metric": "Usage limit",
+                    "metricWeekly": "Weekly (used)",
+                    "lang": "Key text language",
+                    "showResetTime": "Show time until reset",
+                    "showMark": "Show Grok Bot mark",
+                    "checking": "Checking…",
+                    "connected": "Weekly {percent}% used · {plan}",
+                    "planUnknown": "plan not named",
+                    "notAvailable": "Not available: {error}",
+                    "problemNotInstalled": "Grok Bot is not installed",
+                    "problemSignedOut": "Cursor is not signed in",
+                    "problemExpired": "The Cursor login was rejected",
+                    "problemUnreadable": "Cursor's state database could not be read",
+                    "problemPooled": "This account uses a pooled allowance with no per-account reading",
+                    "problemNoAllowance": "This account has no included Grok Bot allowance",
+                    "problemParse": "Cursor returned an unrecognized usage response",
+                    "problemNetwork": "The usage request did not reach Cursor",
+                    "problemHttp": "Cursor's usage service failed",
+                    "problemRateLimited": "Cursor rate-limited the usage request",
+                    "hintAccount": "The percentage is the Grok Bot weekly allowance of the account the Cursor app is signed into. Sign in to Cursor with the same account as Grok Bot. The plugin reads that login and does not decrypt Grok Bot's own secret store.",
+                    "hintInstall": "Install the Grok Bot desktop app. Without it, this key does not ask Cursor for a number.",
+                    "hintPooled": "A pooled enterprise allowance has no per-account weekly percentage, so the key does not show a meter.",
+                    "hintNoAllowance": "Cursor answered, and this account has no included Grok Bot allowance."
+                }
+            },
+            "GrokbotSession": {
+                "Title": "Grok Bot Sessions",
+                "Tip": "Shows whether Grok Bot is open, whether a bot is waiting for you, and whether local work is in flight",
+                "UI": {
+                    "projectFilter": "Bot filter",
+                    "projectFilterHint": "Part of a bot's name. Empty shows every bot, plus the app when it is open.",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show bot name",
+                    "showMark": "Show Grok Bot mark",
+                    "liveDetection": "Follow the Grok Bot process",
+                    "liveDetectionHint": "On: a session-marker or local-exec pid counts only while that process name mentions Grok. Off: roster files only.",
+                    "checking": "Checking…",
+                    "found": "{project}: {state}",
+                    "notFound": "No Grok Bot status in {dir}",
+                    "limitHint": "Waiting for you comes from the roster. Local work comes from the local-exec daemon. A bot is not marked Working from the transcript mirror: that mirror has no live turn flag."
+                }
+            },
+            "GrokbotNewSession": {
+                "Title": "Grok Bot",
+                "Tip": "Opens Grok Bot. A blank new chat cannot be started from outside the app",
+                "UI": {
+                    "lang": "Key text language",
+                    "appHint": "Opens Grok Bot with grokbot://app/v1/open, which focuses the app and sends no prompt. There is no deep link that starts a blank chat, and the in-app New chat control can keep an existing draft, so this key does not press it."
+                }
             }
         },
         "zh-CN": {
@@ -643,7 +771,7 @@
                 }
             },
             "Config": {
-                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi、Gemini 和 Antigravity 的用量限制与会话状态，无需 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对所有服务都有效。",
+                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi、Gemini、Antigravity 和 Grok Bot 的用量限制与会话状态，插件自己不需要 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对所有服务都有效。",
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
@@ -663,7 +791,13 @@
                 "GeminiCloudProjectHint": "Gemini Code Assist 标准版或企业版配额使用的 Google Cloud 项目 ID；留空则使用 $GOOGLE_CLOUD_PROJECT。",
                 "AntigravityDir": "Antigravity 数据目录（可选）",
                 "AntigravityDirHint": "包含 antigravity、antigravity-cli 和 antigravity-ide 的目录；留空则使用 ~/.gemini。",
-                "AntigravityPath": "Antigravity CLI 程序 agy（可选）"
+                "AntigravityPath": "Antigravity CLI 程序 agy（可选）",
+                "GrokbotDir": "Grok Bot 用户数据目录（可选）",
+                "GrokbotDirHint": "应用的 Electron userData 目录（会话标记和本地镜像）。留空则使用系统默认位置，macOS 上为 ~/Library/Application Support/Grok Bot。",
+                "GrokbotDataRoot": "Grok Bot 数据根目录（可选）",
+                "GrokbotDataRootHint": "local-exec-daemon.json 所在目录。留空则使用 $SAND_DATA_ROOT 或 ~/.grokbot。",
+                "CursorStateDb": "Cursor 状态数据库（可选）",
+                "CursorStateDbHint": "只读打开 Cursor 的 state.vscdb，用其中的访问令牌请求 Grok Bot 的每周额度。留空则使用 Cursor 自己的 globalStorage 数据库。Grok Bot 与 Cursor 必须是同一个账号。"
             },
             "Session": {
                 "Title": "Claude 会话",
@@ -932,6 +1066,61 @@
                     "testSession": "打开新会话",
                     "testOpened": "新会话动作已完成",
                     "testFailed": "无法新建会话，请查看按键错误或插件日志"
+                }
+            },
+            "GrokbotUsage": {
+                "Title": "Grok Bot 用量",
+                "Tip": "显示 Grok Bot 每周额度已用多少，来自本机 Cursor 登录的账号",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricWeekly": "每周（已用）",
+                    "lang": "按键文字语言",
+                    "showResetTime": "显示距重置的时间",
+                    "showMark": "显示 Grok Bot 标记",
+                    "checking": "正在检查…",
+                    "connected": "每周已用 {percent}% · {plan}",
+                    "planUnknown": "未标明方案",
+                    "notAvailable": "不可用：{error}",
+                    "problemNotInstalled": "未安装 Grok Bot",
+                    "problemSignedOut": "Cursor 未登录",
+                    "problemExpired": "Cursor 登录被拒绝",
+                    "problemUnreadable": "无法读取 Cursor 的状态数据库",
+                    "problemPooled": "此账号使用共享额度，没有个人读数",
+                    "problemNoAllowance": "此账号没有包含的 Grok Bot 额度",
+                    "problemParse": "Cursor 返回了无法识别的用量数据",
+                    "problemNetwork": "用量请求没有到达 Cursor",
+                    "problemHttp": "Cursor 的用量服务失败",
+                    "problemRateLimited": "Cursor 限制了用量请求",
+                    "hintAccount": "这个百分比是 Cursor 应用当前登录账号的 Grok Bot 每周额度。请用与 Grok Bot 相同的账号登录 Cursor。插件读取该登录，不会解密 Grok Bot 自己的密钥存储。",
+                    "hintInstall": "请安装 Grok Bot 桌面应用。未安装时，此按键不会向 Cursor 查询数字。",
+                    "hintPooled": "企业共享额度没有个人每周百分比，因此按键不显示仪表。",
+                    "hintNoAllowance": "Cursor 已回答，此账号没有包含的 Grok Bot 额度。"
+                }
+            },
+            "GrokbotSession": {
+                "Title": "Grok Bot 会话",
+                "Tip": "显示 Grok Bot 是否打开、是否有机器人在等你，以及本地任务是否在执行",
+                "UI": {
+                    "projectFilter": "机器人筛选",
+                    "projectFilterHint": "机器人名称的一部分。留空则显示全部，并在应用打开时显示应用本身。",
+                    "idleMinutes": "空闲判定（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示机器人名称",
+                    "showMark": "显示 Grok Bot 标记",
+                    "liveDetection": "跟随 Grok Bot 进程",
+                    "liveDetectionHint": "开启：会话标记或本地执行进程的 pid 只有在进程名包含 Grok 时才算在运行。关闭：只看名单文件。",
+                    "checking": "正在检查…",
+                    "found": "{project}：{state}",
+                    "notFound": "在 {dir} 中没有 Grok Bot 状态",
+                    "limitHint": "“等待你”来自机器人名单。本地任务来自 local-exec 守护进程。转录镜像没有“正在生成”标记，因此不会据此把某个机器人显示为正在工作。"
+                }
+            },
+            "GrokbotNewSession": {
+                "Title": "Grok Bot",
+                "Tip": "打开 Grok Bot。应用外部无法可靠地开始一个空白新对话",
+                "UI": {
+                    "lang": "按键文字语言",
+                    "appHint": "使用 grokbot://app/v1/open 打开 Grok Bot，该链接只把应用调到前台，不发送内容。没有能开始空白对话的深链，应用内的 New chat 还可能保留未发送的草稿，因此此按键不会去按它。"
                 }
             }
         }
