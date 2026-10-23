@@ -82,6 +82,31 @@
                         </p>
                     </v-col>
                     <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.moonshotApiKey"
+                            :label="$t('Config.MoonshotApiKey')"
+                            :hint="$t('Config.MoonshotApiKeyHint')"
+                            type="password"
+                            autocomplete="off"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-select
+                            v-model="modelValue.config.moonshotSite"
+                            :items="moonshotSites"
+                            :label="$t('Config.MoonshotSite')"
+                            item-title="title"
+                            item-value="value"
+                            hide-details
+                            outlined
+                        ></v-select>
+                        <p class="text-caption text-medium-emphasis">
+                            {{ $t("Config.MoonshotSiteHint") }}
+                        </p>
+                    </v-col>
+                    <v-col cols="12">
                         <p class="text-subtitle-2 mt-2">Gemini</p>
                     </v-col>
                     <v-col cols="12">
@@ -165,6 +190,20 @@
                             outlined
                         ></v-text-field>
                     </v-col>
+                    <v-col cols="12">
+                        <p class="text-subtitle-2 mt-2">DeepSeek</p>
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field
+                            v-model="modelValue.config.deepseekApiKey"
+                            :label="$t('Config.DeepseekApiKey')"
+                            :hint="$t('Config.DeepseekApiKeyHint')"
+                            type="password"
+                            autocomplete="off"
+                            persistent-hint
+                            outlined
+                        ></v-text-field>
+                    </v-col>
                 </v-row>
             </v-card-text>
             <v-card-actions>
@@ -197,6 +236,17 @@ export default {
             statusText: "",
         };
     },
+    computed: {
+        moonshotSites() {
+            return [
+                { title: this.$t("Config.MoonshotSiteCn"), value: "cn" },
+                {
+                    title: this.$t("Config.MoonshotSiteGlobal"),
+                    value: "global",
+                },
+            ];
+        },
+    },
     methods: {
         saveConfig() {
             this.$fd.setConfig(this.modelValue.config);
@@ -228,6 +278,9 @@ export default {
         // on unless turned off (the backend reads a missing value as on)
         if (this.modelValue.config.kimiRefreshLogin === undefined) {
             this.modelValue.config.kimiRefreshLogin = true;
+        }
+        if (this.modelValue.config.moonshotSite === undefined) {
+            this.modelValue.config.moonshotSite = "cn";
         }
         this.testConnection();
     },

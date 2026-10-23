@@ -5,8 +5,9 @@ plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
 `dev.sese.flexbar_claude_code_usage`), a fork of
 `Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
 status and new-session keys for Claude Code, Kimi, Gemini CLI, Google
-Antigravity (desktop app, IDE and the `agy` CLI) and Grok Bot (the
-desktop app, bundle `com.anysphere.sand`).
+Antigravity (desktop app, IDE and the `agy` CLI), Grok Bot (the
+desktop app, bundle `com.anysphere.sand`) and DeepSeek (API account
+balance from `api.deepseek.com`).
 
 ## Privacy rules (mandatory)
 
@@ -142,13 +143,14 @@ npm run test:newsession       # New Session key tests (launcher stubbed; never o
 npm run test:usage            # Usage Meter tests: remaining %, dual-key layout (tsc -> .test-build/, node --test)
 npm run test:privacy          # privacy scanner, hooks and redaction tests
 npm run test:providers        # provider layer: kit, generic key groups, launchers, manifest ids
-npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kimi Work context (fetch stubbed)
+npm run test:kimi-usage       # Kimi usage: quota API, login refresh + lock, Kimi Work context, Moonshot balance (fetch stubbed)
 npm run test:kimi-session     # Kimi Code CLI + Kimi Work sessions, Kimi New Session launcher
 npm run test:gemini-usage     # Gemini usage: creds, CLI/OAuth-client lookup, Code Assist quota (fetch stubbed)
 npm run test:gemini-session   # Gemini session files, process probe (stubbed), Gemini New Session launcher
 npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
 npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
 npm run test:grokbot-usage        # Grok Bot usage: Cursor GetSandUsageStatus, token lookup, refusals (fetch and sqlite stubbed)
+npm run test:deepseek-usage       # DeepSeek balance: GET /user/balance, API key handling, face (fetch stubbed)
 npm run test:grokbot-session      # Grok Bot roster/marker/daemon scan and the open-app launcher (pids stubbed)
 npm run test:mac-app-newsession   # native App action, empty-view checks and settings-page Test (all stubbed)
 npm run test:claude-proxy     # Claude proxy routing (claudeProxy, HTTPS_PROXY/NO_PROXY, scutil), CONNECT tunnel + fallback, 403 forbidden, Keychain write via security -i (fetch and child_process stubbed, loopback servers only)
@@ -288,7 +290,9 @@ outside the repository with `assert` changed to `with` in
   `config.toml`, region marker), `usageAuth.ts` (token file, refresh under
   the CLI's `oauth/<slot>.lock`, atomic 0600 write-back; off with
   `kimiRefreshLogin: false`), `usageApi.ts` (`/usages`, both response
-  formats, `booster_wallet` or `boosterWallet`), `usageContext.ts` (Kimi
+  formats, `booster_wallet` or `boosterWallet`), `usageBalance.ts`
+  (optional Moonshot `GET /v1/users/me/balance`: available, cash and
+  voucher; no key means no request), `usageContext.ts` (Kimi
   Work context fill from the desktop app). Sessions: `sessionSource.ts`
   (one source for all Kimi keys: watchers, poll, merge, notices per
   `source` setting), `sessionCli.ts` + `sessionWire.ts` + `sessionTail.ts`
@@ -372,6 +376,15 @@ outside the repository with `assert` changed to `with` in
   app process is Idle; local-exec inflight is Working. New session:
   `newSession.ts` opens the activation URL and does not claim a blank
   chat. `base32.ts` names the persistence slice files.
+- DeepSeek (`src/providers/deepseek/`): API account balance only.
+  `usage.ts` (`usageSource`; `deepseekApiKey` or `DEEPSEEK_API_KEY`,
+  Bearer to `https://api.deepseek.com/user/balance`, redirects refused,
+  the key never logged). `usageApi.ts` parses `is_available` and
+  `balance_infos` (`currency`, `total_balance`, `granted_balance`,
+  `topped_up_balance`). The face (`usageFace.ts`, `src/balanceRender.ts`)
+  draws the amount, not a used percent. `session.ts` is a static notice
+  (no local sessions). `newSession.ts` opens `https://chat.deepseek.com/`
+  and does not send the key.
 - Key-group hooks a provider may use: `UsageSource.substituteMetric` (a
   reported metric to draw instead of one the fetch did not return; logged
   once per key), `UsageSource.missingText` (text for a metric the fetch did

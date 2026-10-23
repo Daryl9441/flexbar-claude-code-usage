@@ -5,6 +5,8 @@
  */
 import { createCanvas } from '@napi-rs/canvas';
 
+import { formatMoney } from '../../balance';
+import { renderBalanceKey } from '../../balanceRender';
 import { FONT } from '../../fonts';
 import {
   COLORS,
@@ -22,6 +24,7 @@ import {
 } from '../types';
 
 import { KIMI_BRAND } from './brand';
+import { isApiBalanceMetric } from './usageBalance';
 
 /** Saved setting of the default membership view; `monthly` stays a meter. */
 export const MEMBERSHIP_METRIC = 'membership';
@@ -195,8 +198,61 @@ export function renderMembershipKey(
   return canvas.toDataURL('image/png');
 }
 
+const API_CAPTION: Record<string, Record<Lang, string>> = {
+  api: { en: 'API left', zh: 'API 剩余' },
+  api_cash: { en: 'Cash', zh: '现金' },
+  api_voucher: { en: 'Voucher', zh: '代金券' },
+};
+
+function apiDetail(metrics: UsageMetric[], lang: Lang): string {
+  const parts: string[] = [];
+  const cash = metrics.find(metric => metric.id === 'api_cash');
+  const voucher = metrics.find(metric => metric.id === 'api_voucher');
+  if (cash && typeof cash.amount === 'number') {
+    const label = lang === 'zh' ? '现金' : 'Cash';
+    parts.push(`${label} ${formatMoney(cash.amount, cash.currency || 'CNY')}`);
+  }
+  if (voucher && typeof voucher.amount === 'number') {
+    const label = lang === 'zh' ? '代金券' : 'Voucher';
+    parts.push(
+      `${label} ${formatMoney(voucher.amount, voucher.currency || 'CNY')}`
+    );
+  }
+  return parts.join(' · ');
+}
+
+/** The Moonshot balance rows. Other metrics keep the membership face. */
+function apiBalanceFace(request: UsageFaceRequest): UsageFace | null {
+  const metric = request.metrics.find(item => item.id === request.metric);
+  if (!metric || typeof metric.amount !== 'number') return null;
+  const lang = request.lang;
+  const blocked = metric.available === false;
+  const currency = metric.currency || 'CNY';
+  const mark = KIMI_BRAND.mark === 'clawd' ? null : KIMI_BRAND.mark;
+  return {
+    image: renderBalanceKey(request.width, {
+      product: 'Kimi',
+      caption: API_CAPTION[request.metric]?.[lang] ?? metric.label,
+      amountText: formatMoney(metric.amount, currency),
+      detail: blocked
+        ? lang === 'zh'
+          ? '无法调用 API'
+          : 'Cannot call the API'
+        : request.metric === 'api'
+          ? apiDetail(request.metrics, lang)
+          : '',
+      available: !blocked,
+      accent: KIMI_BRAND.accent,
+      showMark: request.data.showMark !== false,
+      mark,
+      bgColor: request.bgColor,
+    }),
+  };
+}
+
 /** Only the default view changes; explicitly selected meters stay intact. */
 export function kimiUsageFace(request: UsageFaceRequest): UsageFace | null {
+  if (isApiBalanceMetric(request.metric)) return apiBalanceFace(request);
   if (request.metric !== MEMBERSHIP_METRIC && request.metric !== '')
     return null;
   const monthly =

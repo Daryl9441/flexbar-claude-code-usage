@@ -5,7 +5,11 @@
  * (GET <baseUrl>/usages, ./usageApi.ts) with the CLI's own OAuth login
  * (./usageAuth.ts, endpoint and slot from ./usageConfig.ts): 5-hour, weekly,
  * monthly and the monthly Kimi Code share, plus the extra-usage booster
- * wallet. When that endpoint omits the total, ./usageMembership.ts reads
+ * wallet. With a Moonshot API key (plugin setting or MOONSHOT_API_KEY),
+ * ./usageBalance.ts also reads the open-platform balance
+ * (available, cash and voucher). That read never replaces the plan limits:
+ * a failure only affects keys set to those balance rows. When the quota
+ * endpoint omits the total, ./usageMembership.ts reads
  * the Kimi app's current access_token and queries its shared subscription
  * pool. The desktop session stays read-only; renewal belongs to Kimi.
  * Kimi Work context fill (./usageContext.ts) is a separate metric.
@@ -49,6 +53,11 @@ import {
   loginExpired,
   refreshOff,
 } from './usageAuth';
+import {
+  fetchMoonshotMetrics,
+  isApiBalanceMetric,
+  moonshotCacheToken,
+} from './usageBalance';
 import { loadEndpoint } from './usageConfig';
 import { isDirectory, readContextMetric } from './usageContext';
 import {
@@ -68,6 +77,9 @@ const LABEL_ZH: Record<string, string> = {
   monthly: '每月',
   extra: '加油包',
   context: '上下文',
+  api: '可用',
+  api_cash: '现金',
+  api_voucher: '代金券',
 };
 
 const TEXT = {
@@ -107,6 +119,10 @@ export function defaultDeps(): KimiUsageDeps {
 
 /** Why the last fetch had no plan limits, for keys that show one. */
 let planGap: ProviderError | null = null;
+/** Why the Moonshot balance rows are missing after a configured fetch. */
+let balanceGap: ProviderError | null = null;
+/** True when the last fetch had a Moonshot API key configured. */
+let balanceConfigured = false;
 /** The last successful fetch, reused by describe() for a short while. */
 let lastResult: { at: number; key: string; metrics: UsageMetric[] } | null =
   null;
@@ -121,6 +137,8 @@ let refusedToken: string | null = null;
 /** Forgets the remembered results (tests). */
 export function resetUsageState(): void {
   planGap = null;
+  balanceGap = null;
+  balanceConfigured = false;
   lastResult = null;
   refusedToken = null;
 }
@@ -134,6 +152,7 @@ function cacheKey(config: PluginConfig, deps: KimiUsageDeps): string {
     kimiCodeHome(config, deps.env),
     kimiDesktopDir(config, deps.platform, deps.env),
     config?.kimiRefreshLogin !== false,
+    moonshotCacheToken(config, deps.env),
   ]);
 }
 
@@ -155,23 +174,41 @@ export async function fetchKimiUsage(
       return null;
     }
   };
-  let metrics: UsageMetric[];
+  let metrics: UsageMetric[] = [];
+  let failure: unknown = null;
   try {
     metrics = await fetchCodeUsage(config, deps);
   } catch (error) {
     // An app login can supply membership even without a usable Code login.
     const total = await membership();
-    if (!total) throw error;
-    planGap = error instanceof ProviderError ? error : null;
-    const context = await readContextMetric(desktop).catch(() => null);
-    return context ? [total, context] : [total];
+    if (total) {
+      planGap = error instanceof ProviderError ? error : null;
+      const context = await readContextMetric(desktop).catch(() => null);
+      metrics = context ? [total, context] : [total];
+    } else {
+      failure = error;
+      planGap = error instanceof ProviderError ? error : null;
+    }
   }
-  if (!metrics.some(metric => metric.id === 'monthly')) {
+  if (failure === null && !metrics.some(metric => metric.id === 'monthly')) {
     const total = await membership();
     // Existing Code keys fall back through this order. The membership face
     // finds the total by id and does not need it at the front of the list.
     if (total) metrics = orderMetrics([...metrics, total]);
   }
+  const balance = await fetchMoonshotMetrics(config, {
+    fetch: deps.fetch,
+    env: deps.env,
+  });
+  balanceGap = balance.gap;
+  balanceConfigured = balance.configured;
+  if (balance.metrics.length > 0) metrics = [...metrics, ...balance.metrics];
+  if (metrics.length > 0) return metrics;
+  if (failure) {
+    if (balance.configured && balance.gap) throw balance.gap;
+    throw failure;
+  }
+  if (balance.gap) throw balance.gap;
   return metrics;
 }
 
@@ -280,11 +317,15 @@ function substituteMetric(
     metricId === MEMBERSHIP_METRIC ||
     metricId === '' ||
     metricId === 'monthly' ||
-    metricId === 'context'
+    metricId === 'context' ||
+    isApiBalanceMetric(metricId)
   ) {
     return null;
   }
-  return metrics.find(m => m.id !== 'context')?.id ?? null;
+  return (
+    metrics.find(m => m.id !== 'context' && !isApiBalanceMetric(m.id))?.id ??
+    null
+  );
 }
 
 /**
@@ -301,9 +342,24 @@ function missingText(metricId: string, lang: Lang): KeyText | null {
     return membershipMissingText(lang);
   }
   if (metricId === 'context') return TEXT.noContext[lang];
+  if (isApiBalanceMetric(metricId)) return apiMissingText(lang);
   const extra = planGap?.extra.keyText;
   if (!extra) return null;
   return 'title' in extra ? extra : extra[lang];
+}
+
+/** Text for a key set to the Moonshot balance when that row is absent. */
+function apiMissingText(lang: Lang): KeyText {
+  if (!balanceConfigured) {
+    return lang === 'zh'
+      ? { title: '需要 API 密钥', message: '请填写插件设置' }
+      : { title: 'API key needed', message: 'Plugin settings' };
+  }
+  const custom = balanceGap?.extra.keyText;
+  if (custom) return 'title' in custom ? custom : custom[lang];
+  return lang === 'zh'
+    ? { title: '暂无 API 余额', message: '未返回余额' }
+    : { title: 'No API balance', message: 'Balance not reported' };
 }
 
 async function fetchAndRemember(
@@ -357,6 +413,7 @@ export const usageSource: KimiUsageSource = {
         metrics: fresh,
         contextOnly,
         ...(contextOnly && planGap ? { planCode: planGap.code } : {}),
+        ...(balanceGap ? { balanceCode: balanceGap.code } : {}),
       } satisfies UsageDescription;
     } catch (error) {
       return {
