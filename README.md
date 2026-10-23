@@ -13,7 +13,7 @@ A key can instead show one usage limit as a meter: the current percentage used, 
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
 ![Per-model meter](docs/media/render-v4-model-full.png)
 
-The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI), [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI) and [Grok Bot](#grok-bot-keys) (the Grok Bot desktop app). They appear in FlexDesigner's key library under "AI Coding Usage", fifteen keys in all.
+The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI), [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI), [Grok Bot](#grok-bot-keys) (the Grok Bot desktop app) and [DeepSeek](#deepseek-keys) (the DeepSeek API account balance). They appear in FlexDesigner's key library under "AI Coding Usage", eighteen keys in all.
 
 The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
 
@@ -93,7 +93,7 @@ The desktop app and Code CLI can be signed in to different accounts. When the me
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Usage limit | Total membership remaining | Remaining total membership quota (Kimi + Code). Optional meters show used percentages for Code's 5-hour and 7-day limits, total membership usage, monthly Code share, extra usage (booster), or the Kimi Work context |
+| Usage limit | Total membership remaining | Remaining total membership quota (Kimi + Code). Optional meters show used percentages for Code's 5-hour and 7-day limits, total membership usage, monthly Code share, extra usage (booster), the Kimi Work context, or the Moonshot API balance (remaining, cash, voucher) |
 | Key text language | FlexDesigner language | English or Simplified Chinese |
 | Show time until reset | on | Show the reset date and time for membership remaining, or the countdown for a used-percentage meter |
 | Show Kimi mark | on | Show the Kimi mark next to the meter |
@@ -103,6 +103,8 @@ If the service does not report the membership total, the default key shows **Tot
 Not every plan reports every optional Code limit. Extra usage appears while the booster wallet is turned on and has purchased extra usage. An optional Code used-percentage key whose limit is missing shows the first available plan limit with its own label, and its settings page says so. The chosen setting is kept and resumes once the plan reports it.
 
 The **Kimi Work context** option needs no login: it shows how full the context window of the running (or latest) Kimi Work task is, read from the Kimi desktop app's data on this computer. Select it explicitly to display context usage.
+
+**API balance** is separate from membership. Set a Moonshot API key in the plugin settings (or `MOONSHOT_API_KEY`) and choose **API balance remaining**. The key then shows what is left on the Kimi open platform: `available_balance` from `GET https://api.moonshot.cn/v1/users/me/balance` (CNY on the China site; cash plus vouchers). **API cash balance** is `cash_balance` (the topped-up cash, which can be negative) and **API voucher balance** is `voucher_balance`. The international site (`api.moonshot.ai`, USD) is the **Kimi API site** setting; a key from one site does not work on the other. With no key, nothing is requested and the membership and Code meters stay as they were. A balance error does not replace a plan limit that was read successfully. At 0 or below, the face says the API cannot be called.
 
 When the Kimi Code login has expired, the key refreshes it with the CLI's own protocol: it takes the CLI's refresh lock, refreshes once and writes the new token pair back to the CLI's credential file. Turn off **Refresh an expired Kimi Code login** in the plugin settings to keep the key read-only; it then asks you to run `kimi` instead.
 
@@ -248,6 +250,20 @@ Requirements and limitations:
 - Session status is what the local files can prove. An open app with no roster row waiting for you shows as Idle, not Working.
 - Windows and Linux can open the link when the app is registered for `grokbot://`. The usage and session keys read the same files on each platform; process names come from `ps` (macOS), `/proc` (Linux) or `tasklist` (Windows).
 
+## DeepSeek keys
+
+Three keys are listed for DeepSeek. **DeepSeek Usage** is the balance. The session key only says that DeepSeek has no local coding sessions, and **Open DeepSeek** opens `https://chat.deepseek.com/` without sending the API key.
+
+**DeepSeek Usage** calls `GET https://api.deepseek.com/user/balance` with the API key from the plugin settings, or `DEEPSEEK_API_KEY` when that setting is empty. The key is a Bearer token on that request only. The default face shows the first currency's `total_balance` (CNY before USD). Granted balance and topped-up balance are separate choices. `is_available: false` still shows the amounts and says the balance is too low for API calls. Amounts are money, not a used percentage, so there is no quota bar.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Balance | First currency total | Total, granted or topped-up balance for each currency the account returns |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show DeepSeek mark | on | Show the DeepSeek mark |
+
+The same refresh interval as the other usage keys applies (180 seconds by default, at least 60, and at most one request every 30 seconds). A network or server error keeps the last amounts. A rejected key does not.
+
 ## How it works
 
 The plugin reads the OAuth token that Claude Code stores on your machine (`~/.claude/.credentials.json`, or the Keychain on macOS) and polls the same usage endpoint that Claude Code's own `/usage` command uses. Usage polling costs no tokens and nothing is sent anywhere except to `api.anthropic.com`.
@@ -276,6 +292,8 @@ Requirements:
 - The Kimi and Gemini Sessions keys only read local files (and, for Gemini, the process list); they write nothing and send nothing anywhere. Session titles and prompts never reach the log.
 - The Antigravity keys send nothing off this computer. They read Antigravity's local data and the process list, and ask the language server of the running Antigravity app or IDE on `127.0.0.1` only, with the CSRF token from its command line in a request header (never logged, shown or written anywhere). Antigravity Usage's request may make the language server refresh the quota from Google, as Antigravity does itself. They write nothing to Antigravity's data; account name, email and conversation titles never reach the log.
 - Grok Bot Usage sends the Cursor app's access token only to `api2.cursor.sh` (`GetSandUsageStatus`), over https, and only while Grok Bot is installed. The token is read from Cursor's state database and is never logged, shown or written back. Grok Bot's own encrypted secret store is not decrypted. Grok Bot Sessions and the open key only read local files (and, for the session key, whether a pid still belongs to a Grok process) or hand `grokbot://app/v1/open` to the system opener. Chat text is not logged.
+- Kimi Usage sends a Moonshot API key, only when one is set, as a Bearer token to `https://api.moonshot.cn/v1/users/me/balance` or `https://api.moonshot.ai/v1/users/me/balance`. It is not sent to the Kimi Code quota host, not written to disk, and not logged or drawn. The plugin setting is stored by FlexDesigner with the other settings, in the same way as the Claude proxy password.
+- DeepSeek Usage sends its API key only as a Bearer token to `https://api.deepseek.com/user/balance`, over https, with redirects refused. The key is not logged, drawn or written into an error. The session key reads nothing. Open DeepSeek only hands `https://chat.deepseek.com/` to the system opener.
 - No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
 
 ## Installation
@@ -295,6 +313,8 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Kimi Code folder | auto-detect | Override `$KIMI_CODE_HOME` or `~/.kimi-code` (login, sessions, `bin/kimi`) |
 | Kimi desktop app data folder | auto-detect | Override the Kimi app's data folder (`~/Library/Application Support/kimi-desktop` on macOS) |
 | Refresh an expired Kimi Code login | on | Let Kimi Usage refresh and write back an expired Kimi Code login; off keeps it read-only |
+| Kimi API key | empty | Moonshot key for the open-platform balance. Empty uses `MOONSHOT_API_KEY` |
+| Kimi API site | China (CNY) | `api.moonshot.cn` or the international `api.moonshot.ai` (USD). The key must belong to that site |
 | Gemini CLI folder | auto-detect | Override `$GEMINI_CLI_HOME/.gemini` or `~/.gemini` |
 | Gemini CLI program | auto-detect | Path to the `gemini` program, if it is not found on `PATH` or the usual install folders |
 | Gemini Cloud project | empty | Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota (default `$GOOGLE_CLOUD_PROJECT`) |
@@ -303,6 +323,7 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Grok Bot user-data folder | auto-detect | Override the Electron userData folder that holds the session marker and client mirror |
 | Grok Bot data root | auto-detect | Override `$SAND_DATA_ROOT` or `~/.grokbot` (local-exec daemon) |
 | Cursor state database | auto-detect | Override Cursor's `state.vscdb` for the token Grok Bot Usage sends to Cursor |
+| DeepSeek API key | empty | Key for the DeepSeek balance. Empty uses `DEEPSEEK_API_KEY` |
 
 **Per key** (Claude Usage; the Kimi, Gemini, Antigravity and Grok Bot keys are described above):
 

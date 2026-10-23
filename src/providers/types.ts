@@ -15,7 +15,7 @@ import type { Lang } from '../sessionView';
 export type { Lang, RunningSession, SessionState, SessionStatus };
 
 export type ProviderId =
-  'claude' | 'kimi' | 'gemini' | 'antigravity' | 'grokbot';
+  'claude' | 'kimi' | 'gemini' | 'antigravity' | 'grokbot' | 'deepseek';
 
 /** The three key types every provider has. */
 export type KeyKind = 'usage' | 'session' | 'newsession';
@@ -71,6 +71,22 @@ export type PluginConfig = {
   grokbotDir?: string;
   /** Grok Bot data root override (default $SAND_DATA_ROOT or ~/.grokbot) */
   grokbotDataRoot?: string;
+  /**
+   * DeepSeek API key for GET https://api.deepseek.com/user/balance.
+   * Empty uses DEEPSEEK_API_KEY. Never logged.
+   */
+  deepseekApiKey?: string;
+  /**
+   * Moonshot API key for the Kimi open-platform balance
+   * (GET /v1/users/me/balance). Empty uses MOONSHOT_API_KEY. Never logged.
+   */
+  moonshotApiKey?: string;
+  /**
+   * 'cn' (api.moonshot.cn, CNY) or 'global' (api.moonshot.ai, USD). Empty
+   * follows MOONSHOT_API_BASE when that is exactly one of those origins,
+   * otherwise China.
+   */
+  moonshotSite?: string;
   /**
    * Cursor state database holding the access token Grok Bot's weekly
    * allowance is read with (default: Cursor's globalStorage/state.vscdb)
@@ -133,6 +149,18 @@ export type UsageMetric = {
    * one, the label is shortened
    */
   tag?: string;
+  /**
+   * Absolute prepaid balance in `currency` units. Quota meters leave this
+   * out and use `percent` as the used share. A balance face draws `amount`
+   * and does not treat `percent` as usage.
+   */
+  amount?: number;
+  /** ISO 4217 code that goes with `amount`, e.g. CNY. */
+  currency?: string;
+  /**
+   * Whether this balance can still pay for API calls. Absent on quota meters.
+   */
+  available?: boolean;
 };
 
 /** What UsageKeys passes to a source's own key face (UsageSource.face). */

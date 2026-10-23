@@ -14,6 +14,7 @@ import { UsageKeys } from '../usageKey';
 
 import { ANTIGRAVITY } from './antigravity';
 import { CLAUDE } from './claude';
+import { DEEPSEEK } from './deepseek';
 import { GEMINI } from './gemini';
 import { GROKBOT } from './grokbot';
 import { KIMI } from './kimi';
@@ -26,6 +27,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
   GEMINI,
   ANTIGRAVITY,
   GROKBOT,
+  DEEPSEEK,
 ];
 
 export type KeyRoute = { provider: ProviderDef; kind: KeyKind; cid: string };

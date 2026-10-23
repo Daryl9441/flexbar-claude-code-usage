@@ -60,6 +60,15 @@
                 >
                     {{ $t("KimiUsage.UI.contextHint") }}
                 </p>
+                <p v-if="isApiMetric" class="text-caption mx-2">
+                    {{ $t("KimiUsage.UI.apiHint") }}
+                </p>
+                <p v-if="apiBalanceText" class="text-caption mx-2">
+                    {{ apiBalanceText }}
+                </p>
+                <p v-if="balanceWarning" class="text-caption mx-2">
+                    {{ balanceWarning }}
+                </p>
             </v-col>
         </v-row>
     </v-container>
@@ -77,9 +86,22 @@ const METRICS = [
     { value: "monthly_code", key: "metricMonthlyCode" },
     { value: "extra", key: "metricExtra" },
     { value: "context", key: "metricContext" },
+    { value: "api", key: "metricApi" },
+    { value: "api_cash", key: "metricApiCash" },
+    { value: "api_voucher", key: "metricApiVoucher" },
 ];
 
 // backend ProviderError codes with their own wording on this page
+const BALANCE_ERRORS = {
+    "no-credentials": "balanceRejected",
+    unauthorized: "balanceUnauthorized",
+    "rate-limited": "balanceRateLimited",
+    network: "balanceNetwork",
+    http: "balanceHttp",
+    parse: "balanceParse",
+    unsupported: "balanceRefused",
+};
+
 const ERROR_KEYS = {
     "not-installed": "errorNotInstalled",
     "not-configured": "errorNotConfigured",
@@ -107,6 +129,7 @@ export default {
             // with plan limits (not logged in, errors: nothing is marked)
             reported: null,
             statusText: "",
+            balanceCode: null,
         };
     },
     computed: {
@@ -165,6 +188,18 @@ export default {
                         }),
                     };
                 }
+                if (
+                    value === "api" ||
+                    value === "api_cash" ||
+                    value === "api_voucher"
+                ) {
+                    return {
+                        ...option,
+                        title: this.$t("KimiUsage.UI.metricNoApi", {
+                            metric: option.title,
+                        }),
+                    };
+                }
                 return {
                     ...option,
                     title: this.$t("KimiUsage.UI.metricNotOnPlan", {
@@ -205,7 +240,10 @@ export default {
                 !current ||
                 current === "membership" ||
                 current === "monthly" ||
-                current === "context"
+                current === "context" ||
+                current === "api" ||
+                current === "api_cash" ||
+                current === "api_voucher"
             ) {
                 return "";
             }
@@ -223,6 +261,29 @@ export default {
                         : fallback.label,
                 }
             );
+        },
+        isApiMetric() {
+            const current = this.modelValue.data.metric;
+            return (
+                current === "api" ||
+                current === "api_cash" ||
+                current === "api_voucher"
+            );
+        },
+        apiBalanceText() {
+            if (!this.isApiMetric) return "";
+            const metric = this.metrics.find(
+                item => item.id === this.modelValue.data.metric
+            );
+            if (!metric || typeof metric.amount !== "number") return "";
+            return this.$t("KimiUsage.UI.apiBalance", {
+                currency: metric.currency || "CNY",
+                amount: metric.amount,
+            });
+        },
+        balanceWarning() {
+            const name = this.balanceCode && BALANCE_ERRORS[this.balanceCode];
+            return name ? this.$t(`KimiUsage.UI.${name}`) : "";
         },
         langOptions() {
             return [
@@ -256,11 +317,13 @@ export default {
                         !response.contextOnly && plan.length > 0
                             ? this.metrics.map(m => m.id)
                             : null;
+                    this.balanceCode = response.balanceCode || null;
                     this.statusText = response.contextOnly
                         ? this.$t("KimiUsage.UI.contextOnly")
                         : this.$t("KimiUsage.UI.connected");
                 } else {
                     this.reported = null;
+                    this.balanceCode = null;
                     const key = response && ERROR_KEYS[response.code];
                     this.statusText = key
                         ? this.$t(`KimiUsage.UI.${key}`)

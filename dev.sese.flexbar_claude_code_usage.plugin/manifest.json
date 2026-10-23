@@ -4,7 +4,7 @@
     "version": "0.4.2",
     "author": "Sese-Schneider",
     "entry": "backend/plugin.cjs",
-    "description": "Display your Claude Code, Kimi, Gemini and Antigravity usage limits and sessions on your Flexbar",
+    "description": "Display your Claude Code, Kimi, Gemini, Antigravity, Grok Bot and DeepSeek usage on your Flexbar",
     "repo": "https://github.com/Sese-Schneider/flexbar-claude-code-usage",
     "sdk": {
         "version": "1.0.0"
@@ -382,6 +382,68 @@
                     "width": 120
                 },
                 "data": {}
+            },
+            {
+                "title": "$DeepseekUsage.Title",
+                "tip": "$DeepseekUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.deepseek_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-cash",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$DeepseekSession.Title",
+                "tip": "$DeepseekSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.deepseek_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-message-outline",
+                    "width": 240
+                },
+                "data": {
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$DeepseekNewSession.Title",
+                "tip": "$DeepseekNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.deepseek_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-open-in-new",
+                    "width": 120
+                },
+                "data": {}
             }
         ]
     },
@@ -402,7 +464,7 @@
                 }
             },
             "Config": {
-                "Description": "Shows usage limits and session status for Claude Code, Kimi, Gemini, Antigravity and Grok Bot from the logins and session files already on this computer, with no API key of its own. Every setting below is optional: leave it empty for the default. The refresh interval applies to all of them.",
+                "Description": "Shows usage for Claude Code, Kimi, Gemini, Antigravity, Grok Bot and DeepSeek. Claude, Gemini, Antigravity and Grok Bot use logins already on this computer. DeepSeek balance and the optional Kimi API balance need an API key below; leave a key empty to use the matching environment variable. The refresh interval applies to every provider.",
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
@@ -419,6 +481,12 @@
                 "GeminiPath": "Gemini CLI program (optional)",
                 "GeminiCloudProject": "Gemini Cloud project (optional)",
                 "KimiRefreshLoginHint": "On: an expired Kimi Code login is refreshed under the Kimi Code CLI’s own lock, which rewrites ~/.kimi-code/credentials/<slot>.json. Off: the key only reads it and asks you to run kimi.",
+                "MoonshotApiKey": "Kimi API key (optional)",
+                "MoonshotApiKeyHint": "Moonshot API key for the open-platform balance. Empty uses MOONSHOT_API_KEY. Stored with the other plugin settings and sent only as a Bearer token to api.moonshot.cn or api.moonshot.ai. Never shown on a key.",
+                "MoonshotSite": "Kimi API site",
+                "MoonshotSiteCn": "China (CNY, api.moonshot.cn)",
+                "MoonshotSiteGlobal": "International (USD, api.moonshot.ai)",
+                "MoonshotSiteHint": "The key and the site must belong to the same platform. China reports CNY; the international site reports USD.",
                 "GeminiCloudProjectHint": "Google Cloud project ID for Gemini Code Assist Standard or Enterprise quota; empty uses $GOOGLE_CLOUD_PROJECT.",
                 "AntigravityDir": "Antigravity data folder (optional)",
                 "AntigravityDirHint": "The folder that holds antigravity, antigravity-cli and antigravity-ide; empty uses ~/.gemini.",
@@ -428,7 +496,9 @@
                 "GrokbotDataRoot": "Grok Bot data root (optional)",
                 "GrokbotDataRootHint": "Where local-exec-daemon.json lives. Empty uses $SAND_DATA_ROOT or ~/.grokbot.",
                 "CursorStateDb": "Cursor state database (optional)",
-                "CursorStateDbHint": "Cursor's state.vscdb, read-only, for the access token Grok Bot's weekly allowance is requested with. Empty uses Cursor's own globalStorage database. Grok Bot and Cursor must be the same account."
+                "CursorStateDbHint": "Cursor's state.vscdb, read-only, for the access token Grok Bot's weekly allowance is requested with. Empty uses Cursor's own globalStorage database. Grok Bot and Cursor must be the same account.",
+                "DeepseekApiKey": "DeepSeek API key",
+                "DeepseekApiKeyHint": "Key for GET https://api.deepseek.com/user/balance. Empty uses DEEPSEEK_API_KEY. Stored with the other plugin settings and sent only as a Bearer token to that URL. Never shown on a key."
             },
             "Session": {
                 "Title": "Claude Sessions",
@@ -466,7 +536,7 @@
             },
             "KimiUsage": {
                 "Title": "Kimi Usage",
-                "Tip": "Shows total Kimi membership remaining (Kimi + Code), with optional Code usage limits and Kimi Work context",
+                "Tip": "Shows total Kimi membership remaining (Kimi + Code), with optional Code usage limits, Kimi Work context and the Moonshot API balance",
                 "UI": {
                     "metric": "Usage limit",
                     "metricDefault": "Default (total membership remaining)",
@@ -502,7 +572,20 @@
                     "errorRateLimited": "Rate limited by Kimi. The key retries later.",
                     "errorNetwork": "Kimi could not be reached. Check your connection.",
                     "errorHttp": "Kimi's quota service returned an error. The key retries at the next refresh.",
-                    "errorParse": "Kimi sent an answer the plugin could not read. Try again later, or update the plugin."
+                    "errorParse": "Kimi sent an answer the plugin could not read. Try again later, or update the plugin.",
+                    "metricApi": "API balance remaining (CNY or USD)",
+                    "metricApiCash": "API cash balance (top-up)",
+                    "metricApiVoucher": "API voucher balance",
+                    "metricNoApi": "{metric} · set an API key",
+                    "apiHint": "Remaining open-platform balance from api.moonshot.cn (CNY) or api.moonshot.ai (USD). Set the API key in the plugin settings. Membership and Code limits are unchanged when this is left empty.",
+                    "apiBalance": "{currency} {amount}",
+                    "balanceRejected": "The Moonshot API key is not a single token.",
+                    "balanceUnauthorized": "Moonshot rejected the API key. Check that the key matches the selected site.",
+                    "balanceRateLimited": "Moonshot rate-limited the balance request. The key retries later.",
+                    "balanceNetwork": "The Moonshot balance request did not connect.",
+                    "balanceHttp": "Moonshot's balance service returned an error. Plan limits are still shown.",
+                    "balanceParse": "Moonshot sent a balance reply the plugin could not read.",
+                    "balanceRefused": "Moonshot did not return a balance."
                 }
             },
             "KimiSession": {
@@ -753,6 +836,51 @@
                     "lang": "Key text language",
                     "appHint": "Opens Grok Bot with grokbot://app/v1/open, which focuses the app and sends no prompt. There is no deep link that starts a blank chat, and the in-app New chat control can keep an existing draft, so this key does not press it."
                 }
+            },
+            "DeepseekUsage": {
+                "Title": "DeepSeek Usage",
+                "Tip": "Shows the DeepSeek API account balance (total, granted and topped up)",
+                "UI": {
+                    "metric": "Balance",
+                    "metricDefault": "Default (first currency total)",
+                    "metricTotal": "{currency} total",
+                    "metricGranted": "{currency} granted",
+                    "metricToppedUp": "{currency} topped up",
+                    "lang": "Key text language",
+                    "showMark": "Show DeepSeek mark",
+                    "checking": "Checking…",
+                    "connected": "Connected",
+                    "notAvailable": "Not available: {error}",
+                    "errorNoKey": "No DeepSeek API key is set",
+                    "errorUnauthorized": "DeepSeek rejected the API key",
+                    "errorRateLimited": "DeepSeek rate-limited the balance request",
+                    "errorNetwork": "The balance request did not reach DeepSeek",
+                    "errorHttp": "DeepSeek's balance service failed",
+                    "errorParse": "DeepSeek returned an unrecognized balance",
+                    "errorUnsupported": "DeepSeek reported no currency balance",
+                    "hintKey": "Set the API key in the plugin settings (or DEEPSEEK_API_KEY) and save. The key is sent only to api.deepseek.com and is not shown here. Refresh uses the plugin interval.",
+                    "available": "available for API calls",
+                    "unavailable": "too low for API calls"
+                }
+            },
+            "DeepseekSession": {
+                "Title": "DeepSeek Sessions",
+                "Tip": "DeepSeek has no local coding sessions; the API balance is on the usage key",
+                "UI": {
+                    "lang": "Key text language",
+                    "showMark": "Show DeepSeek mark",
+                    "checking": "Checking…",
+                    "none": "No local DeepSeek sessions",
+                    "hint": "DeepSeek's API account has no session files on this computer. Use DeepSeek Usage for the balance."
+                }
+            },
+            "DeepseekNewSession": {
+                "Title": "Open DeepSeek",
+                "Tip": "Opens chat.deepseek.com. It does not send the API key or start an API session",
+                "UI": {
+                    "lang": "Key text language",
+                    "appHint": "Opens https://chat.deepseek.com/ in the system browser. It does not send the API key and does not start a billed API request."
+                }
             }
         },
         "zh-CN": {
@@ -771,7 +899,7 @@
                 }
             },
             "Config": {
-                "Description": "根据本机已有的登录信息和会话文件，显示 Claude Code、Kimi、Gemini、Antigravity 和 Grok Bot 的用量限制与会话状态，插件自己不需要 API 密钥。以下设置均为可选，留空即使用默认值；刷新间隔对所有服务都有效。",
+                "Description": "显示 Claude Code、Kimi、Gemini、Antigravity、Grok Bot 和 DeepSeek 的用量。Claude、Gemini、Antigravity 和 Grok Bot 使用本机已有的登录。DeepSeek 余额和可选的 Kimi API 余额需要在下方填写 API 密钥；留空则使用对应的环境变量。刷新间隔对所有服务都有效。",
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
@@ -788,6 +916,12 @@
                 "GeminiPath": "Gemini CLI 程序（可选）",
                 "GeminiCloudProject": "Gemini Cloud 项目（可选）",
                 "KimiRefreshLoginHint": "开启：在 Kimi Code CLI 自己的锁下刷新过期的 Kimi Code 登录，会改写 ~/.kimi-code/credentials/<slot>.json。关闭：按键只读取登录信息，过期时提示你运行 kimi。",
+                "MoonshotApiKey": "Kimi API 密钥（可选）",
+                "MoonshotApiKeyHint": "用于开放平台余额的 Moonshot API 密钥。留空则使用 MOONSHOT_API_KEY。与其他插件设置一起保存，只作为 Bearer 令牌发给 api.moonshot.cn 或 api.moonshot.ai，不会显示在按键上。",
+                "MoonshotSite": "Kimi API 站点",
+                "MoonshotSiteCn": "中国站（人民币，api.moonshot.cn）",
+                "MoonshotSiteGlobal": "国际站（美元，api.moonshot.ai）",
+                "MoonshotSiteHint": "密钥必须和所选站点属于同一平台。中国站返回人民币，国际站返回美元。",
                 "GeminiCloudProjectHint": "Gemini Code Assist 标准版或企业版配额使用的 Google Cloud 项目 ID；留空则使用 $GOOGLE_CLOUD_PROJECT。",
                 "AntigravityDir": "Antigravity 数据目录（可选）",
                 "AntigravityDirHint": "包含 antigravity、antigravity-cli 和 antigravity-ide 的目录；留空则使用 ~/.gemini。",
@@ -797,7 +931,9 @@
                 "GrokbotDataRoot": "Grok Bot 数据根目录（可选）",
                 "GrokbotDataRootHint": "local-exec-daemon.json 所在目录。留空则使用 $SAND_DATA_ROOT 或 ~/.grokbot。",
                 "CursorStateDb": "Cursor 状态数据库（可选）",
-                "CursorStateDbHint": "只读打开 Cursor 的 state.vscdb，用其中的访问令牌请求 Grok Bot 的每周额度。留空则使用 Cursor 自己的 globalStorage 数据库。Grok Bot 与 Cursor 必须是同一个账号。"
+                "CursorStateDbHint": "只读打开 Cursor 的 state.vscdb，用其中的访问令牌请求 Grok Bot 的每周额度。留空则使用 Cursor 自己的 globalStorage 数据库。Grok Bot 与 Cursor 必须是同一个账号。",
+                "DeepseekApiKey": "DeepSeek API 密钥",
+                "DeepseekApiKeyHint": "用于 GET https://api.deepseek.com/user/balance 的密钥。留空则使用 DEEPSEEK_API_KEY。与其他插件设置一起保存，只作为 Bearer 令牌发给该地址，不会显示在按键上。"
             },
             "Session": {
                 "Title": "Claude 会话",
@@ -835,7 +971,7 @@
             },
             "KimiUsage": {
                 "Title": "Kimi 用量",
-                "Tip": "显示 Kimi 会员总剩余（Kimi + Code），也可选择 Code 已用额度和 Kimi Work 上下文",
+                "Tip": "显示 Kimi 会员总剩余（Kimi + Code），也可选择 Code 已用额度、Kimi Work 上下文和 Moonshot API 余额",
                 "UI": {
                     "metric": "用量限制",
                     "metricDefault": "默认（会员总剩余）",
@@ -871,7 +1007,20 @@
                     "errorRateLimited": "Kimi 请求受限，按键稍后自动重试。",
                     "errorNetwork": "无法连接 Kimi，请检查网络连接。",
                     "errorHttp": "Kimi 配额服务返回错误，按键会在下次刷新时重试。",
-                    "errorParse": "无法读取 Kimi 返回的数据，请稍后重试或更新插件。"
+                    "errorParse": "无法读取 Kimi 返回的数据，请稍后重试或更新插件。",
+                    "metricApi": "API 剩余余额（人民币或美元）",
+                    "metricApiCash": "API 现金余额（充值）",
+                    "metricApiVoucher": "API 代金券余额",
+                    "metricNoApi": "{metric} · 请填写 API 密钥",
+                    "apiHint": "开放平台剩余余额，来自 api.moonshot.cn（人民币）或 api.moonshot.ai（美元）。请在插件设置中填写 API 密钥。留空时，会员额度和 Code 限额保持原样。",
+                    "apiBalance": "{currency} {amount}",
+                    "balanceRejected": "Moonshot API 密钥不是单独的一枚令牌。",
+                    "balanceUnauthorized": "Moonshot 拒绝了 API 密钥。请确认密钥与所选站点一致。",
+                    "balanceRateLimited": "Moonshot 限制了余额请求，按键稍后自动重试。",
+                    "balanceNetwork": "余额请求没有连上 Moonshot。",
+                    "balanceHttp": "Moonshot 余额服务返回错误。套餐限额仍会显示。",
+                    "balanceParse": "无法读取 Moonshot 返回的余额。",
+                    "balanceRefused": "Moonshot 没有返回余额。"
                 }
             },
             "KimiSession": {
@@ -1121,6 +1270,51 @@
                 "UI": {
                     "lang": "按键文字语言",
                     "appHint": "使用 grokbot://app/v1/open 打开 Grok Bot，该链接只把应用调到前台，不发送内容。没有能开始空白对话的深链，应用内的 New chat 还可能保留未发送的草稿，因此此按键不会去按它。"
+                }
+            },
+            "DeepseekUsage": {
+                "Title": "DeepSeek 用量",
+                "Tip": "显示 DeepSeek API 账户余额（总额、赠金和充值）",
+                "UI": {
+                    "metric": "余额",
+                    "metricDefault": "默认（第一种货币的总额）",
+                    "metricTotal": "{currency} 总额",
+                    "metricGranted": "{currency} 赠金",
+                    "metricToppedUp": "{currency} 充值",
+                    "lang": "按键文字语言",
+                    "showMark": "显示 DeepSeek 标记",
+                    "checking": "正在检查…",
+                    "connected": "已连接",
+                    "notAvailable": "不可用：{error}",
+                    "errorNoKey": "未设置 DeepSeek API 密钥",
+                    "errorUnauthorized": "DeepSeek 拒绝了 API 密钥",
+                    "errorRateLimited": "DeepSeek 限制了余额请求",
+                    "errorNetwork": "余额请求没有到达 DeepSeek",
+                    "errorHttp": "DeepSeek 余额服务失败",
+                    "errorParse": "DeepSeek 返回了无法识别的余额",
+                    "errorUnsupported": "DeepSeek 没有返回任何币种余额",
+                    "hintKey": "在插件设置中填写 API 密钥（或使用 DEEPSEEK_API_KEY）并保存。密钥只发给 api.deepseek.com，不会显示在这里。刷新间隔使用插件设置。",
+                    "available": "可以调用 API",
+                    "unavailable": "余额不足，无法调用"
+                }
+            },
+            "DeepseekSession": {
+                "Title": "DeepSeek 会话",
+                "Tip": "DeepSeek 没有本地编程会话；API 余额在用量按键上",
+                "UI": {
+                    "lang": "按键文字语言",
+                    "showMark": "显示 DeepSeek 标记",
+                    "checking": "正在检查…",
+                    "none": "没有本地 DeepSeek 会话",
+                    "hint": "DeepSeek 的 API 账户在本机没有会话文件。请用 DeepSeek 用量按键查看余额。"
+                }
+            },
+            "DeepseekNewSession": {
+                "Title": "打开 DeepSeek",
+                "Tip": "打开 chat.deepseek.com。不会发送 API 密钥，也不会发起 API 请求",
+                "UI": {
+                    "lang": "按键文字语言",
+                    "appHint": "用系统浏览器打开 https://chat.deepseek.com/。不会发送 API 密钥，也不会发起计费 API 请求。"
                 }
             }
         }

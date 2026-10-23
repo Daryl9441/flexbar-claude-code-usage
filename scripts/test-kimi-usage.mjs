@@ -21,6 +21,9 @@ for (const name of [
   'KIMI_CODE_OAUTH_HOST',
   'KIMI_OAUTH_HOST',
   'KIMI_DISABLE_OAUTH_LOCK',
+  'MOONSHOT_API_KEY',
+  'MOONSHOT_API_BASE',
+  'DEEPSEEK_API_KEY',
 ]) {
   delete process.env[name];
 }
