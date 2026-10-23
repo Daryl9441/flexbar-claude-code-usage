@@ -349,6 +349,9 @@ outside the repository with `assert` changed to `with` in
   folder, leftover copies swept),
   `sessionProto.ts` (protobuf reader for `agy`'s `raw_summary`),
   `sessionSummary.ts` (facts and states, `task.md` progress),
+  `schedules.ts` (scheduled-task sidecars under `<root>/config/sidecars` and
+  plugin sidecars; cron and display name only, prompts and logs unread;
+  the session key's automations page),
   `sessionCli.ts` (`findAgy`, app bundle ids). New session: `newSession.ts`
   always targets the standalone macOS App (`com.google.antigravity`) through
   `mac-app-new-session`; old auto, CLI and IDE targets, folders and CLI

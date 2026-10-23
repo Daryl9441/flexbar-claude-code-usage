@@ -15,8 +15,10 @@
  * files change, on a key press, and otherwise every 10 s while a
  * conversation is active (60 s when none is), never twice within 2 s; a
  * database is read only when it changed and its language server does not
- * answer. Nothing runs while nothing is installed. Never logs titles, ids,
- * paths of conversations or the CSRF token.
+ * answer. Nothing of that runs while nothing is installed. Scheduled tasks
+ * (./schedules.ts) are still read: they are sidecar files, not conversations.
+ * Never logs titles, ids, paths of conversations, sidecar prompts or the
+ * CSRF token.
  */
 import { constants as fsConstants, promises as fsp } from 'node:fs';
 import path from 'node:path';
@@ -32,6 +34,7 @@ import {
 import { langOf } from '../../sessionView';
 import { makeStatus, unavailableNotice } from '../kit';
 import {
+  AutomationBoard,
   KeyData,
   Localized,
   Logger,
@@ -41,6 +44,7 @@ import {
 } from '../types';
 
 import { AntigravityProduct, DATA_FOLDERS } from './paths';
+import { AntigravitySchedules } from './schedules';
 import { DbReader, SUMMARY_DB } from './sessionDb';
 import { AgyProcess, ProcessProbe, ProcessSnapshot } from './sessionProcs';
 import { decodeSummary } from './sessionProto';
@@ -253,6 +257,8 @@ export class AntigravitySessionMonitor implements SessionSource {
   /** Signals of each product at the last refresh */
   private lastSignals = new Map<AntigravityProduct, string>();
   private tasks = new Map<string, TaskState>();
+  /** Scheduled-task sidecars under the same root (./schedules.ts) */
+  private readonly schedules: AntigravitySchedules;
   /** Sources keys asked for (getStatus / listRunning), by when */
   private sourcesAsked = new Map<AgSource, number>();
   private taskRefresh: NodeJS.Immediate | null = null;
@@ -266,6 +272,7 @@ export class AntigravitySessionMonitor implements SessionSource {
     this.now = options.now ?? Date.now;
     this.stat = options.stat ?? statOf;
     this.readText = options.readText ?? readSmallText;
+    this.schedules = new AntigravitySchedules(options.root);
   }
 
   start() {
@@ -296,6 +303,16 @@ export class AntigravitySessionMonitor implements SessionSource {
 
   productName(data?: KeyData): string {
     return PRODUCT_NAMES[sourceOf(data)];
+  }
+
+  /**
+   * Scheduled tasks for the press rotation's last page, or null when the
+   * key turns the page off. The tasks are global sidecars, so every source
+   * (app, IDE and agy) shows the same board.
+   */
+  automations(data?: KeyData): AutomationBoard | null {
+    if (data?.automationsPage === false) return null;
+    return this.schedules.board(this.now());
   }
 
   notice(data?: KeyData): SessionNotice | null {
@@ -519,6 +536,14 @@ export class AntigravitySessionMonitor implements SessionSource {
   }
 
   private async doRefresh(mode: RefreshMode) {
+    try {
+      await this.refreshSessions(mode);
+    } finally {
+      if (!this.stopped) await this.schedules.sync();
+    }
+  }
+
+  private async refreshSessions(mode: RefreshMode) {
     const now = this.now();
     if (mode === 'full' || now - this.installedAt >= INSTALLED_MS) {
       this.installedAt = now;
