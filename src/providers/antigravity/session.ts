@@ -10,7 +10,9 @@
  *
  * Key settings (key.data): source ('auto' | 'app' | 'ide' | 'cli'; auto
  * merges all three), projectFilter, idleMinutes, showProject, showMark,
- * showProgress (task.md checklist of the conversation; default on), lang.
+ * showProgress (task.md checklist of the conversation; default on),
+ * automationsPage (scheduled-tasks board at the end of a press; default
+ * on), lang.
  *
  * OWNER: the antigravity-session implementer, who also owns ./newSession.ts.
  */

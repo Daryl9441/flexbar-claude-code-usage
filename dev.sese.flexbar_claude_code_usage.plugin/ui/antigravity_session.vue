@@ -88,6 +88,18 @@
         </v-row>
         <v-row>
             <v-col cols="12">
+                <v-switch
+                    v-model="modelValue.data.automationsPage"
+                    :label="$t('AntigravitySession.UI.automationsPage')"
+                    :hint="$t('AntigravitySession.UI.automationsPageHint')"
+                    persistent-hint
+                    hide-details="auto"
+                    class="mx-2"
+                ></v-switch>
+            </v-col>
+        </v-row>
+        <v-row>
+            <v-col cols="12">
                 <p class="text-caption mx-2">{{ statusText }}</p>
             </v-col>
         </v-row>
@@ -174,6 +186,7 @@ export default {
         if (data.showProject === undefined) data.showProject = true;
         if (data.showMark === undefined) data.showMark = true;
         if (data.showProgress === undefined) data.showProgress = true;
+        if (data.automationsPage === undefined) data.automationsPage = true;
         // key text follows the FlexDesigner language until changed here
         if (data.lang === undefined) {
             const locale = String(this.$i18n.locale || "");

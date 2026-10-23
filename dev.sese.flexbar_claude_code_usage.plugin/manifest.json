@@ -294,7 +294,8 @@
                     "idleMinutes": 15,
                     "showProject": true,
                     "showMark": true,
-                    "showProgress": true
+                    "showProgress": true,
+                    "automationsPage": true
                 }
             },
             {
@@ -750,7 +751,7 @@
             },
             "AntigravitySession": {
                 "Title": "Antigravity Sessions",
-                "Tip": "Shows whether your latest Antigravity conversation (desktop app, IDE or agy CLI) is working, done, or waiting for you; press to list running conversations",
+                "Tip": "Shows whether your latest Antigravity conversation (desktop app, IDE or agy CLI) is working, done, or waiting for you; press to rotate through running conversations and the scheduled-tasks board",
                 "UI": {
                     "projectFilter": "Project filter",
                     "projectFilterHint": "Part of the project path; leave empty for the latest session of any project",
@@ -768,7 +769,9 @@
                     "sourceIde": "Antigravity IDE",
                     "sourceCli": "Antigravity CLI (agy)",
                     "showProgress": "Show task progress",
-                    "showProgressHint": "From the checklist in the conversation's task.md artifact"
+                    "showProgressHint": "From the checklist in the conversation's task.md artifact",
+                    "automationsPage": "Scheduled tasks page",
+                    "automationsPageHint": "Pressing the key rotates through the running conversations and then every Antigravity scheduled task"
                 }
             },
             "AntigravityNewSession": {
@@ -1185,7 +1188,7 @@
             },
             "AntigravitySession": {
                 "Title": "Antigravity 会话",
-                "Tip": "显示最新的 Antigravity 对话（桌面 App、IDE 或 agy CLI）是在进行中、已完成，还是在等你；按下可列出运行中的对话",
+                "Tip": "显示最新的 Antigravity 对话（桌面 App、IDE 或 agy CLI）是在进行中、已完成，还是在等你；按下可轮换查看运行中的对话和定时任务看板",
                 "UI": {
                     "projectFilter": "项目筛选",
                     "projectFilterHint": "项目路径的一部分；留空则显示所有项目中最新的会话",
@@ -1203,7 +1206,9 @@
                     "sourceIde": "Antigravity IDE",
                     "sourceCli": "Antigravity CLI（agy）",
                     "showProgress": "显示任务进度",
-                    "showProgressHint": "来自对话 task.md 产物中的清单"
+                    "showProgressHint": "来自对话 task.md 产物中的清单",
+                    "automationsPage": "定时任务看板页",
+                    "automationsPageHint": "按下按键时，在运行中的对话之后轮换显示全部 Antigravity 定时任务"
                 }
             },
             "AntigravityNewSession": {

@@ -1546,6 +1546,98 @@ describe('Antigravity New Session launcher', () => {
   });
 });
 
+describe('Antigravity scheduled tasks (schedule sidecars)', () => {
+  const PROMPT = 'FAKE scheduled prompt text';
+  const SECRET = ['not', 'a', 'real', 'token'].join('-');
+  const PROJECT = '00000000-0000-4000-8000-000000000009';
+
+  function writeSchedule(root) {
+    const sidecar = (dir, body) => {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'sidecar.json'), JSON.stringify(body));
+    };
+    sidecar(path.join(root, 'config', 'sidecars', 'daily'), {
+      builtin: 'schedule',
+      display_name: 'FAKE daily',
+      timezone: 'Asia/Shanghai',
+      description: PROMPT,
+      env: { TOKEN: SECRET },
+      args: ['0 10 * * *', 'agentapi', 'new-conversation', PROMPT],
+    });
+    sidecar(path.join(root, 'config', 'sidecars', 'paused'), {
+      builtin: 'schedule',
+      display_name: 'FAKE paused',
+      args: ['0 9 * * *', PROMPT],
+    });
+    sidecar(path.join(root, 'config', 'sidecars', 'worker'), {
+      command: 'FAKE-worker-command',
+      args: ['worker.py'],
+      env: { TOKEN: SECRET },
+    });
+    sidecar(path.join(root, 'config', 'sidecars', 'broken'), {});
+    fs.writeFileSync(path.join(root, 'config', 'sidecars', 'broken', 'sidecar.json'), '{');
+    sidecar(path.join(root, 'config', 'plugins', 'demo', 'sidecars', 'hourly'), {
+      builtin: 'schedule',
+      display_name: 'FAKE hourly',
+      timezone: 'UTC',
+      args: ['30 * * * *', PROMPT],
+    });
+    fs.writeFileSync(
+      path.join(root, 'config', 'config.json'),
+      JSON.stringify({
+        note: SECRET,
+        sidecars: {
+          daily: { enabled: true, projectId: PROJECT },
+          'demo/hourly': { enabled: true, projectId: PROJECT },
+        },
+      })
+    );
+    const log = path.join(root, 'antigravity', 'sidecar_data', 'daily', 'logs');
+    fs.mkdirSync(log, { recursive: true });
+    const logFile = path.join(log, 'run.log');
+    fs.writeFileSync(logFile, `schedule log ${SECRET} ${PROMPT}\n`);
+    const logAt = new Date(FIXED - 30 * MIN);
+    fs.utimesSync(logFile, logAt, logAt);
+    return { logAtMs: fs.statSync(logFile).mtimeMs };
+  }
+
+  test('the session key lists every schedule sidecar and drops prompts and secrets', async () => {
+    const { source, root } = makeSource({ installed: [] });
+    const { logAtMs } = writeSchedule(root);
+    await source.rescan();
+    const board = source.automations({});
+    assert.equal(board.available, true);
+    const byTitle = Object.fromEntries(board.items.map(item => [item.title, item]));
+    assert.deepEqual(Object.keys(byTitle).sort(), ['FAKE daily', 'FAKE hourly', 'FAKE paused']);
+    assert.equal(byTitle['FAKE daily'].enabled, true);
+    assert.equal(byTitle['FAKE daily'].cron, '0 10 * * *');
+    assert.equal(byTitle['FAKE daily'].timezone, 'Asia/Shanghai');
+    assert.equal(byTitle['FAKE daily'].nextRunAt, Date.parse('2026-10-06T02:00:00.000Z'));
+    assert.equal(byTitle['FAKE daily'].lastRunAt, logAtMs);
+    assert.equal(byTitle['FAKE daily'].running, false);
+    assert.equal(byTitle['FAKE daily'].failed, false);
+    assert.equal(byTitle['FAKE paused'].enabled, false);
+    assert.equal(byTitle['FAKE paused'].nextRunAt, null);
+    assert.equal(byTitle['FAKE hourly'].cron, '30 * * * *');
+    assert.equal(byTitle['FAKE hourly'].nextRunAt, Date.parse('2026-10-05T12:30:00.000Z'));
+    const dumped = JSON.stringify(board);
+    assert.equal(dumped.includes(PROMPT), false);
+    assert.equal(dumped.includes(SECRET), false);
+    assert.equal(dumped.includes(PROJECT), false);
+    assert.equal(dumped.includes('FAKE-worker-command'), false);
+    assert.equal(source.automations({ automationsPage: false }), null);
+    assert.equal(source.automations({ source: 'cli' }).items.length, 3);
+    const View = req('sessionView.js');
+    const view = View.buildAutomationsView(board, {
+      lang: 'en',
+      width: 240,
+      page: 0,
+      now: FIXED,
+    });
+    assert.ok(view.rows.some(row => row.title === 'FAKE daily' && row.timeLabel.length > 0));
+  });
+});
+
 describe('Antigravity installation helpers used by usage and session monitoring', () => {
   test('agy lookup: the setting, else PATH and the usual folders', () => {
     const exe = new Set(['/Users/you/.local/bin/agy', '/opt/custom/agy']);
