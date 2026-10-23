@@ -5,6 +5,8 @@
  * last result. Provider specifics come from a UsageSource
  * (src/providers/types.ts); drawing hooks come from plugin.ts.
  */
+import { createHash } from 'node:crypto';
+
 import {
   ProviderError,
   brandMark,
@@ -90,6 +92,13 @@ export type UsageKeyDeps = KeyHost & {
   pollIntervalMs: () => number;
 };
 
+/** Hash of the settings a fetch used. Not a copy of any secret. */
+function configFingerprint(config: PluginConfig): string {
+  const keys = Object.keys(config).sort();
+  const body = JSON.stringify(keys.map(key => [key, config[key]]));
+  return createHash('sha256').update(body).digest('hex');
+}
+
 /** Shortens SDK errors, whose messages can embed the whole base64 image. */
 function describeError(error: unknown): string {
   const text = error instanceof Error ? error.message : `${error}`;
@@ -122,6 +131,18 @@ export class UsageKeys implements KeyGroup {
   private lockTicker: NodeJS.Timeout | null = null;
   private lastFetchAt = 0;
   private inFlight: Promise<void> | null = null;
+  /**
+   * Settings from the latest plugin.config.updated, used by the next fetch
+   * instead of loadConfig. Null once that fetch has taken them.
+   */
+  private pendingConfig: PluginConfig | null = null;
+  /**
+   * Hash of the settings the last fetch used. A save whose settings differ
+   * fetches immediately; the hash is not the key and is never logged.
+   */
+  private appliedFingerprint = '';
+  /** The next fetch may ignore the minimum gap (a settings save). */
+  private bypassGap = false;
   /**
    * Keys drawing another metric than their setting (substituteMetric), by
    * serial number and uid, so each change is logged once, not every redraw.
@@ -208,8 +229,18 @@ export class UsageKeys implements KeyGroup {
     await this.refresh();
   }
 
-  /** Global config changed: new poll interval, maybe new credentials. */
-  async configure() {
+  /**
+   * Global config changed: new poll interval, maybe new credentials.
+   * A change fetches now, inside the usual gap, so a key saved in the
+   * settings page shows up without waiting for the next poll.
+   */
+  async configure(next?: PluginConfig) {
+    if (next) {
+      if (configFingerprint(next) !== this.appliedFingerprint) {
+        this.bypassGap = true;
+      }
+      this.pendingConfig = next;
+    }
     if (this.pollTimer || this.hasKeys()) this.ensurePolling(true);
     await this.refresh();
   }
@@ -569,27 +600,42 @@ export class UsageKeys implements KeyGroup {
     }, LOCK_TICK_MS);
   }
 
-  /** Fetches (at most one request at a time) and redraws. */
+  /**
+   * Fetches (at most one request at a time) and redraws. A settings save
+   * that arrives while a fetch is already using the previous settings
+   * waits for that fetch and then runs another.
+   */
   refresh(): Promise<void> {
     if (!this.inFlight) {
       this.inFlight = this.doRefresh().finally(() => {
         this.inFlight = null;
       });
+      return this.inFlight;
     }
-    return this.inFlight;
+    if (!this.bypassGap) return this.inFlight;
+    return this.inFlight.then(() => {
+      if (!this.bypassGap) return undefined;
+      return this.refresh();
+    });
   }
 
   private async doRefresh() {
+    const forced = this.bypassGap;
+    this.bypassGap = false;
     const now = Date.now();
     if (this.lockedUntil && now < this.lockedUntil) {
       await this.drawAll();
       return;
     }
-    if (now - this.lastFetchAt < this.minFetchGapMs()) return;
+    if (!forced && now - this.lastFetchAt < this.minFetchGapMs()) return;
     if (!this.hasKeys()) return;
     this.lastFetchAt = now;
 
-    const config = (await this.deps.loadConfig().catch(() => null)) ?? {};
+    const pending = this.pendingConfig;
+    if (pending) this.pendingConfig = null;
+    const config =
+      pending ?? (await this.deps.loadConfig().catch(() => null)) ?? {};
+    this.appliedFingerprint = configFingerprint(config);
     try {
       this.metrics = await this.source.fetch(config);
       this.failure = null;

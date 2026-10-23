@@ -1,6 +1,7 @@
 import { logger, plugin } from '@eniac/flexdesigner';
 
 import { sweepTerminalScripts } from './launch';
+import { createPluginConfigCache } from './pluginConfig';
 import { createKeyGroups, messageCid } from './providers/registry';
 import { Key, KeyGroup, PluginConfig } from './providers/types';
 
@@ -16,17 +17,18 @@ const offlineDevices = new Set<string>();
 // All draws go through this chain so they reach FlexDesigner one at a time
 let drawChain: Promise<void> = Promise.resolve();
 
-let config: PluginConfig | null = null;
-
-async function getConfigCached(): Promise<PluginConfig> {
-  if (config) return config;
-  try {
-    config = ((await plugin.getConfig()) as PluginConfig) ?? {};
-  } catch (error) {
+// The first getConfig() is reused until plugin.config.updated. A save has to
+// replace that copy: otherwise a key written to config.json stays invisible
+// until the process starts again.
+const configCache = createPluginConfigCache(
+  () => plugin.getConfig() as Promise<PluginConfig | null | undefined>,
+  error => {
     logger?.warn('Could not load plugin config, using defaults:', error);
-    return {};
   }
-  return config;
+);
+
+function getConfigCached(): Promise<PluginConfig> {
+  return configCache.load();
 }
 
 /**
@@ -79,7 +81,8 @@ function queueDraw(task: () => Promise<void>): Promise<void> {
 }
 
 function pollIntervalMs(): number {
-  const seconds = Number(config?.pollInterval) || DEFAULT_POLL_INTERVAL;
+  const seconds =
+    Number(configCache.current()?.pollInterval) || DEFAULT_POLL_INTERVAL;
   return Math.max(MIN_POLL_INTERVAL, seconds) * 1000;
 }
 
@@ -192,16 +195,14 @@ plugin.on('ui.message', async payload => {
 });
 
 /**
- * Called when the global plugin config changes
+ * Called when the global plugin config changes. The payload alone is not
+ * enough: password fields can be missing there after the file was saved.
+ * Read the store again, merge the event, then let every key group refetch.
  */
-plugin.on(
-  'plugin.config.updated',
-  async (payload: { config?: PluginConfig }) => {
-    config = payload?.config ?? {};
-    const next = config;
-    await eachGroup('plugin.config.updated', group => group.configure(next));
-  }
-);
+plugin.on('plugin.config.updated', async (payload: unknown) => {
+  const next = await configCache.updated(payload);
+  await eachGroup('plugin.config.updated', group => group.configure(next));
+});
 
 // Terminal scripts an earlier run left behind (Terminal never ran them)
 void sweepTerminalScripts();
