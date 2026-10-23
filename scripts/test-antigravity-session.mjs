@@ -1582,6 +1582,11 @@ describe('Antigravity scheduled tasks (schedule sidecars)', () => {
       timezone: 'UTC',
       args: ['30 * * * *', PROMPT],
     });
+    sidecar(path.join(root, 'config', 'sidecars', 'crontz'), {
+      builtin: 'schedule',
+      display_name: 'FAKE cron tz',
+      args: ['CRON_TZ=Asia/Shanghai 0 15 * * *', PROMPT],
+    });
     fs.writeFileSync(
       path.join(root, 'config', 'config.json'),
       JSON.stringify({
@@ -1589,6 +1594,8 @@ describe('Antigravity scheduled tasks (schedule sidecars)', () => {
         sidecars: {
           daily: { enabled: true, projectId: PROJECT },
           'demo/hourly': { enabled: true, projectId: PROJECT },
+          crontz: { enabled: true, projectId: PROJECT },
+          paused: { enabled: false, projectId: PROJECT },
         },
       })
     );
@@ -1608,7 +1615,10 @@ describe('Antigravity scheduled tasks (schedule sidecars)', () => {
     const board = source.automations({});
     assert.equal(board.available, true);
     const byTitle = Object.fromEntries(board.items.map(item => [item.title, item]));
-    assert.deepEqual(Object.keys(byTitle).sort(), ['FAKE daily', 'FAKE hourly', 'FAKE paused']);
+    assert.deepEqual(Object.keys(byTitle).sort(), ['FAKE cron tz', 'FAKE daily', 'FAKE hourly']);
+    assert.equal(byTitle['FAKE cron tz'].cron, '0 15 * * *');
+    assert.equal(byTitle['FAKE cron tz'].timezone, 'Asia/Shanghai');
+    assert.equal(byTitle['FAKE cron tz'].nextRunAt, Date.parse('2026-10-06T07:00:00.000Z'));
     assert.equal(byTitle['FAKE daily'].enabled, true);
     assert.equal(byTitle['FAKE daily'].cron, '0 10 * * *');
     assert.equal(byTitle['FAKE daily'].timezone, 'Asia/Shanghai');
@@ -1616,8 +1626,6 @@ describe('Antigravity scheduled tasks (schedule sidecars)', () => {
     assert.equal(byTitle['FAKE daily'].lastRunAt, logAtMs);
     assert.equal(byTitle['FAKE daily'].running, false);
     assert.equal(byTitle['FAKE daily'].failed, false);
-    assert.equal(byTitle['FAKE paused'].enabled, false);
-    assert.equal(byTitle['FAKE paused'].nextRunAt, null);
     assert.equal(byTitle['FAKE hourly'].cron, '30 * * * *');
     assert.equal(byTitle['FAKE hourly'].nextRunAt, Date.parse('2026-10-05T12:30:00.000Z'));
     const dumped = JSON.stringify(board);

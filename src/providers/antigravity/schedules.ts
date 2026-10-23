@@ -87,12 +87,24 @@ function titleOf(value: unknown, fallback: string): string {
   return chars.length > 200 ? `${chars.slice(0, 200).join('')}…` : line;
 }
 
-/** The cron expression, only when it is a supported five-field schedule. */
-function cronText(args: unknown): string | null {
-  if (!Array.isArray(args) || typeof args[0] !== 'string') return null;
-  const text = args[0].trim();
-  if (text.length > 80 || !parseCron(text)) return null;
-  return text;
+/**
+ * The cron expression and its zone, only when it is a supported five-field
+ * schedule. Antigravity writes schedules as `CRON_TZ=<zone> <cron>` (also
+ * accepted: `TZ=<zone>`); the prefix names the zone and is not part of the
+ * expression.
+ */
+function cronOf(args: unknown): { cron: string | null; zone: string | null } {
+  const none = { cron: null, zone: null };
+  if (!Array.isArray(args) || typeof args[0] !== 'string') return none;
+  let text = args[0].trim();
+  let zone: string | null = null;
+  const prefix = /^(?:CRON_TZ|TZ)=(\S+)\s+/.exec(text);
+  if (prefix) {
+    zone = isZone(prefix[1]) ? prefix[1] : null;
+    text = text.slice(prefix[0].length).trim();
+  }
+  if (text.length > 80 || !parseCron(text)) return none;
+  return { cron: text, zone };
 }
 
 function factsOf(
@@ -102,12 +114,13 @@ function factsOf(
   updatedAt: number | null
 ): ScheduleFacts | null {
   if (!isObj(raw) || raw.builtin !== 'schedule') return null;
+  const { cron, zone } = cronOf(raw.args);
   return {
     id,
     title: titleOf(raw.display_name, id),
     enabled,
-    cron: cronText(raw.args),
-    timezone: isZone(raw.timezone) ? raw.timezone : null,
+    cron,
+    timezone: isZone(raw.timezone) ? raw.timezone : zone,
     lastRunAt: null,
     updatedAt,
   };
@@ -218,27 +231,32 @@ export class AntigravitySchedules {
     this.items = items.slice(0, MAX_ITEMS);
   }
 
-  /** The tasks as the session key draws them. `now` places the next runs. */
+  /**
+   * The enabled tasks as the session key draws them (disabled ones are left
+   * off the board). `now` places the next runs.
+   */
   board(now: number): AutomationBoard {
     const zone = localZone();
-    const items: AutomationItem[] = this.items.map(item => {
-      const timezone = item.timezone ?? zone;
-      return {
-        id: item.id,
-        title: item.title,
-        enabled: item.enabled,
-        cron: item.cron,
-        timezone,
-        nextRunAt:
-          item.enabled && item.cron
-            ? nextRunOf(item.cron, timezone, now)
-            : null,
-        running: false,
-        failed: false,
-        lastRunAt: item.lastRunAt,
-        updatedAt: item.updatedAt,
-      };
-    });
+    const items: AutomationItem[] = this.items
+      .filter(item => item.enabled)
+      .map(item => {
+        const timezone = item.timezone ?? zone;
+        return {
+          id: item.id,
+          title: item.title,
+          enabled: item.enabled,
+          cron: item.cron,
+          timezone,
+          nextRunAt:
+            item.enabled && item.cron
+              ? nextRunOf(item.cron, timezone, now)
+              : null,
+          running: false,
+          failed: false,
+          lastRunAt: item.lastRunAt,
+          updatedAt: item.updatedAt,
+        };
+      });
     return { available: !this.failed, items };
   }
 
