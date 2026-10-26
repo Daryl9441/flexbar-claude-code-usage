@@ -237,17 +237,18 @@ export class UsageKeys implements KeyGroup {
    * Key press. Providers without pressPages only refresh. A source that
    * publishes pages rotates one page per press (plan, credits, each limit)
    * and still refreshes; a press inside the fetch gap redraws the new page.
-   * The payload carries the key as FlexDesigner currently knows it, so keep
-   * that copy (its width may have changed).
+   * A source that prepares but has no pages (Grok Bot's keychain prompt)
+   * prepares first and refreshes past the gap, so the press reads the
+   * login it just unblocked. The payload carries the key as FlexDesigner
+   * currently knows it, so keep that copy (its width may have changed).
    */
   async press(serialNumber: string, pressed: Key) {
     const keys = this.keys.get(serialNumber);
     const index = keys?.findIndex(key => key.uid === pressed?.uid) ?? -1;
     if (keys && index >= 0) keys[index] = pressed;
     const rotates = Boolean(this.source.pressPages || this.source.preparePress);
-    await this.refresh();
-    if (!rotates) return;
-    if (this.source.preparePress) {
+    const prepare = async () => {
+      if (!this.source.preparePress) return;
       const config =
         this.pendingConfig ??
         (await this.deps.loadConfig().catch(() => null)) ??
@@ -257,7 +258,14 @@ export class UsageKeys implements KeyGroup {
       } catch {
         // plan and credits are optional; the quota pages still rotate
       }
+    };
+    if (this.source.preparePress && !this.source.pressPages) {
+      await prepare();
+      this.bypassGap = true;
     }
+    await this.refresh();
+    if (!rotates) return;
+    if (this.source.pressPages) await prepare();
     this.rotatePress(serialNumber, pressed);
     await this.drawAll();
   }

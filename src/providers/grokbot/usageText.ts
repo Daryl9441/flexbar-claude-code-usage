@@ -9,6 +9,8 @@ export type GrokbotProblem =
   | 'not-installed'
   | 'not-signed-in'
   | 'login-expired'
+  | 'keychain-blocked'
+  | 'login-unreadable'
   | 'state-unreadable'
   | 'pooled'
   | 'no-allowance'
@@ -29,6 +31,14 @@ const TEXT: Record<GrokbotProblem, Record<Lang, KeyText>> = {
   'login-expired': {
     en: { title: 'Login expired', message: 'Sign in to Cursor' },
     zh: { title: '登录已过期', message: '请重新登录 Cursor' },
+  },
+  'keychain-blocked': {
+    en: { title: 'Keychain blocked', message: 'Allow Cursor login' },
+    zh: { title: '钥匙串未允许', message: '请允许 Cursor 登录' },
+  },
+  'login-unreadable': {
+    en: { title: 'Login unreadable', message: 'Open Cursor and sign in' },
+    zh: { title: '登录无法读取', message: '请打开 Cursor 登录' },
   },
   'state-unreadable': {
     en: { title: 'Cannot read login', message: 'Cursor state unreadable' },
@@ -73,17 +83,21 @@ export class GrokbotUsageError extends ProviderError {
           ? 'no-credentials'
           : problem === 'login-expired'
             ? 'unauthorized'
-            : problem === 'state-unreadable'
+            : problem === 'keychain-blocked'
               ? 'not-configured'
-              : problem === 'pooled' || problem === 'no-allowance'
-                ? 'unsupported'
-                : problem === 'parse'
-                  ? 'parse'
-                  : problem === 'network'
-                    ? 'network'
-                    : problem === 'rate-limited'
-                      ? 'rate-limited'
-                      : 'http';
+              : problem === 'login-unreadable'
+                ? 'unauthorized'
+                : problem === 'state-unreadable'
+                  ? 'not-configured'
+                  : problem === 'pooled' || problem === 'no-allowance'
+                    ? 'unsupported'
+                    : problem === 'parse'
+                      ? 'parse'
+                      : problem === 'network'
+                        ? 'network'
+                        : problem === 'rate-limited'
+                          ? 'rate-limited'
+                          : 'http';
     super(code, message, {
       ...extra,
       keyText: TEXT[problem],
