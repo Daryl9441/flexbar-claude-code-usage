@@ -46,6 +46,7 @@ const build =
 const req = p => require(path.join(build, p));
 const U = req('providers/antigravity/usage.js');
 const M = req('providers/antigravity/usageMetrics.js');
+const C = req('providers/antigravity/usageCycle.js');
 const P = req('providers/antigravity/usageProcess.js');
 const R = req('providers/antigravity/usageRpc.js');
 const T = req('providers/antigravity/usageText.js');
@@ -558,17 +559,185 @@ describe('quota summary → metrics', () => {
 
   test('GetUserStatus is reduced to sign-in state, plan and models, never identity', () => {
     const info = U.statusInfo(userStatus(), T0);
-    assert.deepEqual(info, { signedIn: true, tier: 'FAKE Tier', models: [] });
+    assert.deepEqual(info, {
+      signedIn: true,
+      tier: 'FAKE Tier',
+      models: [],
+      overage: null,
+      creditsLeft: null,
+    });
     assert.ok(!JSON.stringify(info).includes(EMAIL));
     assert.ok(!JSON.stringify(info).includes('FAKE Person'));
     assert.deepEqual(U.statusInfo(userStatus({ signedIn: false }), T0), {
       signedIn: false,
       tier: null,
       models: [],
+      overage: null,
+      creditsLeft: null,
     });
     const planOnly = U.statusInfo({ userStatus: { email: EMAIL, planStatus: { planInfo: { planName: 'FAKE Plan' } } } }, T0);
     assert.equal(planOnly.tier, 'FAKE Plan');
     assert.equal(U.statusInfo(null, T0).signedIn, false);
+
+    const withCredits = userStatus();
+    withCredits.userStatus.useG1Credits = false;
+    withCredits.userStatus.availablePromptCredits = 42;
+    const credits = U.statusInfo(withCredits, T0);
+    assert.equal(credits.overage, false);
+    assert.equal(credits.creditsLeft, 42);
+    assert.equal(credits.tier, 'FAKE Tier');
+    assert.ok(!JSON.stringify(credits).includes(EMAIL));
+
+    const nested = userStatus();
+    nested.userStatus.settings = { enableAiCreditOverages: 'always' };
+    nested.userStatus.promptCredits = { available: '7' };
+    const fromNested = U.statusInfo(nested, T0);
+    assert.equal(fromNested.overage, true);
+    assert.equal(fromNested.creditsLeft, 7);
+
+    const mailed = U.statusInfo(
+      {
+        userStatus: {
+          email: EMAIL,
+          userTier: { id: 'fake-tier', name: EMAIL },
+          planStatus: { planInfo: { planName: 'FAKE Plan' } },
+        },
+      },
+      T0
+    );
+    assert.equal(mailed.tier, 'FAKE Plan');
+    const onlyMail = U.statusInfo(
+      { userStatus: { email: EMAIL, userTier: { id: 'fake-tier', name: EMAIL } } },
+      T0
+    );
+    assert.equal(onlyMail.signedIn, true);
+    assert.equal(onlyMail.tier, null);
+    assert.ok(!JSON.stringify(onlyMail).includes(EMAIL));
+  });
+});
+
+describe('usage press pages', () => {
+  function quotaWithArgon() {
+    const body = summary({ gemini5h: 0.99, geminiWeekly: 0.73, claude5h: 1, claudeWeekly: 1 });
+    body.response.groups.push({
+      displayName: 'Gemini 4 Argon',
+      buckets: [
+        {
+          bucketId: 'gemini-argon-wtu-weekly',
+          displayName: 'Weekly Limit Remaining',
+          window: 'weekly',
+          remainingFraction: 0.19,
+          resetTime: at(6 * 1440),
+        },
+        {
+          bucketId: 'gemini-argon-wtu-5h',
+          displayName: 'Five Hour Limit Remaining',
+          window: '5h',
+          remainingFraction: 0.5,
+          disabled: true,
+        },
+        {
+          bucketId: 'gemini-argon-wtu-daily',
+          displayName: 'Daily',
+          window: 'daily',
+          remainingAmount: '3',
+        },
+      ],
+    });
+    return body;
+  }
+
+  test('pages follow the settings page: plan, credits, then each limit weekly before 5h', () => {
+    const groups = M.parseQuotaSummary(quotaWithArgon(), T0);
+    assert.equal(groups.find(group => group.key === 'gemini-argon-wtu').short, 'Gemini 4 Argon');
+    const pages = C.buildUsagePressPages({
+      groups,
+      models: [],
+      plan: 'Google AI Pro',
+      overage: false,
+      creditsLeft: 12,
+    });
+    assert.deepEqual(
+      pages.map(page => page.metricId ?? page.text.en.title),
+      [
+        'Plan',
+        'AI credits',
+        'gemini-weekly',
+        'gemini-5h',
+        '3p-weekly',
+        '3p-5h',
+        'bucket:gemini-argon-wtu-weekly',
+      ]
+    );
+    assert.equal(pages[0].text.en.message, 'Google AI Pro');
+    assert.equal(pages[0].text.zh.title, '套餐');
+    assert.equal(pages[1].text.en.message, 'Overages off · 12 left');
+    assert.equal(pages[1].text.zh.message, '超额已关 · 剩余 12');
+    assert.deepEqual(
+      pages.slice(2).map(page => [page.label.en, page.label.zh, page.shown]),
+      [
+        ['Gemini Models Weekly', 'Gemini Models 每周', 'remaining'],
+        ['Gemini Models Five Hour', 'Gemini Models 5 小时', 'remaining'],
+        ['Claude and GPT models Weekly', 'Claude and GPT models 每周', 'remaining'],
+        ['Claude and GPT models Five Hour', 'Claude and GPT models 5 小时', 'remaining'],
+        ['Gemini 4 Argon Weekly', 'Gemini 4 Argon 每周', 'remaining'],
+      ]
+    );
+    assert.equal(C.planLabel(EMAIL), null);
+    assert.deepEqual(C.buildUsagePressPages({ groups: [], models: [], plan: EMAIL, overage: null, creditsLeft: null }), []);
+    const text = JSON.stringify(pages);
+    assert.ok(!text.includes(EMAIL));
+    assert.ok(!text.includes('FAKE Person'));
+  });
+
+  test('per-model pages skip the lowest duplicate', () => {
+    const models = M.modelMetrics(
+      userStatus({
+        models: [
+          { label: 'Gemini 9 Pro', quotaInfo: { remainingFraction: 0.4, resetTime: at(90) } },
+          { label: 'Claude FAKE Opus', quotaInfo: { remainingFraction: 0.1, resetTime: at(30) } },
+        ],
+      }),
+      T0
+    );
+    const pages = C.buildUsagePressPages({
+      groups: [],
+      models,
+      plan: null,
+      overage: null,
+      creditsLeft: null,
+    });
+    assert.deepEqual(
+      pages.map(page => page.metricId),
+      ['model:Gemini 9 Pro', 'model:Claude FAKE Opus']
+    );
+    assert.ok(pages.every(page => page.shown === 'remaining'));
+  });
+
+  test('settings.json overage: the app file wins, links and bad JSON are skipped', () => {
+    const root = tmpDir('overage');
+    const appDir = path.join(root, 'antigravity');
+    const ideDir = path.join(root, 'antigravity-ide');
+    const cliDir = path.join(root, 'antigravity-cli');
+    fs.mkdirSync(appDir);
+    fs.mkdirSync(ideDir);
+    fs.mkdirSync(cliDir);
+    const secret = ['sk-', 'ant-', 'FAKESECRET'].join('');
+    const ideFile = path.join(ideDir, 'settings.json');
+    const appFile = path.join(appDir, 'settings.json');
+    fs.writeFileSync(ideFile, JSON.stringify({ useG1Credits: true, email: EMAIL, token: secret }));
+    fs.writeFileSync(appFile, `{not json ${secret}`);
+    assert.equal(C.readCreditOverage(root), true);
+    fs.writeFileSync(appFile, JSON.stringify({ useG1Credits: 'never', note: secret }));
+    assert.equal(C.readCreditOverage(root), false);
+    fs.rmSync(appFile);
+    fs.symlinkSync(ideFile, appFile);
+    assert.equal(C.readCreditOverage(root), true);
+    fs.writeFileSync(ideFile, 'x'.repeat(70 * 1024));
+    fs.writeFileSync(path.join(cliDir, 'settings.json'), JSON.stringify({ useG1Credits: false }));
+    assert.equal(C.readCreditOverage(root), false);
+    assert.equal(C.readCreditOverage('antigravity'), null);
+    assert.equal(C.readCreditOverage(path.join(root, 'missing')), null);
   });
 });
 
@@ -1102,7 +1271,7 @@ describe('Antigravity usage key', () => {
   });
 
   /** A UsageKeys group over a source, collecting the drawn images. */
-  function keysWith(src) {
+  function keysWith(src, logs = null) {
     const cid = Kit.keyCid('antigravity', 'usage');
     const sent = new Map();
     let chain = Promise.resolve();
@@ -1114,6 +1283,13 @@ describe('Antigravity usage key', () => {
       bgColor: () => undefined,
       loadConfig: async () => CONFIG,
       pollIntervalMs: () => 3_600_000,
+      logger: logs
+        ? {
+            info: message => logs.push(String(message)),
+            warn: message => logs.push(String(message)),
+            error: message => logs.push(String(message)),
+          }
+        : undefined,
       provider: { cid, brand: ANTIGRAVITY_BRAND, source: src },
     });
     return {
@@ -1167,6 +1343,104 @@ describe('Antigravity usage key', () => {
     );
     assert.equal(await src.face({ metric: 'gemini-5h', metrics: [], width: 240, showResetTime: true, lang: 'en', data: {} }), null);
     assert.equal(src.metricLabel({ id: 'gemini-5h', label: 'Gemini 5h', percent: 1, resetsAt: null }, 'zh'), 'Gemini 5 小时');
+  });
+
+  test('a press cycles plan, credits and each remaining limit, then the resting meter', async () => {
+    const body = summary({ gemini5h: 0.99, geminiWeekly: 0.73, claude5h: 1, claudeWeekly: 1 });
+    body.response.groups.push({
+      displayName: 'Gemini 4 Argon',
+      buckets: [
+        {
+          bucketId: 'gemini-argon-wtu-weekly',
+          displayName: 'Weekly Limit Remaining',
+          window: 'weekly',
+          remainingFraction: 0.19,
+          resetTime: at(6 * 1440),
+        },
+      ],
+    });
+    const status = userStatus();
+    status.userStatus.useG1Credits = false;
+    status.userStatus.availablePromptCredits = 12;
+    const machine = fakeMachine([
+      appServer({
+        RetrieveUserQuotaSummary: ok(body),
+        GetUserStatus: ok(status),
+      }),
+    ]);
+    const { src } = source(machine);
+    const logs = [];
+    const { cid, keys, sent, settle } = keysWith(src, logs);
+    const key = { uid: 1, cid, width: 720, data: { metric: '' } };
+    try {
+      await keys.alive('FAKE-DEVICE-1', [key]);
+      await settle();
+      const resting = sent.get(1);
+      assert.deepEqual(pngSize(resting), [720, 60]);
+      assert.deepEqual(machine.calls.post.map(call => call.method), ['RetrieveUserQuotaSummary']);
+      const seen = [resting];
+      for (let n = 0; n < 8; n++) {
+        await keys.press('FAKE-DEVICE-1', key);
+        await settle();
+        seen.push(sent.get(1));
+      }
+      assert.equal(seen[8], resting);
+      for (let n = 1; n <= 7; n++) {
+        assert.notEqual(seen[n], seen[n - 1], `press ${n}`);
+      }
+      assert.deepEqual(machine.calls.post.map(call => call.method), [
+        'RetrieveUserQuotaSummary',
+        'GetUserStatus',
+      ]);
+      const written = logs.join('\n');
+      for (const secret of [EMAIL, 'FAKE Person', TOKEN_APP]) {
+        assert.ok(!written.includes(secret), secret);
+      }
+    } finally {
+      keys.stop();
+    }
+  });
+
+  test('the file flag fills in when GetUserStatus has no overage field', async () => {
+    const root = tmpDir('press-flag');
+    fs.mkdirSync(path.join(root, 'antigravity'));
+    const secret = ['sk-', 'ant-', 'FAKESECRET'].join('');
+    fs.writeFileSync(
+      path.join(root, 'antigravity', 'settings.json'),
+      JSON.stringify({ useG1Credits: true, email: EMAIL, token: secret })
+    );
+    const machine = fakeMachine([
+      appServer({
+        RetrieveUserQuotaSummary: ok(summary()),
+        GetUserStatus: ok(userStatus()),
+      }),
+    ]);
+    const { src } = source(machine);
+    const config = { ...CONFIG, antigravityDir: root };
+    const metrics = await src.fetch(config);
+    await src.preparePress(config);
+    await src.preparePress(config);
+    const pages = src.pressPages(metrics, 'en');
+    assert.equal(pages[0].text.en.title, 'Plan');
+    assert.equal(pages[0].text.en.message, 'FAKE Tier');
+    assert.equal(pages[1].text.en.message, 'Overages on');
+    assert.equal(machine.calls.post.filter(call => call.method === 'GetUserStatus').length, 1);
+    assert.equal(machine.calls.post.filter(call => call.method === 'RetrieveUserQuotaSummary').length, 1);
+    const text = JSON.stringify(pages);
+    assert.ok(!text.includes(EMAIL));
+    assert.ok(!text.includes(secret));
+  });
+
+  test('a remaining meter draws the percent left, not the used share', async () => {
+    const Render = req('render.js');
+    const snapshot = { percent: 27, label: 'Gemini Models Weekly', resetsAt: null, tag: '7d' };
+    const options = { showResetTime: false, showClawd: false };
+    const used = await Render.renderUsageKey(240, snapshot, options);
+    const left = await Render.renderUsageKey(240, snapshot, { ...options, shown: 'remaining' });
+    const same = await Render.renderUsageKey(240, snapshot, { ...options, shown: 'used' });
+    assert.notEqual(left, used);
+    assert.equal(same, used);
+    assert.ok(left.startsWith('data:image/png;base64,'));
   });
 
   test('error faces are drawn without network', async () => {

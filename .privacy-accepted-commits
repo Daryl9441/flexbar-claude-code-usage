@@ -14,3 +14,5 @@ ccd6975a708a5cae62f8c5f8dcbeef732a1c8abf # Merge branch 'fix/layout'
 e1752e4b4b4cd2e49dfcaaabb028104cd77c7c83 # diag: diagnostic build (local diag/stripes only)
 e7fc1567276e2c4cef1168275642b57f4aad2ce2 # Merge pull request #1: authored by the owner's GitHub account email via GitHub's web merge; already public on origin/main (owner decision, 2026-10-12)
 4309bbca2a5e4ffeb7455c8566b42058dc5d5063 # Merge pull request #3: authored by the owner's GitHub account email via GitHub's web merge; already public on origin/main (owner decision, 2026-10-23)
+cae55d15e1cb976cc450bf3adb4add859fd1a7b4 # Squash of pull request #4 via GitHub's web merge; same account email already accepted for the #1 and #3 web merges, already public on origin/main (2026-10-26)
+ed4fe150986f8bdba13eb89b1be8efc4fd099178 # Squash of pull request #5 via GitHub's web merge; same account email already accepted for the #1 and #3 web merges, already public on origin/main (2026-10-26)

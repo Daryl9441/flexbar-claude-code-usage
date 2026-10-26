@@ -26,6 +26,13 @@ const COLOR_STOPS: [number, [number, number, number]][] = [
   [100, [0xd9, 0x53, 0x4f]],
 ];
 
+/** Used share clamped to 0..100. Non-numeric values count as 0. */
+function clampUsed(percent: number): number {
+  const value = Number(percent);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 /** Interpolates the bar color along the green -> orange -> red gradient. */
 export function percentToColor(percent: number): string {
   const p = Math.max(0, Math.min(100, percent));
@@ -265,6 +272,12 @@ export type RenderOptions = {
    * 3.7 Sonnet" → "3.7 Sonnet") as they always did.
    */
   dropVersion?: boolean;
+  /**
+   * 'remaining' prints and fills what is left of the limit. The bar color
+   * still follows the used share, so a full remaining bar stays green.
+   * Default: the used percentage, as every resting meter draws it.
+   */
+  shown?: 'used' | 'remaining';
 };
 
 // Brand edge: a strip this wide in the provider's colour on the right edge
@@ -350,7 +363,10 @@ export async function renderUsageKey(
   }
   const contentWidth = rightX - contentX;
 
-  const percentText = `${snapshot.percent}%`;
+  const remaining = options.shown === 'remaining';
+  const usedShare = clampUsed(snapshot.percent);
+  const displayPercent = remaining ? 100 - usedShare : snapshot.percent;
+  const percentText = `${displayPercent}%`;
   const percentSize = fitFont(ctx, percentText, contentWidth, 26, 14, 'bold');
   const percentWidth = textWidth(ctx, percentText);
 
@@ -432,9 +448,9 @@ export async function renderUsageKey(
 
     const fillWidth = Math.min(
       contentWidth,
-      Math.max(barHeight, (contentWidth * snapshot.percent) / 100)
+      Math.max(barHeight, (contentWidth * displayPercent) / 100)
     );
-    ctx.fillStyle = percentToColor(snapshot.percent);
+    ctx.fillStyle = percentToColor(remaining ? usedShare : snapshot.percent);
     ctx.beginPath();
     ctx.roundRect(contentX, barY, fillWidth, barHeight, barHeight / 2);
     ctx.fill();

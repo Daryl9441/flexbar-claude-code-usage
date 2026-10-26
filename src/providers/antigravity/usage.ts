@@ -5,8 +5,8 @@
  * The desktop app and the IDE each run a language server (LS) on
  * 127.0.0.1; one Connect-JSON request to it (`RetrieveUserQuotaSummary`,
  * about 1 KB, answered from the LS's own cache) gives every model group's
- * limits (today: Gemini and Claude/GPT-OSS, each with a 5-hour and a
- * weekly bucket). The LS is found with `ps` (its CSRF token is on its
+ * limits (Gemini, Claude/GPT-OSS, and any other pool the server reports,
+ * such as Gemini 4 Argon). The LS is found with `ps` (its CSRF token is on its
  * command line) and `lsof` (its ports): ./usageProcess.ts. The app is asked
  * first (on macOS it keeps running in the menu bar), then the IDE; every
  * product shares one Google account, so either gives the same numbers.
@@ -21,8 +21,11 @@
  * deadline; one that runs out is asked again unforced on the same port
  * (the LS answers from its cache in about a millisecond) and counts as the
  * refresh, so a slow Google never blanks the key. GetUserStatus (≈ 30 KB:
- * plan name, per-model quota) only feeds the settings page (every 30
- * minutes at most) and the no-groups fallback.
+ * plan name, per-model quota) feeds the settings page (every 30 minutes
+ * at most), the no-groups fallback, and a key press (plan and credit
+ * overages, from that same cache). It is not part of the 30 s poll. A
+ * press then rotates the plan, the overage state and each group limit
+ * (percent left); see ./usageCycle.ts.
  *
  * The CSRF token stays in memory and only goes to a port lsof attributes
  * to the LS it came from, in a header (./usageRpc.ts). The agy CLI keeps
@@ -40,17 +43,27 @@ import {
   UsageFace,
   UsageFaceRequest,
   UsageMetric,
+  UsagePressPage,
   UsageSource,
 } from '../types';
 
 import { ANTIGRAVITY_BRAND } from './brand';
-import { antigravityPathSetting, installedProducts } from './paths';
+import {
+  antigravityPathSetting,
+  antigravityRoot,
+  installedProducts,
+} from './paths';
+import {
+  buildUsagePressPages,
+  creditFromStatus,
+  planLabel,
+  readCreditOverage,
+} from './usageCycle';
 import { dualEmpty, dualMissingText, renderGroupDualKey } from './usageFace';
 import {
   DualView,
   QuotaGroupView,
   anyStale,
-  cleanText,
   dualViews,
   groupMetrics,
   localizeLabel,
@@ -159,6 +172,18 @@ type StatusInfo = {
   signedIn: boolean;
   tier: string | null;
   models: UsageMetric[];
+  /** AI credit overages, when the answer carries an allowlisted flag. */
+  overage: boolean | null;
+  /** Credits still left, when the answer counts them. */
+  creditsLeft: number | null;
+};
+
+const SIGNED_OUT: StatusInfo = {
+  signedIn: false,
+  tier: null,
+  models: [],
+  overage: null,
+  creditsLeft: null,
 };
 
 type Answer = { result: RpcResult; server: LanguageServer };
@@ -206,12 +231,15 @@ export function statusInfo(json: unknown, now: number): StatusInfo {
   const plan = planInfo(status.planStatus) ?? planInfo(root) ?? {};
   // only the presence of an account is checked, never its name or address
   const signedIn = nonEmpty(status.email) || nonEmpty(tier.id);
-  const tierName =
-    cleanText(tier.name, 40) || cleanText(plan.planName, 40) || null;
+  if (!signedIn) return { ...SIGNED_OUT, models: modelMetrics(json, now) };
+  const tierName = planLabel(tier.name) ?? planLabel(plan.planName);
+  const credit = creditFromStatus(json);
   return {
     signedIn,
-    tier: signedIn ? tierName : null,
+    tier: tierName,
     models: modelMetrics(json, now),
+    overage: credit.overage,
+    creditsLeft: credit.creditsLeft,
   };
 }
 
@@ -255,6 +283,8 @@ export function createAntigravityUsageSource(
   let duals: DualView[] = [];
   let server: ServerProduct | null = null;
   let modelMode = false;
+  /** `useG1Credits` from settings.json, read on press. Null when unknown. */
+  let fileOverage: boolean | null = null;
   let recent: Outcome | null = null;
   let inFlight: { key: string; promise: Promise<UsageMetric[]> } | null = null;
   let lastSuccessAt = 0;
@@ -501,7 +531,7 @@ export function createAntigravityUsageSource(
     let info: StatusInfo;
     if (result.kind === 'ok') info = statusInfo(result.json, now());
     else if (result.kind === 'connect' && SIGNED_OUT_CODES.has(result.code)) {
-      info = { signedIn: false, tier: null, models: [] };
+      info = SIGNED_OUT;
     } else return null;
     status = { at: now(), info };
     return info;
@@ -784,6 +814,29 @@ export function createAntigravityUsageSource(
       );
     },
     describe,
+    async preparePress(config) {
+      try {
+        fileOverage = readCreditOverage(antigravityRoot(config, homeDir()));
+      } catch {
+        fileOverage = null;
+      }
+      try {
+        await userStatus(STATUS_TTL_MS);
+      } catch {
+        // the quota pages still rotate when the plan cannot be read
+      }
+    },
+    pressPages(metrics: UsageMetric[]): UsagePressPage[] | null {
+      const info = status?.info ?? null;
+      const pages = buildUsagePressPages({
+        groups: modelMode ? [] : groups,
+        models: modelMode ? metrics : [],
+        plan: info?.signedIn ? info.tier : null,
+        overage: info?.overage ?? fileOverage,
+        creditsLeft: info?.signedIn ? info.creditsLeft : null,
+      });
+      return pages.length > 0 ? pages : null;
+    },
     lastServer: () => server,
   };
 }
