@@ -1,7 +1,10 @@
 // Tests for the Grok Bot usage source. Synthetic fixtures only. fetch and
 // the Cursor token lookup are stubbed, and the real home folder is never read.
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +18,8 @@ const req = file => require(path.join(build, file));
 const U = req('providers/grokbot/usage.js');
 const D = req('providers/grokbot/usageDecode.js');
 const P = req('providers/grokbot/paths.js');
+const A = req('providers/grokbot/usageAuth.js');
+const Seal = req('providers/grokbot/cursorSeal.js');
 const Kit = req('providers/kit.js');
 
 const HOME = '/Users/you';
@@ -288,5 +293,156 @@ describe('Grok Bot usage source', () => {
     assert.equal(described.success, false);
     assert.equal(described.problem, 'state-unreadable');
     assert.equal(String(described.error).includes(TOKEN), false);
+  });
+
+  test('a sealed login the keychain will not open is not sent to Cursor', async () => {
+    const Text = req('providers/grokbot/usageText.js');
+    const { usage, calls } = source({
+      exists: INSTALLED,
+      loadToken: async () => {
+        throw new Text.GrokbotUsageError(
+          'keychain-blocked',
+          'Cursor sealed its login and the keychain did not hand over the key'
+        );
+      },
+    });
+    const error = await usage.fetch({}).catch(caught => caught);
+    assert.equal(error.problem, 'keychain-blocked');
+    assert.equal(calls.length, 0);
+    assert.equal(usage.errorText(error, 'en').message, 'Allow Cursor login');
+    assert.equal(usage.errorText(error, 'zh').title, '钥匙串未允许');
+    assert.equal(usage.logText(error).includes(TOKEN), false);
+  });
+});
+
+const KEY_PASSWORD = 'FAKE-CURSOR-KEY';
+
+function fakeJwt(tag) {
+  const part = name => Buffer.from(`fake-claim-${name}-TEST`).toString('base64url');
+  return [part(`${tag}-h`), part(`${tag}-p`), part(`${tag}-s`)].join('.');
+}
+
+/** Independent of cursorSeal.ts: Chromium's macOS OSCrypt, v10. */
+function sealJwt(password, plaintext) {
+  const key = crypto.pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1');
+  const iv = Buffer.alloc(16, 0x20);
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
+  const body = Buffer.concat([
+    Buffer.from('v10'),
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
+  return `${Seal.SEALED_PREFIX}${body.toString('base64')}`;
+}
+
+describe('sealed Cursor login', () => {
+  test('a sealed cell opens to the JWT; a plaintext JWT never asks the keychain', async () => {
+    Seal.resetCursorSealState();
+    const jwt = fakeJwt('open');
+    const sealed = sealJwt(KEY_PASSWORD, jwt);
+    assert.equal(sealed.includes('.'), false);
+    let asks = 0;
+    const opened = await Seal.openStoredCursorToken(sealed, {
+      platform: 'darwin',
+      readPassword: async () => {
+        asks += 1;
+        return KEY_PASSWORD;
+      },
+    });
+    assert.equal(opened.kind, 'token');
+    assert.equal(opened.token, jwt);
+    assert.equal(asks, 1);
+    const again = await Seal.openStoredCursorToken(sealed, {
+      platform: 'darwin',
+      readPassword: async () => {
+        asks += 1;
+        return KEY_PASSWORD;
+      },
+    });
+    assert.equal(again.token, jwt);
+    assert.equal(asks, 1);
+    const plain = await Seal.openStoredCursorToken(fakeJwt('plain'), {
+      platform: 'darwin',
+      readPassword: async () => {
+        throw new Error('keychain should stay closed');
+      },
+    });
+    assert.equal(plain.kind, 'token');
+  });
+
+  test('a denial is remembered until the key is pressed', async () => {
+    Seal.resetCursorSealState();
+    const sealed = sealJwt(KEY_PASSWORD, fakeJwt('deny'));
+    let asks = 0;
+    const readPassword = async () => {
+      asks += 1;
+      return null;
+    };
+    const first = await Seal.openStoredCursorToken(sealed, { platform: 'darwin', readPassword });
+    const second = await Seal.openStoredCursorToken(sealed, { platform: 'darwin', readPassword });
+    assert.equal(first.kind, 'keychain-blocked');
+    assert.equal(second.kind, 'keychain-blocked');
+    assert.equal(asks, 1);
+    const { usage } = source({ exists: INSTALLED, loadToken: async () => null });
+    await usage.preparePress();
+    const third = await Seal.openStoredCursorToken(sealed, {
+      platform: 'darwin',
+      readPassword: async () => {
+        asks += 1;
+        return KEY_PASSWORD;
+      },
+    });
+    assert.equal(third.kind, 'token');
+    assert.equal(asks, 2);
+  });
+
+  test('a non-JWT cell is not a bearer, and a wrong key does not quote it', async () => {
+    Seal.resetCursorSealState();
+    const opaque = 'A'.repeat(583);
+    assert.equal(opaque.includes('.'), false);
+    let asked = false;
+    const blocked = await Seal.openStoredCursorToken(opaque, {
+      platform: 'darwin',
+      readPassword: async () => {
+        asked = true;
+        return KEY_PASSWORD;
+      },
+    });
+    assert.equal(blocked.kind, 'login-unreadable');
+    assert.equal(asked, false);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grokbot-seal-'));
+    const db = path.join(dir, 'state.vscdb');
+    const jwt = fakeJwt('db');
+    const sealed = sealJwt(KEY_PASSWORD, jwt);
+    const { DatabaseSync } = require('node:sqlite');
+    const handle = new DatabaseSync(db);
+    handle.exec('CREATE TABLE ItemTable (key TEXT, value TEXT)');
+    handle.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run('cursorAuth/accessToken', sealed);
+    handle.close();
+    try {
+      const token = await A.readCursorAccessToken(db, os.tmpdir(), {
+        platform: 'darwin',
+        readPassword: async () => KEY_PASSWORD,
+      });
+      assert.equal(token, jwt);
+      Seal.resetCursorSealState();
+      await assert.rejects(
+        A.readCursorAccessToken(db, os.tmpdir(), {
+          platform: 'darwin',
+          readPassword: async () => 'wrong-key',
+        }),
+        error => {
+          assert.equal(error.problem, 'login-unreadable');
+          assert.equal(error.message.includes(KEY_PASSWORD), false);
+          assert.equal(error.message.includes(jwt), false);
+          assert.equal(error.message.includes(sealed), false);
+          assert.equal(error.message.includes('wrong-key'), false);
+          return true;
+        }
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

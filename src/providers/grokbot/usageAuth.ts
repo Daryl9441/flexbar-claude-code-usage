@@ -1,9 +1,11 @@
 /**
  * Read-only lookup of Cursor's access token in its VS Code state database
- * (`cursorAuth/accessToken`). Grok Bot keeps its own copy in Electron safe
- * storage, which this plugin does not decrypt. The token stays in memory
- * and is sent only to Cursor's dashboard host. Nothing is logged, and a
- * failed read never quotes the database contents.
+ * (`cursorAuth/accessToken`). Newer Cursor builds seal that cell; opening
+ * it uses the login keychain and is implemented in ./cursorSeal.ts. Grok
+ * Bot keeps its own copy in Electron safe storage, which this plugin does
+ * not decrypt. The token stays in memory and is sent only to Cursor's
+ * dashboard host. Nothing is logged, and a failed read never quotes the
+ * database contents.
  *
  * A WAL database is copied into a temp folder first: opening the original
  * read-only can still create -wal/-shm files beside it.
@@ -13,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { CursorSealOptions, openStoredCursorToken } from './cursorSeal';
 import { GrokbotUsageError } from './usageText';
 
 /** ItemTable key of the Cursor app's access token. Not the token itself. */
@@ -44,6 +47,25 @@ export function loadSqlite(): SqliteModule | null {
     sqliteModule = null;
   }
   return sqliteModule;
+}
+
+async function finishToken(
+  stored: string | null,
+  seal?: CursorSealOptions
+): Promise<string | null> {
+  const opened = await openStoredCursorToken(stored, seal);
+  if (opened.kind === 'token') return opened.token;
+  if (opened.kind === 'absent') return null;
+  if (opened.kind === 'keychain-blocked') {
+    throw new GrokbotUsageError(
+      'keychain-blocked',
+      'Cursor sealed its login and the keychain did not hand over the key'
+    );
+  }
+  throw new GrokbotUsageError(
+    'login-unreadable',
+    'Cursor login is stored, but it is not a usable access token'
+  );
 }
 
 function tokenText(value: unknown): string | null {
@@ -126,13 +148,16 @@ async function sweepCopies(dir: string): Promise<void> {
 }
 
 /**
- * The access token, or null when Cursor is not signed in. Throws
- * GrokbotUsageError when the database is present but cannot be read, or
- * when this runtime has no node:sqlite.
+ * The access token, or null when Cursor is not signed in. A sealed cell
+ * is opened with Cursor's safeStorage key (see ./cursorSeal.ts). A cell
+ * that is not a JWT and cannot be opened throws, so it is never sent as
+ * the bearer. Also throws when the database is present but cannot be
+ * read, or when this runtime has no node:sqlite.
  */
 export async function readCursorAccessToken(
   databasePath: string,
-  tmpDir: string = os.tmpdir()
+  tmpDir: string = os.tmpdir(),
+  seal?: CursorSealOptions
 ): Promise<string | null> {
   const sqlite = loadSqlite();
   if (!sqlite) {
@@ -161,7 +186,7 @@ export async function readCursorAccessToken(
     const url = pathToFileURL(databasePath);
     url.searchParams.set('mode', 'ro');
     url.searchParams.set('immutable', '1');
-    return readRow(sqlite, url);
+    return finishToken(await readRow(sqlite, url), seal);
   }
   await sweepCopies(tmpDir);
   const dir = await fsp.mkdtemp(path.join(tmpDir, COPY_PREFIX));
@@ -174,7 +199,7 @@ export async function readCursorAccessToken(
     } catch {
       // the WAL copy is enough when there is no shm
     }
-    return readRow(sqlite, copy);
+    return finishToken(await readRow(sqlite, copy), seal);
   } catch (error) {
     if (error instanceof GrokbotUsageError) throw error;
     throw new GrokbotUsageError(

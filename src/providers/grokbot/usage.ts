@@ -5,8 +5,11 @@
  * POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus
  * Connect-RPC, empty JSON body, Authorization: Bearer <Cursor access token>.
  * The token is the Cursor app's, read from its state database
- * (./usageAuth.ts). It is Grok Bot's allowance only when that app is
- * installed and Cursor is signed into the same account; with no Grok Bot
+ * (./usageAuth.ts). A sealed cell is opened with the login keychain; a
+ * value that is not a JWT is not sent. It is Grok Bot's allowance only
+ * when that app is installed and Cursor is signed into the same account;
+ * with no Grok Bot install the key does not ask, because the same call
+ * would still answer for whichever account Cursor is using.
  * install the key does not ask, because the same call would still answer
  * for whichever account Cursor is using.
  *
@@ -26,6 +29,7 @@ import {
   UsageSource,
 } from '../types';
 
+import { allowCursorKeychainPrompt } from './cursorSeal';
 import {
   cursorStateDb,
   grokbotAppCandidates,
@@ -235,6 +239,11 @@ export function createGrokbotUsageSource(
         error instanceof GrokbotUsageError &&
         (error.problem === 'network' || error.problem === 'http')
       );
+    },
+    async preparePress() {
+      // A denial is remembered so the poll does not raise the keychain
+      // dialog every minute. A press may ask again, then the refresh runs.
+      allowCursorKeychainPrompt();
     },
     async fetch(config: PluginConfig): Promise<UsageMetric[]> {
       return (await fetchMetrics(config)).metrics;

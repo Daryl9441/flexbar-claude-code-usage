@@ -374,9 +374,11 @@ outside the repository with `assert` changed to `with` in
   Usage: `usage.ts` (`usageSource`; POST
   `api2.cursor.sh` `GetSandUsageStatus` only when the app is installed),
   `usageAuth.ts` (Cursor `cursorAuth/accessToken` from `state.vscdb`,
-  read-only, WAL copied, never logged; Grok Bot safeStorage is not
-  decrypted), `usageDecode.ts` (weekly used %, pooled and no-allowance
-  refusals), `usageText.ts`. Sessions: `session.ts` (`sessionProvider`),
+  read-only, WAL copied, never logged; a `cursor-safe-storage:v1:` cell is
+  opened with the login-keychain item `Cursor Safe Storage` / `Cursor Key`
+  in `cursorSeal.ts`, and a non-JWT is not sent), `usageDecode.ts` (weekly
+  used %, pooled and no-allowance refusals), `usageText.ts`. Sessions:
+  `session.ts` (`sessionProvider`),
   `sessionScan.ts` (roster and transcript timestamps only; message text
   dropped), `sessionProcs.ts` (pid plus a short process name that mentions
   Grok; the command line is never read). A bot is Question or Done; the
