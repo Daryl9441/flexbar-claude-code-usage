@@ -14,18 +14,16 @@ import path from 'node:path';
 import { UsageMetric, UsagePressPage } from '../types';
 
 import { AntigravityProduct, DATA_FOLDERS } from './paths';
-import { QuotaBucketView, QuotaGroupView, cleanText } from './usageMetrics';
+import {
+  QuotaBucketView,
+  QuotaGroupView,
+  WINDOW_TEXT,
+  cleanText,
+} from './usageMetrics';
 import { parseJson } from './usageRpc';
 
 /** Weekly before the five-hour limit, matching the settings page. */
 const CYCLE_WINDOWS = ['weekly', '5h', 'daily', 'monthly'];
-
-const WINDOW_PHRASE: Readonly<Record<string, { en: string; zh: string }>> = {
-  '5h': { en: 'Five Hour', zh: '5 小时' },
-  daily: { en: 'Daily', zh: '每日' },
-  weekly: { en: 'Weekly', zh: '每周' },
-  monthly: { en: 'Monthly', zh: '每月' },
-};
 
 /** Booleans that mean "AI credit overages", and nothing else. */
 const OVERAGE_KEYS = [
@@ -203,20 +201,174 @@ function creditsMessage(
   return { en: en.join(' · '), zh: zh.join(' · ') };
 }
 
+/** Display name with a trailing "models" removed. */
+function stripModels(name: string): string {
+  return name
+    .replace(/\bmodels?\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * The name a press page leads with. Known pools use the short form the
+ * settings list is read by ("Gemini", "Claude/GPT"). Any other pool keeps
+ * its display name, so "Gemini 4 Argon" does not collapse onto "Gemini".
+ */
+export function cycleGroupName(
+  group: Pick<QuotaGroupView, 'key' | 'name' | 'short'>
+): { en: string; zh: string } {
+  const raw = stripModels(group.name || group.short);
+  if (group.key === 'gemini' || /^gemini$/i.test(raw)) {
+    return { en: 'Gemini', zh: 'Gemini' };
+  }
+  if (group.key === '3p' || (/claude/i.test(raw) && /gpt/i.test(raw))) {
+    return { en: 'Claude/GPT', zh: 'Claude/GPT' };
+  }
+  const name = cleanText(raw || group.short, 32) || group.short;
+  return { en: name, zh: name };
+}
+
+/**
+ * Shorter spellings of a versioned pool, longest first. "Gemini 4 Argon"
+ * can become "G4 Argon" and then "4 Argon", never plain "Gemini".
+ */
+export function cycleNameForms(name: string): string[] {
+  const text = name.replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  const forms = [text];
+  const versioned = /^(?:gemini)\s+(\d+(?:\.\d+)*)\s+(\S.*)$/i.exec(text);
+  if (versioned) {
+    forms.push(`G${versioned[1]} ${versioned[2]}`.replace(/\s+/g, ' ').trim());
+    forms.push(`${versioned[1]} ${versioned[2]}`.trim());
+  }
+  if (/^claude\/gpt$/i.test(text)) forms.push('C/GPT');
+  // A pool the server named in several words keeps its first word before
+  // any ellipsis, so "Imagen Extra Pool" stays "Imagen". A leading
+  // "Gemini" is left out: versioned Gemini pools must not collapse onto it.
+  const first = text.split(' ')[0] ?? '';
+  if (
+    first.length >= 3 &&
+    first.length < text.length &&
+    !/^gemini$/i.test(first)
+  ) {
+    forms.push(first);
+  }
+  return [...new Set(forms)];
+}
+
+function ellipsizeMeasured(
+  text: string,
+  maxWidth: number,
+  measure: (text: string) => number
+): string {
+  const ellipsis = '…';
+  if (measure(text) <= maxWidth) return text;
+  const chars = Array.from(text);
+  for (let n = chars.length - 1; n >= 1; n--) {
+    const cut = `${chars.slice(0, n).join('').trimEnd()}${ellipsis}`;
+    if (measure(cut) <= maxWidth) return cut;
+  }
+  return measure(ellipsis) <= maxWidth ? ellipsis : '';
+}
+
+/**
+ * The longest group spelling that fits `maxWidth`. A name that still does
+ * not fit is ellipsized from its shortest spelling, so a cut "Gemini 4
+ * Argon" stays "4 Ar…" rather than "Gemini…".
+ */
+export function fitCycleGroupName(
+  name: string,
+  maxWidth: number,
+  measure: (text: string) => number
+): string {
+  const forms = cycleNameForms(name);
+  if (forms.length === 0 || maxWidth <= 0) return '';
+  for (const form of forms) {
+    if (measure(form) <= maxWidth) return form;
+  }
+  return ellipsizeMeasured(forms[forms.length - 1], maxWidth, measure);
+}
+
+/** Type sizes tried for the group line, largest first. */
+export const CYCLE_NAME_SIZES = [15, 13, 12, 11] as const;
+
+/**
+ * What the limit page draws for one group. The window chip stays on the
+ * name row only when it does not force a shorter spelling; otherwise the
+ * tag moves down next to the percent so the group name stays whole.
+ */
+export function planCycleLabel(
+  contentWidth: number,
+  groupName: string,
+  windowLabel: { word: string; tag: string },
+  measure: (text: string, size: number) => number
+): { name: string; size: number; chip: string; chipOnName: boolean } {
+  const wide = contentWidth >= 120;
+  const word = windowLabel.word.trim();
+  const tag = windowLabel.tag.trim();
+  const chip =
+    (wide && word && measure(word, 11) + 10 <= contentWidth * 0.45
+      ? word
+      : tag || word) || '';
+  const chipWidth = chip ? measure(chip, 11) + 10 : 0;
+  const beside = contentWidth - chipWidth - 6;
+  const withChip =
+    chipWidth > 0 && beside >= 36
+      ? pickCycleGroupName(groupName, beside, measure)
+      : null;
+  const alone = pickCycleGroupName(groupName, contentWidth, measure);
+  const chipOnName = !!withChip && withChip.text === alone.text;
+  const picked = chipOnName && withChip ? withChip : alone;
+  return { name: picked.text, size: picked.size, chip, chipOnName };
+}
+
+/**
+ * Longest spelling that fits, at the largest size that spelling allows.
+ * "G4 Argon" at 11px stays ahead of "4 Argon" at 12px, and "C/GPT" is used
+ * once "Claude/GPT" no longer fits.
+ */
+export function pickCycleGroupName(
+  name: string,
+  maxWidth: number,
+  measure: (text: string, size: number) => number,
+  sizes: readonly number[] = CYCLE_NAME_SIZES
+): { text: string; size: number } {
+  const forms = cycleNameForms(name);
+  for (const form of forms) {
+    for (const size of sizes) {
+      if (measure(form, size) <= maxWidth) return { text: form, size };
+    }
+  }
+  const size = sizes.includes(12) ? 12 : sizes[sizes.length - 1] || 12;
+  return {
+    text: fitCycleGroupName(name, maxWidth, value => measure(value, size)),
+    size,
+  };
+}
+
 function limitPage(
   group: QuotaGroupView,
   bucket: QuotaBucketView
 ): UsagePressPage {
-  const name = group.name || group.short;
-  const phrase = WINDOW_PHRASE[bucket.window];
-  const en = phrase
-    ? `${name} ${phrase.en}`
-    : `${name} ${bucket.name || bucket.window}`.trim();
-  const zh = phrase ? `${name} ${phrase.zh}` : en;
+  const names = cycleGroupName(group);
+  const text = WINDOW_TEXT[bucket.window];
+  const window = text
+    ? { en: text.en, zh: text.zh, tag: text.tag }
+    : {
+        en: bucket.window || bucket.name,
+        zh: bucket.window || bucket.name,
+        tag: '',
+      };
+  const chip = window.tag || window.en;
   return {
     metricId: bucket.metricId,
     shown: 'remaining',
-    label: { en: cleanText(en, 48), zh: cleanText(zh, 48) },
+    group: names,
+    window,
+    label: {
+      en: cleanText(`${names.en} ${chip}`.trim(), 48),
+      zh: cleanText(`${names.zh} ${text ? text.zh : window.zh}`.trim(), 48),
+    },
   };
 }
 
@@ -258,6 +410,7 @@ export function buildUsagePressPages(input: UsageCycleInput): UsagePressPage[] {
     pages.push({
       metricId: metric.id,
       shown: 'remaining',
+      group: { en: metric.label, zh: metric.label },
       label: { en: metric.label, zh: metric.label },
     });
   }

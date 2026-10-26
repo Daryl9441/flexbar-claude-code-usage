@@ -194,8 +194,22 @@ export type UsageFace = { image: string } | { text: KeyText };
 export type UsagePressPage = {
   /** Metric id from the last fetch. Omit on a message page. */
   metricId?: string;
-  /** Chip text. The metric's own label when omitted. */
+  /**
+   * Chip text. The metric's own label when omitted. Limit pages also set
+   * `group`, which is what the key draws large enough to read.
+   */
   label?: { en: string; zh: string };
+  /**
+   * Model-group name drawn on its own line ("Gemini", "Claude/GPT",
+   * "Gemini 4 Argon"). The face shortens it only when the key is too
+   * narrow for the full name.
+   */
+  group?: { en: string; zh: string };
+  /**
+   * Window beside the group name. `tag` is the short form ("7d", "5h")
+   * used when the word does not fit.
+   */
+  window?: { en: string; zh: string; tag: string };
   /**
    * 'remaining' draws what is left (the settings-page number). The default
    * 'used' is the same number as the resting meter.
@@ -203,6 +217,17 @@ export type UsagePressPage = {
   shown?: 'used' | 'remaining';
   /** Message face. Drawn instead of metricId when set. */
   text?: { en: KeyText; zh: KeyText };
+};
+
+/** What a usage key passes when drawing one press-rotation page. */
+export type UsagePressDraw = {
+  page: UsagePressPage;
+  width: number;
+  snapshot: UsageMetric;
+  showResetTime: boolean;
+  bgColor?: string;
+  lang: Lang;
+  data: KeyData;
 };
 
 /** Reply to the settings UI ('usage-status', 'test-connection'). */
@@ -287,6 +312,11 @@ export interface UsageSource {
    * `metrics` is the last successful fetch.
    */
   pressPages?(metrics: UsageMetric[], lang: Lang): UsagePressPage[] | null;
+  /**
+   * Draws one press-rotation page. Null keeps the generic meter. Must not
+   * log secrets.
+   */
+  pressFace?(draw: UsagePressDraw): Promise<string | null> | string | null;
 }
 
 // --- session status ------------------------------------------------------------

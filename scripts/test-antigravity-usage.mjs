@@ -674,15 +674,28 @@ describe('usage press pages', () => {
     assert.equal(pages[1].text.en.message, 'Overages off · 12 left');
     assert.equal(pages[1].text.zh.message, '超额已关 · 剩余 12');
     assert.deepEqual(
-      pages.slice(2).map(page => [page.label.en, page.label.zh, page.shown]),
+      pages.slice(2).map(page => [page.group.en, page.window.tag, page.label.en, page.label.zh, page.shown]),
       [
-        ['Gemini Models Weekly', 'Gemini Models 每周', 'remaining'],
-        ['Gemini Models Five Hour', 'Gemini Models 5 小时', 'remaining'],
-        ['Claude and GPT models Weekly', 'Claude and GPT models 每周', 'remaining'],
-        ['Claude and GPT models Five Hour', 'Claude and GPT models 5 小时', 'remaining'],
-        ['Gemini 4 Argon Weekly', 'Gemini 4 Argon 每周', 'remaining'],
+        ['Gemini', '7d', 'Gemini 7d', 'Gemini 每周', 'remaining'],
+        ['Gemini', '5h', 'Gemini 5h', 'Gemini 5 小时', 'remaining'],
+        ['Claude/GPT', '7d', 'Claude/GPT 7d', 'Claude/GPT 每周', 'remaining'],
+        ['Claude/GPT', '5h', 'Claude/GPT 5h', 'Claude/GPT 5 小时', 'remaining'],
+        ['Gemini 4 Argon', '7d', 'Gemini 4 Argon 7d', 'Gemini 4 Argon 每周', 'remaining'],
       ]
     );
+    assert.deepEqual(C.cycleNameForms('Gemini 4 Argon'), ['Gemini 4 Argon', 'G4 Argon', '4 Argon']);
+    assert.deepEqual(C.cycleNameForms('Claude/GPT'), ['Claude/GPT', 'C/GPT']);
+    assert.equal(C.fitCycleGroupName('Gemini', 6, text => text.length), 'Gemini');
+    assert.equal(C.fitCycleGroupName('Claude/GPT', 10, text => text.length), 'Claude/GPT');
+    assert.equal(C.fitCycleGroupName('Claude/GPT', 5, text => text.length), 'C/GPT');
+    assert.equal(C.fitCycleGroupName('Gemini 4 Argon', 15, text => text.length), 'Gemini 4 Argon');
+    assert.equal(C.fitCycleGroupName('Gemini 4 Argon', 8, text => text.length), 'G4 Argon');
+    assert.equal(C.fitCycleGroupName('Gemini 4 Argon', 7, text => text.length), '4 Argon');
+    assert.equal(C.fitCycleGroupName('Gemini 4 Argon', 4, text => text.length), '4 A…');
+    assert.equal(C.fitCycleGroupName('Imagen', 6, text => text.length), 'Imagen');
+    assert.equal(C.fitCycleGroupName('Imagen Extra Pool', 6, text => text.length), 'Imagen');
+    assert.deepEqual(C.cycleNameForms('Imagen Extra Pool'), ['Imagen Extra Pool', 'Imagen']);
+    assert.ok(!C.fitCycleGroupName('Gemini 4 Argon', 8, text => text.length).startsWith('Gemini'));
     assert.equal(C.planLabel(EMAIL), null);
     assert.deepEqual(C.buildUsagePressPages({ groups: [], models: [], plan: EMAIL, overage: null, creditsLeft: null }), []);
     const text = JSON.stringify(pages);
@@ -711,7 +724,12 @@ describe('usage press pages', () => {
       pages.map(page => page.metricId),
       ['model:Gemini 9 Pro', 'model:Claude FAKE Opus']
     );
+    assert.deepEqual(
+      pages.map(page => page.group.en),
+      ['Gemini 9 Pro', 'Claude FAKE Opus']
+    );
     assert.ok(pages.every(page => page.shown === 'remaining'));
+    assert.equal(C.fitCycleGroupName('Gemini 9 Pro', 6, text => text.length), 'G9 Pro');
   });
 
   test('settings.json overage: the app file wins, links and bad JSON are skipped', () => {
@@ -1429,6 +1447,51 @@ describe('Antigravity usage key', () => {
     const text = JSON.stringify(pages);
     assert.ok(!text.includes(EMAIL));
     assert.ok(!text.includes(secret));
+  });
+
+  test('a narrow press page names the group, and different groups do not look alike', async () => {
+    const snap = { percent: 27, label: 'limit', resetsAt: null };
+    const opts = { showResetTime: false, showClawd: false, shown: 'remaining' };
+    const draw = (group, width) =>
+      F.renderCycleLimitKey(width, group, { word: 'Weekly', tag: '7d' }, snap, opts);
+    const gemini = await draw('Gemini', 60);
+    const claude = await draw('Claude/GPT', 60);
+    const argon = await draw('Gemini 4 Argon', 60);
+    assert.notEqual(gemini, claude);
+    assert.notEqual(gemini, argon);
+    assert.notEqual(claude, argon);
+    assert.notEqual(await draw('Gemini 4 Argon', 240), argon);
+    for (const image of [gemini, claude, argon]) {
+      assert.deepEqual(pngSize(image), [60, 60]);
+    }
+    // 60px key: 6px padding, brand edge instead of the mark, so the name
+    // row is 48px. The full Claude/GPT and Gemini 4 Argon spellings need a
+    // wider key.
+    const { createCanvas } = require('@napi-rs/canvas');
+    const { FONT } = req('fonts.js');
+    const ctx = createCanvas(60, 60).getContext('2d');
+    const measure = (text, size) => {
+      ctx.font = `bold ${size}px ${FONT}`;
+      return ctx.measureText(text).width;
+    };
+    const weekly = { word: 'Weekly', tag: '7d' };
+    const narrow = 48;
+    const at = (name, width) => C.planCycleLabel(width, name, weekly, measure);
+    assert.equal(at('Gemini', narrow).name, 'Gemini');
+    assert.equal(at('Claude/GPT', narrow).name, 'C/GPT');
+    assert.equal(at('Gemini 4 Argon', narrow).name, 'G4 Argon');
+    assert.equal(at('Imagen Extra Pool', narrow).name, 'Imagen');
+    assert.equal(at('Claude/GPT', narrow).chip, '7d');
+    assert.equal(at('Gemini 4 Argon', narrow).chipOnName, false);
+    // 120px key: 10px padding, no mark, 100px for the name. The chip stays
+    // off that row when it would shorten the group.
+    assert.equal(at('Claude/GPT', 100).name, 'Claude/GPT');
+    assert.equal(at('Gemini 4 Argon', 100).name, 'Gemini 4 Argon');
+    assert.equal(at('Gemini 4 Argon', 100).chipOnName, false);
+    assert.equal(at('Imagen Extra Pool', 100).name, 'Imagen Extra Pool');
+    assert.equal(at('Gemini 4 Argon', 160).name, 'Gemini 4 Argon');
+    assert.equal(at('Gemini 4 Argon', 160).chip, 'Weekly');
+    assert.equal(at('Gemini 4 Argon', 160).chipOnName, true);
   });
 
   test('a remaining meter draws the percent left, not the used share', async () => {

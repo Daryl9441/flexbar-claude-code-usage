@@ -6,20 +6,29 @@
  * two dual keys side by side can be told apart; narrow keys keep the plain
  * dual face with the brand edge.
  */
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { SKRSContext2D, createCanvas, loadImage } from '@napi-rs/canvas';
 
 import { FONT } from '../../fonts';
 import {
   COLORS,
   KEY_HEIGHT,
+  RenderOptions,
   drawBrandEdge,
   drawMark,
   ellipsize,
+  percentToColor,
   pixelWidth,
 } from '../../render';
-import { MetricSnapshot, remainingPercent } from '../../usage';
+import {
+  MetricSnapshot,
+  formatTimeUntilReset,
+  remainingPercent,
+  resetsText,
+} from '../../usage';
 import { renderDualUsageKey } from '../../usageDualRender';
 import { KeyMark, KeyText, Lang, UsageMetric } from '../types';
+
+import { planCycleLabel } from './usageCycle';
 
 /** Keys at least this wide get the group column. */
 export const GROUP_COLUMN_MIN_WIDTH = 180;
@@ -126,6 +135,146 @@ export async function renderGroupDualKey(
   } else {
     ctx.font = `bold 11px ${FONT}`;
     ctx.fillText(ellipsize(ctx, name, NAME_MAX_PLAIN), centre, 34);
+  }
+  return canvas.toDataURL('image/png');
+}
+
+function clampUsed(percent: number): number {
+  const value = Number(percent);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function drawWindowChip(
+  ctx: SKRSContext2D,
+  rightX: number,
+  y: number,
+  label: string
+) {
+  ctx.font = `bold 11px ${FONT}`;
+  const padX = 5;
+  const width = ctx.measureText(label).width + padX * 2;
+  const height = 16;
+  const x = rightX - width;
+  ctx.fillStyle = COLORS.chipBg;
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, 5);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.barTrack;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = COLORS.chipText;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + width / 2, y + height / 2 + 0.5);
+}
+
+/**
+ * One press-rotation limit: the group name on its own line (shortened to
+ * fit), the window as a chip, then the percent left and the reset countdown.
+ */
+export async function renderCycleLimitKey(
+  width: number,
+  groupName: string,
+  windowLabel: { word: string; tag: string },
+  snapshot: MetricSnapshot,
+  options: RenderOptions
+): Promise<string> {
+  const keyWidth = pixelWidth(width);
+  const canvas = createCanvas(keyWidth, KEY_HEIGHT);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = options.bgColor || COLORS.background;
+  ctx.fillRect(0, 0, keyWidth, KEY_HEIGHT);
+
+  const pad = keyWidth < 100 ? 6 : 10;
+  let contentX = pad;
+  const rightX = keyWidth - pad;
+  const markSize = 24;
+  const showMark =
+    !!options.mark && !options.showClawd && rightX - (pad + markSize + 8) >= 88;
+  if (showMark && options.mark) {
+    drawMark(ctx, options.mark, pad, (KEY_HEIGHT - markSize) / 2, markSize);
+    contentX = pad + markSize + 8;
+  } else if (options.mark && options.markColor) {
+    drawBrandEdge(ctx, keyWidth, options.markColor);
+  }
+  const contentWidth = Math.max(0, rightX - contentX);
+  const plan = planCycleLabel(
+    contentWidth,
+    groupName,
+    windowLabel,
+    (text, size) => {
+      ctx.font = `bold ${size}px ${FONT}`;
+      return ctx.measureText(text).width;
+    }
+  );
+  ctx.font = `bold ${plan.size}px ${FONT}`;
+  ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(plan.name, contentX, 16);
+  if (plan.chipOnName && plan.chip) drawWindowChip(ctx, rightX, 3, plan.chip);
+
+  const used = clampUsed(snapshot.percent);
+  const display = options.shown === 'remaining' ? 100 - used : snapshot.percent;
+  const percentText = `${display}%`;
+  const reset = options.showResetTime
+    ? formatTimeUntilReset(snapshot.resetsAt, options.lang)
+    : '';
+  const resetText = resetsText(reset, options.lang);
+  const tagOnRow = !plan.chipOnName && plan.chip ? plan.chip : '';
+  ctx.font = `bold 11px ${FONT}`;
+  const tagWidth = tagOnRow ? ctx.measureText(tagOnRow).width + 6 : 0;
+  const percentBudget = Math.max(16, contentWidth - tagWidth);
+  let percentSize = 22;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold ${percentSize}px ${FONT}`;
+  while (
+    percentSize > 13 &&
+    ctx.measureText(percentText).width > percentBudget
+  ) {
+    percentSize -= 1;
+    ctx.font = `bold ${percentSize}px ${FONT}`;
+  }
+  ctx.fillStyle = COLORS.text;
+  ctx.fillText(percentText, contentX, 38);
+  let cursor = contentX + ctx.measureText(percentText).width + 6;
+  if (tagOnRow) {
+    ctx.font = `bold 11px ${FONT}`;
+    if (cursor + ctx.measureText(tagOnRow).width <= rightX) {
+      ctx.fillStyle = COLORS.chipText;
+      ctx.fillText(tagOnRow, cursor, 37);
+      cursor += ctx.measureText(tagOnRow).width + 6;
+    }
+  }
+  if (resetText) {
+    ctx.font = `11px ${FONT}`;
+    const resetDraw =
+      ctx.measureText(resetText).width <= rightX - cursor ? resetText : reset;
+    if (resetDraw && ctx.measureText(resetDraw).width <= rightX - cursor) {
+      ctx.fillStyle = COLORS.label;
+      ctx.fillText(resetDraw, cursor, 37);
+    }
+  }
+
+  const barHeight = 8;
+  const barY = 46;
+  if (contentWidth >= barHeight) {
+    ctx.fillStyle = COLORS.barTrack;
+    ctx.beginPath();
+    ctx.roundRect(contentX, barY, contentWidth, barHeight, barHeight / 2);
+    ctx.fill();
+    const fillWidth = Math.min(
+      contentWidth,
+      Math.max(barHeight, (contentWidth * display) / 100)
+    );
+    ctx.fillStyle = percentToColor(
+      options.shown === 'remaining' ? used : snapshot.percent
+    );
+    ctx.beginPath();
+    ctx.roundRect(contentX, barY, fillWidth, barHeight, barHeight / 2);
+    ctx.fill();
   }
   return canvas.toDataURL('image/png');
 }
