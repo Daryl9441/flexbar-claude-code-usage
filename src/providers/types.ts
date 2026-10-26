@@ -186,6 +186,25 @@ export type UsageFaceRequest = {
  */
 export type UsageFace = { image: string } | { text: KeyText };
 
+/**
+ * One page of a usage key's press rotation. A metric page draws that
+ * limit; a text page draws a message face (plan, credits). Providers
+ * without pressPages keep a press as a refresh.
+ */
+export type UsagePressPage = {
+  /** Metric id from the last fetch. Omit on a message page. */
+  metricId?: string;
+  /** Chip text. The metric's own label when omitted. */
+  label?: { en: string; zh: string };
+  /**
+   * 'remaining' draws what is left (the settings-page number). The default
+   * 'used' is the same number as the resting meter.
+   */
+  shown?: 'used' | 'remaining';
+  /** Message face. Drawn instead of metricId when set. */
+  text?: { en: KeyText; zh: KeyText };
+};
+
 /** Reply to the settings UI ('usage-status', 'test-connection'). */
 export type UsageDescription = {
   success: boolean;
@@ -257,6 +276,17 @@ export interface UsageSource {
    * key's settings when its page sends them (`settings` in the message).
    */
   describe?(config: PluginConfig, data?: KeyData): Promise<UsageDescription>;
+  /**
+   * Runs before a press is drawn (Antigravity: plan and credit overages).
+   * Must not log secrets. A failure is ignored and the quota pages still
+   * rotate.
+   */
+  preparePress?(config: PluginConfig): Promise<void>;
+  /**
+   * Pages a press rotates through, or null when a press only refreshes.
+   * `metrics` is the last successful fetch.
+   */
+  pressPages?(metrics: UsageMetric[], lang: Lang): UsagePressPage[] | null;
 }
 
 // --- session status ------------------------------------------------------------

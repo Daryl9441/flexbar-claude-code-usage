@@ -154,14 +154,18 @@ function groupKey(name: string, bucketIds: string[], index: number): string {
   return slug(name) || `group${index + 1}`;
 }
 
-/** Short chip name of a group: known names, else its first word. */
+/**
+ * Short chip name of a group: known names, else the display name with
+ * "models" removed. The whole name is kept (up to 18 characters) so a pool
+ * such as "Gemini 4 Argon" does not collapse onto "Gemini".
+ */
 function groupShort(key: string, name: string): string {
   if (KNOWN_GROUPS[key]) return KNOWN_GROUPS[key];
-  const first = name
+  const stripped = name
     .replace(/\bmodels?\b/gi, ' ')
-    .trim()
-    .split(/\s+/)[0];
-  return cleanText(first || key, 14) || key;
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleanText(stripped || key, 18) || key;
 }
 
 function bucketLabel(short: string, window: string, name: string): string {

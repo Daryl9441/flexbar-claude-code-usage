@@ -29,11 +29,12 @@ import {
   UsageFace,
   UsageFaceRequest,
   UsageMetric,
+  UsagePressPage,
   UsageSource,
 } from './providers/types';
 import { safeErrorMessage } from './redact';
 import { MessageOptions, renderMessageKey, renderUsageKey } from './render';
-import { TONE_COLORS, langOf } from './sessionView';
+import { LIST_TIMEOUT_MS, ListPager, TONE_COLORS, langOf } from './sessionView';
 import { RESET_NOW_ZH, formatTimeUntilReset } from './usage';
 
 // Minimum gap between any two usage requests, so key presses and page
@@ -144,6 +145,13 @@ export class UsageKeys implements KeyGroup {
   /** The next fetch may ignore the minimum gap (a settings save). */
   private bypassGap = false;
   /**
+   * Press rotation (providers with pressPages). Same pager and timeout as
+   * the session list: a press advances, the page after the last returns to
+   * the resting meter, and so does LIST_TIMEOUT_MS without a press.
+   */
+  private pager = new ListPager();
+  private cycleTimers = new Map<string, NodeJS.Timeout>();
+  /**
    * Keys drawing another metric than their setting (substituteMetric), by
    * serial number and uid, so each change is logged once, not every redraw.
    */
@@ -181,9 +189,14 @@ export class UsageKeys implements KeyGroup {
       // none of these keys left on the page: forget them like dead() does
       this.keys.delete(serialNumber);
       this.substituted.delete(serialNumber);
+      this.forgetCycles(id => id.startsWith(`${serialNumber}#`));
       return;
     }
     this.keys.set(serialNumber, mine);
+    const alive = new Set(mine.map(key => `${serialNumber}#${key.uid}`));
+    this.forgetCycles(
+      id => id.startsWith(`${serialNumber}#`) && !alive.has(id)
+    );
     this.pruneSubstituted(serialNumber);
     this.deps.logger?.info?.(
       `${this.logName} keys alive on ${serialNumber}: ` +
@@ -215,18 +228,38 @@ export class UsageKeys implements KeyGroup {
         : (this.keys.get(serialNumber) ?? []).filter(key => !dead.has(key.uid));
     if (remaining.length > 0) this.keys.set(serialNumber, remaining);
     else this.keys.delete(serialNumber);
+    const keep = new Set(remaining.map(key => `${serialNumber}#${key.uid}`));
+    this.forgetCycles(id => id.startsWith(`${serialNumber}#`) && !keep.has(id));
     this.pruneSubstituted(serialNumber);
   }
 
   /**
-   * Key press: refresh now. The payload carries the key as FlexDesigner
-   * currently knows it, so keep that copy (its width may have changed).
+   * Key press. Providers without pressPages only refresh. A source that
+   * publishes pages rotates one page per press (plan, credits, each limit)
+   * and still refreshes; a press inside the fetch gap redraws the new page.
+   * The payload carries the key as FlexDesigner currently knows it, so keep
+   * that copy (its width may have changed).
    */
   async press(serialNumber: string, pressed: Key) {
     const keys = this.keys.get(serialNumber);
     const index = keys?.findIndex(key => key.uid === pressed?.uid) ?? -1;
     if (keys && index >= 0) keys[index] = pressed;
+    const rotates = Boolean(this.source.pressPages || this.source.preparePress);
     await this.refresh();
+    if (!rotates) return;
+    if (this.source.preparePress) {
+      const config =
+        this.pendingConfig ??
+        (await this.deps.loadConfig().catch(() => null)) ??
+        {};
+      try {
+        await this.source.preparePress(config);
+      } catch {
+        // plan and credits are optional; the quota pages still rotate
+      }
+    }
+    this.rotatePress(serialNumber, pressed);
+    await this.drawAll();
   }
 
   /**
@@ -294,6 +327,7 @@ export class UsageKeys implements KeyGroup {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
     this.clearLock();
+    this.forgetCycles(() => true);
   }
 
   private minFetchGapMs(): number {
@@ -427,6 +461,107 @@ export class UsageKeys implements KeyGroup {
     }
   }
 
+  private clearCycleTimer(id: string) {
+    const timer = this.cycleTimers.get(id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.cycleTimers.delete(id);
+  }
+
+  /** Drops press-rotation pages whose id passes the test, timers included. */
+  private forgetCycles(test: (id: string) => boolean) {
+    for (const id of [...this.cycleTimers.keys()]) {
+      if (test(id)) this.clearCycleTimer(id);
+    }
+    this.pager.close(test);
+  }
+
+  /** The open press page, or null for the resting meter. */
+  private cyclePage(serialNumber: string, key: Key): UsagePressPage | null {
+    if (!this.source.pressPages || !this.metrics) return null;
+    const id = `${serialNumber}#${key?.uid}`;
+    const index = this.pager.pageOf(id, Date.now());
+    if (index === null) return null;
+    let pages: UsagePressPage[] | null;
+    try {
+      pages = this.source.pressPages(this.metrics, langOf(key?.data?.lang));
+    } catch {
+      return null;
+    }
+    if (!pages || pages.length === 0) return null;
+    return pages[Math.min(index, pages.length - 1)] ?? null;
+  }
+
+  /**
+   * Advances the press rotation and arms the return-to-resting timer.
+   * No pages: the key stays on its resting meter.
+   */
+  private rotatePress(serialNumber: string, key: Key) {
+    if (!this.source.pressPages || !this.metrics) return;
+    const lang = langOf(key?.data?.lang);
+    let pages: UsagePressPage[] | null;
+    try {
+      pages = this.source.pressPages(this.metrics, lang);
+    } catch {
+      return;
+    }
+    if (!pages || pages.length === 0) return;
+    const id = `${serialNumber}#${key?.uid}`;
+    const page = this.pager.press(id, Date.now(), pages.length);
+    this.clearCycleTimer(id);
+    if (page === null) return;
+    const timer = setTimeout(() => {
+      this.cycleTimers.delete(id);
+      void this.drawAll();
+    }, LIST_TIMEOUT_MS + 50);
+    if (timer.unref) timer.unref();
+    this.cycleTimers.set(id, timer);
+  }
+
+  /** The open press page, drawn as a message or as one remaining limit. */
+  private async renderCycle(
+    serialNumber: string,
+    key: Key,
+    width: number,
+    message: MessageOptions
+  ): Promise<string | null> {
+    const page = this.cyclePage(serialNumber, key);
+    if (!page || !this.metrics) return null;
+    const data = key?.data ?? {};
+    const lang = langOf(data.lang);
+    if (page.text) {
+      const text = lang === 'zh' ? page.text.zh : page.text.en;
+      return renderMessageKey(width, text.title, text.message, message);
+    }
+    if (!page.metricId) return null;
+    const snapshot = this.metrics.find(metric => metric.id === page.metricId);
+    if (!snapshot) {
+      const missing = this.missingText(page.metricId, lang);
+      const text = TEXT[lang];
+      return missing
+        ? renderMessageKey(width, missing.title, missing.message, message)
+        : renderMessageKey(width, this.brand.productName, text.noData, message);
+    }
+    const label = page.label
+      ? lang === 'zh'
+        ? page.label.zh
+        : page.label.en
+      : this.metricLabel(snapshot, lang);
+    const marks = markOptions(this.brand, data);
+    return renderUsageKey(
+      width,
+      { ...snapshot, label },
+      {
+        showResetTime: data.showResetTime !== false,
+        shown: page.shown === 'remaining' ? 'remaining' : 'used',
+        ...marks,
+        bgColor: this.deps.bgColor(key),
+        ...(lang === 'zh' ? { lang } : {}),
+        ...(this.brand.mark === 'clawd' ? {} : { dropVersion: true }),
+      }
+    );
+  }
+
   private async renderKey(serialNumber: string, key: Key): Promise<string> {
     const width = this.deps.keyWidth(key);
     const data = key?.data ?? {};
@@ -455,6 +590,11 @@ export class UsageKeys implements KeyGroup {
         text.resumes(lift),
         alarm(TONE_COLORS.attention)
       );
+    }
+
+    if (this.metrics) {
+      const cycle = await this.renderCycle(serialNumber, key, width, message);
+      if (cycle) return cycle;
     }
 
     if (this.metrics) {

@@ -336,7 +336,10 @@ outside the repository with `assert` changed to `with` in
   `--csrf_token` credential, reserved ports), `lsof` loopback ports, and the
   127.0.0.1-only Connect-JSON POST (token in the `x-codeium-csrf-token`
   header only). Usage: `usage.ts` (`usageSource`: app first, then IDE,
-  `RetrieveUserQuotaSummary`, forced refreshes, keep-last), `usageProcess.ts`
+  `RetrieveUserQuotaSummary`, forced refreshes, keep-last; a press cycles
+  the plan, credit overages and each group limit as percent left),
+  `usageCycle.ts` (press pages and `useG1Credits` from settings.json),
+  `usageProcess.ts`
   (`ps`/`lsof` discovery), `usageRpc.ts` (requests, `classifyReply`),
   `usageMetrics.ts` (groups and buckets to metrics and dual views),
   `usageFace.ts` (two-row group face), `usageText.ts`
