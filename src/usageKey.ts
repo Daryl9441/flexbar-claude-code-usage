@@ -542,6 +542,24 @@ export class UsageKeys implements KeyGroup {
         ? renderMessageKey(width, missing.title, missing.message, message)
         : renderMessageKey(width, this.brand.productName, text.noData, message);
     }
+    if (this.source.pressFace && (page.group || page.window)) {
+      try {
+        const image = await this.source.pressFace({
+          page,
+          width,
+          snapshot,
+          showResetTime: data.showResetTime !== false,
+          bgColor: this.deps.bgColor(key),
+          lang,
+          data,
+        });
+        if (image) return image;
+      } catch (error) {
+        this.deps.logger?.warn?.(
+          `${this.logName} press face failed: ${this.logText(error)}`
+        );
+      }
+    }
     const label = page.label
       ? lang === 'zh'
         ? page.label.zh
@@ -557,7 +575,11 @@ export class UsageKeys implements KeyGroup {
         ...marks,
         bgColor: this.deps.bgColor(key),
         ...(lang === 'zh' ? { lang } : {}),
-        ...(this.brand.mark === 'clawd' ? {} : { dropVersion: true }),
+        // A group name such as "Gemini 4 Argon" must keep its version.
+        // dropVersion would turn it into "Argon".
+        ...(page.group || this.brand.mark === 'clawd'
+          ? {}
+          : { dropVersion: true }),
       }
     );
   }

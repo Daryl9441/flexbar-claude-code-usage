@@ -337,7 +337,8 @@ outside the repository with `assert` changed to `with` in
   127.0.0.1-only Connect-JSON POST (token in the `x-codeium-csrf-token`
   header only). Usage: `usage.ts` (`usageSource`: app first, then IDE,
   `RetrieveUserQuotaSummary`, forced refreshes, keep-last; a press cycles
-  the plan, credit overages and each group limit as percent left),
+  the plan, credit overages and each group limit as percent left, with the
+  group name drawn on the page),
   `usageCycle.ts` (press pages and `useG1Credits` from settings.json),
   `usageProcess.ts`
   (`ps`/`lsof` discovery), `usageRpc.ts` (requests, `classifyReply`),

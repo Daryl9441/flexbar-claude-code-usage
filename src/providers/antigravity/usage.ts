@@ -43,6 +43,7 @@ import {
   UsageFace,
   UsageFaceRequest,
   UsageMetric,
+  UsagePressDraw,
   UsagePressPage,
   UsageSource,
 } from '../types';
@@ -59,7 +60,12 @@ import {
   planLabel,
   readCreditOverage,
 } from './usageCycle';
-import { dualEmpty, dualMissingText, renderGroupDualKey } from './usageFace';
+import {
+  dualEmpty,
+  dualMissingText,
+  renderCycleLimitKey,
+  renderGroupDualKey,
+} from './usageFace';
 import {
   DualView,
   QuotaGroupView,
@@ -836,6 +842,29 @@ export function createAntigravityUsageSource(
         creditsLeft: info?.signedIn ? info.creditsLeft : null,
       });
       return pages.length > 0 ? pages : null;
+    },
+    pressFace(draw: UsagePressDraw) {
+      const names = draw.page.group;
+      if (!names) return null;
+      const lang = draw.lang === 'zh' ? 'zh' : 'en';
+      const windowLabel = draw.page.window;
+      const marks = markOptions(ANTIGRAVITY_BRAND, draw.data);
+      return renderCycleLimitKey(
+        draw.width,
+        names[lang],
+        {
+          word: windowLabel ? windowLabel[lang] : '',
+          tag: windowLabel?.tag ?? '',
+        },
+        draw.snapshot,
+        {
+          showResetTime: draw.showResetTime,
+          shown: draw.page.shown === 'remaining' ? 'remaining' : 'used',
+          ...marks,
+          bgColor: draw.bgColor,
+          ...(lang === 'zh' ? { lang } : {}),
+        }
+      );
     },
     lastServer: () => server,
   };
