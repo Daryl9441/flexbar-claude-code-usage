@@ -39,7 +39,7 @@ describe('Cursor Agent CLI sessions', () => {
     assert.equal(JSON.stringify(rows).includes(SECRET), false);
     const [c] = Cli.cliComposersFromRows(rows);
     assert.equal(c.id, ID);
-    assert.equal(c.name, 'Agent CLI');
+    assert.equal(c.name, 'Agent CLI · writer-technical');
     assert.equal(c.source, 'cli');
     assert.equal(c.project, 'writer-technical');
     assert.equal(c.generating, false);
@@ -65,7 +65,7 @@ describe('Cursor Agent CLI sessions', () => {
     });
     const d = await p.describe('', null, { idleMinutes: 30 });
     assert.equal(d.success, true);
-    assert.equal(d.title, 'Agent CLI');
+    assert.equal(d.title, 'Agent CLI · writer-technical');
     assert.equal(d.project, 'writer-technical');
   });
 
@@ -114,5 +114,30 @@ describe('Cursor Agent CLI sessions', () => {
     assert.equal((await mk(async () => ` 9 /u/.local/bin/agent --resume ${ID}`).describe('', null, data)).state, 'working');
     assert.equal((await mk(async () => '').describe('', null, data)).state, 'done');
     assert.equal((await mk(async () => { throw new Error('x'); }).describe('', null, data)).state, 'done');
+  });
+
+  test('title: first brief line, heading stripped, ~40 chars', () => {
+    assert.equal(Cli.titleFromHead('\n\n# Fix the weekly report\nsecret body'), 'Fix the weekly report');
+    const long = Cli.titleFromHead('x'.repeat(100));
+    assert.equal([...long].length, 41);
+    assert.equal(Cli.titleFromHead('  \n'), null);
+  });
+
+  test('runner brief names the live session; title survives exit; only head read', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'brief-'));
+    const brief = path.join(dir, 'b.txt');
+    fs.writeFileSync(brief, '# 治理周报自动化\n' + 'BODY-MARKER\n'.repeat(1000));
+    assert.equal(await Cli.readBriefTitle(brief), '治理周报自动化');
+    const X = '00000000-0000-4000-8000-0000000000cc';
+    const ps = ` 1 /opt/python cursor_grok.py run --workspace /My Ws --brief-file ${brief} --out-dir /o\n 2 /h/.local/bin/agent --workspace /My Ws --model m -p`;
+    const live = Cli.parseAgentProcesses(ps);
+    const titles = await Cli.briefTitles(live);
+    const rows = [{ id: X, updatedAtMs: NOW, cwd: '/My Ws' }];
+    const [on] = Cli.cliComposersFromRows(rows, live, titles);
+    assert.equal(on.name, '治理周报自动化');
+    assert.equal(on.generating, true);
+    const [off] = Cli.cliComposersFromRows(rows);
+    assert.equal(off.name, '治理周报自动化');
+    assert.equal(off.generating, false);
   });
 });

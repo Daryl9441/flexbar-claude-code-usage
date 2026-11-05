@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import { loadSqlite } from '../grokbot/usageAuth';
 import {
+  briefTitles,
   cliComposersFromRows,
   listProcesses,
   liveAgents,
@@ -296,7 +297,7 @@ async function cliComposers(input: ScanInput): Promise<CursorComposer[]> {
     const rows = await read(input.cliChatsDir);
     if (!rows.length) return [];
     const live = await liveAgents(input.listProcesses ?? listProcesses);
-    return cliComposersFromRows(rows, live);
+    return cliComposersFromRows(rows, live, await briefTitles(live));
   } catch {
     return [];
   }

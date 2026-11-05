@@ -87,7 +87,12 @@ function base(value: unknown): string | null {
 }
 
 /** Live Agent CLI runs, parsed from one `ps` listing. Command text stays in memory. */
-export type LiveAgents = { resumeIds: Set<string>; workspaces: Set<string> };
+export type LiveAgents = {
+  resumeIds: Set<string>;
+  workspaces: Set<string>;
+  /** workspace -> absolute --brief-file of a running cursor_grok.py runner */
+  briefs?: Map<string, string>;
+};
 
 export const NO_LIVE_AGENTS: LiveAgents = {
   resumeIds: new Set(),
@@ -104,8 +109,17 @@ function normPath(value: string): string {
 /** `ps -axo pid=,command=` text -> resumed session ids and workspaces. */
 export function parseAgentProcesses(text: string): LiveAgents {
   const live: LiveAgents = { resumeIds: new Set(), workspaces: new Set() };
+  live.briefs = new Map();
   for (const line of text.split('\n')) {
     const command = line.replace(/^\s*\d+\s+/, '');
+    if (/cursor_grok\.py\s+run\s/.test(command)) {
+      const ws = /--workspace(?:=|\s+)(.+?)(?=\s--?[a-z]|$)/i.exec(command);
+      const brief = /--brief-file(?:=|\s+)(.+?)(?=\s--?[a-z]|$)/i.exec(command);
+      if (ws && brief && brief[1].trim().startsWith('/')) {
+        live.briefs.set(normPath(ws[1]), brief[1].trim());
+      }
+      continue;
+    }
     const bin = command.split(' --')[0];
     if (!AGENT_BIN.test(bin)) continue;
     if (/\sworker-server(\s|$)/.test(command)) continue;
@@ -118,6 +132,70 @@ export function parseAgentProcesses(text: string): LiveAgents {
     if (ws) live.workspaces.add(normPath(ws[1]));
   }
   return live;
+}
+
+const TITLE_CHARS = 40;
+const BRIEF_HEAD_BYTES = 2048;
+
+/** First non-empty line of a brief, heading marks dropped, ~40 chars. */
+export function titleFromHead(head: string): string | null {
+  for (const raw of head.split(/\r?\n/)) {
+    const line = raw
+      .replace(/^\s*#+\s*/, '')
+      .replace(/[\u0000-\u001f\u007f\ufffd]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!line) continue;
+    const chars = [...line];
+    return chars.length > TITLE_CHARS
+      ? chars.slice(0, TITLE_CHARS).join('').trimEnd() + '…'
+      : line;
+  }
+  return null;
+}
+
+/** Reads at most the first 2 KB of a brief file. Never the rest. */
+export async function readBriefTitle(file: string): Promise<string | null> {
+  let handle: import('node:fs').promises.FileHandle | null = null;
+  try {
+    const st = await fsp.lstat(file);
+    if (!st.isFile()) return null;
+    handle = await fsp.open(file, 'r');
+    const buf = Buffer.alloc(BRIEF_HEAD_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, BRIEF_HEAD_BYTES, 0);
+    return titleFromHead(buf.subarray(0, bytesRead).toString('utf8'));
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/** Titles for live runner workspaces: normalized cwd -> title. */
+export async function briefTitles(
+  live: LiveAgents,
+  read: (file: string) => Promise<string | null> = readBriefTitle
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const [ws, file] of live.briefs ?? []) {
+    const title = await read(file).catch(() => null);
+    if (title) out.set(ws, title);
+  }
+  return out;
+}
+
+/** session id -> title seen while its run was live; kept after it exits. */
+const TITLE_CACHE = new Map<string, string>();
+const TITLE_CACHE_MAX = 300;
+
+function remember(id: string, title: string): void {
+  TITLE_CACHE.delete(id);
+  TITLE_CACHE.set(id, title);
+  while (TITLE_CACHE.size > TITLE_CACHE_MAX) {
+    const oldest = TITLE_CACHE.keys().next().value;
+    if (oldest === undefined) break;
+    TITLE_CACHE.delete(oldest);
+  }
 }
 
 export type ProcessLister = () => Promise<string>;
@@ -152,9 +230,11 @@ export async function liveAgents(lister: ProcessLister): Promise<LiveAgents> {
  */
 export function cliComposersFromRows(
   rows: readonly unknown[],
-  live: LiveAgents = NO_LIVE_AGENTS
+  live: LiveAgents = NO_LIVE_AGENTS,
+  titles: ReadonlyMap<string, string> = new Map()
 ): CursorComposer[] {
   const out: CursorComposer[] = [];
+  const cwdOf = new Map<string, string>();
   const latestByCwd = new Map<string, { id: string; at: number }>();
   for (const row of rows) {
     if (!isRecord(row) || typeof row.id !== 'string' || !UUID.test(row.id)) {
@@ -165,6 +245,7 @@ export function cliComposersFromRows(
     if (typeof row.cwd === 'string' && row.cwd.trim()) {
       const key = normPath(row.cwd);
       const prev = latestByCwd.get(key);
+      cwdOf.set(row.id, key);
       if (!prev || at > prev.at) latestByCwd.set(key, { id: row.id, at });
     }
     out.push({
@@ -187,6 +268,18 @@ export function cliComposersFromRows(
     if (live.resumeIds.has(item.id.toLowerCase()) || byWorkspace.has(item.id)) {
       item.generating = true;
     }
+    const cwd = cwdOf.get(item.id);
+    const fresh =
+      item.generating && cwd && latestByCwd.get(cwd)?.id === item.id
+        ? titles.get(cwd)
+        : undefined;
+    if (fresh) remember(item.id, fresh);
+    const title = fresh ?? TITLE_CACHE.get(item.id);
+    item.name = title
+      ? title
+      : item.project
+        ? `${CLI_SESSION_NAME} · ${item.project}`
+        : CLI_SESSION_NAME;
   }
   return out
     .sort((a, b) => {
