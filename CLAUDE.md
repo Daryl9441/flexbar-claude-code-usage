@@ -6,7 +6,8 @@ plugin (formerly Claude Code Usage) for FlexDesigner / Flexbar (uuid
 `Sese-Schneider/flexbar-claude-code-usage`. It shows usage meters, session
 status and new-session keys for Claude Code, Kimi, Gemini CLI, Google
 Antigravity (desktop app, IDE and the `agy` CLI), Grok Bot (the
-desktop app, bundle `com.anysphere.sand`) and DeepSeek (API account
+desktop app, bundle `com.anysphere.sand`), Cursor (the Cursor app's
+included usage, local chats and open link) and DeepSeek (API account
 balance from `api.deepseek.com`).
 
 ## Privacy rules (mandatory)
@@ -150,8 +151,10 @@ npm run test:gemini-session   # Gemini session files, process probe (stubbed), G
 npm run test:antigravity-usage    # Antigravity usage: process discovery, loopback RPC, quota metrics, faces (all stubbed)
 npm run test:antigravity-session  # Antigravity sessions, shared language-server code, New Session launcher (all stubbed)
 npm run test:grokbot-usage        # Grok Bot usage: Cursor GetSandUsageStatus, token lookup, refusals (fetch and sqlite stubbed)
+npm run test:cursor-usage         # Cursor usage: GetCurrentPeriodUsage, shared login read, refusals (fetch stubbed)
 npm run test:deepseek-usage       # DeepSeek balance: GET /user/balance, API key handling, face (fetch stubbed)
 npm run test:grokbot-session      # Grok Bot roster/marker/daemon scan and the open-app launcher (pids stubbed)
+npm run test:cursor-session       # Cursor composer metadata and the open-app launcher (sqlite optional)
 npm run test:mac-app-newsession   # native App action, empty-view checks and settings-page Test (all stubbed)
 npm run test:claude-proxy     # Claude proxy routing (claudeProxy, HTTPS_PROXY/NO_PROXY, scutil), CONNECT tunnel + fallback, 403 forbidden, Keychain write via security -i (fetch and child_process stubbed, loopback servers only)
 npm run test:claude-login     # Claude login state: signed out, invalid_grant, refresh lock, deadlines, write-back (fetch, child_process and Keychain stubbed)
@@ -385,6 +388,21 @@ outside the repository with `assert` changed to `with` in
   app process is Idle; local-exec inflight is Working. New session:
   `newSession.ts` opens the activation URL and does not claim a blank
   chat. `base32.ts` names the persistence slice files.
+- Cursor (`src/providers/cursor/`): the Cursor app, separate from Grok Bot.
+  Usage: `usage.ts` (`usageSource`; POST `api2.cursor.sh`
+  `GetCurrentPeriodUsage`, then `GetPlanInfo` when the period body names no
+  plan; redirects refused). The access token is `loadCursorAccessToken`
+  (`login.ts`), which calls Grok Bot's `readCursorAccessToken` and, only
+  when that reader reports the database unreadable, one immutable
+  `ItemTable` lookup passed through `openStoredCursorToken`. The token is
+  not logged or written. `usageDecode.ts` turns `planUsage` percents (and an
+  individual on-demand cap) into meters; a pooled team plan with no
+  per-account percent is a refusal. Sessions: `session.ts` /
+  `sessionScan.ts` read composer titles, status and times from `cursorDiskKV`
+  (`composerData:` rows) with an immutable query that does not select
+  message text. Generating is Working, a waiting status is Question, a
+  recent update is Done. New session: `newSession.ts` opens `cursor://` and
+  does not claim a blank chat.
 - DeepSeek (`src/providers/deepseek/`): API account balance only.
   `usage.ts` (`usageSource`; `deepseekApiKey` or `DEEPSEEK_API_KEY`,
   Bearer to `https://api.deepseek.com/user/balance`, redirects refused,

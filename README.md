@@ -13,7 +13,7 @@ A key can instead show one usage limit as a meter: the current percentage used, 
 ![Weekly meter](docs/media/render-v4-weekly-clawd.png)
 ![Per-model meter](docs/media/render-v4-model-full.png)
 
-The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI), [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI), [Grok Bot](#grok-bot-keys) (the Grok Bot desktop app) and [DeepSeek](#deepseek-keys) (the DeepSeek API account balance). They appear in FlexDesigner's key library under "AI Coding Usage", eighteen keys in all.
+The same three key types (usage meter, session status, new session) also exist for [Kimi](#kimi-keys) (Kimi Code CLI and the Kimi desktop app's Kimi Work), [Gemini](#gemini-keys) (Gemini CLI), [Antigravity](#antigravity-keys) (Google Antigravity: the desktop app, the IDE and the `agy` CLI), [Grok Bot](#grok-bot-keys) (the Grok Bot desktop app), [Cursor](#cursor-keys) (the Cursor app) and [DeepSeek](#deepseek-keys) (the DeepSeek API account balance). They appear in FlexDesigner's key library under "AI Coding Usage", twenty-one keys in all.
 
 The plugin used to be called "Claude Code Usage". Its Claude keys are now listed as **Claude Usage**, **Claude Sessions** (formerly Session Status) and **Claude New Session** (formerly New Session); keys already on your Flexbar keep working with their settings.
 
@@ -255,6 +255,40 @@ Requirements and limitations:
 - Session status is what the local files can prove. An open app with no roster row waiting for you shows as Idle, not Working.
 - Windows and Linux can open the link when the app is registered for `grokbot://`. The usage and session keys read the same files on each platform; process names come from `ps` (macOS), `/proc` (Linux) or `tasklist` (Windows).
 
+## Cursor keys
+
+Three keys show the [Cursor](https://cursor.com) app. They are separate from the Grok Bot keys: Grok Bot's usage number is that app's weekly allowance (`GetSandUsageStatus`), while these keys read Cursor's own plan usage and local chats. The mark is a generic pointer drawn on the key (turn it off with **Show Cursor mark**).
+
+**Cursor Usage** shows how much of the included plan is used, the percentage `GetCurrentPeriodUsage` reports as `planUsage.totalPercentUsed` (billing cycle, not a weekly Grok Bot allowance). Auto and API splits, and an individual on-demand cap when one is set, are other meters on the same key. The request is Connect-RPC on `api2.cursor.sh` with the Cursor app's access token, read by the same login path as Grok Bot Usage (`cursorAuth/accessToken` in `state.vscdb`, including a sealed cell opened with the login keychain). The token is not logged or written. Redirects are refused. When the period body does not name the plan, one `GetPlanInfo` call supplies the name; if that call fails the meters stay. A pooled team allowance with no per-account percentage is not drawn as 0%.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Usage limit | Included (used) | Included plan, or Auto, API, or On-demand when Cursor reported it |
+| Key text language | FlexDesigner language | English or Simplified Chinese |
+| Show time until reset | on | Show the countdown until the billing cycle ends |
+| Show Cursor mark | on | Show the Cursor mark next to the meter |
+
+A key that cannot show a meter says why: "Not installed", "Not logged in", "Login expired", "Keychain blocked", "Login unreadable", "Cannot read login", "Pooled plan", "No allowance", "Unreadable data", "Network error", "Usage error" or "Rate limited". A network or server error keeps the last meter.
+
+**Cursor Sessions** lists top-level composers in `state.vscdb` (`cursorDiskKV`, keys `composerData:`). A composer whose status is waiting for you shows as **Question**. One Cursor marks as generating shows as **Working**. A recent update shows as **Done** until **Idle after**. The query copies the title, status, mode and timestamps only; message text is not selected. Cursor has no session-marker file, so an open window is not shown as Idle, and a chat is not marked Working from message text. The database is opened read-only and immutable, so the lookup does not create a WAL beside it; a chat that exists only in an uncheckpointed WAL can appear on a later poll.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| Chat filter | empty | Part of a chat's name or project. Empty shows every recent chat |
+| Idle after | 15 min | How long a finished chat stays on the key |
+| Key text language, Show project name, Show Cursor mark | | As on the Claude key |
+
+Press the key for the list. Cost: a 5-second tick and a watch on the folder that holds `state.vscdb`. Nothing is sent off this computer.
+
+**Open Cursor** (the third key) opens the app with `cursor://`. That link focuses Cursor and accepts no prompt. Cursor's documented deeplinks pre-fill a prompt, a command or a rule, and none of them starts an empty chat, so this key does not use them and its face says **Open Cursor**, not "New Session".
+
+Requirements and limitations:
+
+- Cursor installed and signed in on this computer. The usage key does not call the API when no Cursor install is found.
+- The included percentage is the account's plan usage for the current billing cycle. It is not Grok Bot's weekly allowance and not a per-chat meter.
+- A state database larger than the shared reader's copy cap is opened with one immutable lookup of the token cell. Session status uses that immutable mode always.
+- Windows and Linux can open `cursor://` when the app is registered for it.
+
 ## DeepSeek keys
 
 Three keys are listed for DeepSeek. **DeepSeek Usage** is the balance. The session key only says that DeepSeek has no local coding sessions, and **Open DeepSeek** opens `https://chat.deepseek.com/` without sending the API key.
@@ -297,6 +331,7 @@ Requirements:
 - The Kimi and Gemini Sessions keys only read local files (and, for Gemini, the process list); they write nothing and send nothing anywhere. Session titles and prompts never reach the log.
 - The Antigravity keys send nothing off this computer. They read Antigravity's local data and the process list, and ask the language server of the running Antigravity app or IDE on `127.0.0.1` only, with the CSRF token from its command line in a request header (never logged, shown or written anywhere). The scheduled-tasks page reads sidecar manifests (display name, cron, timezone, enabled) and file times only; prompts, descriptions, environment variables and log text are not read. Antigravity Usage's request may make the language server refresh the quota from Google, as Antigravity does itself. A press also reads the plan name and, when present, the AI-credit overage flag (`useG1Credits` or the same allowlisted names, and a remaining credit count) from that `GetUserStatus` answer or from `settings.json` in the app, IDE or CLI data folder. Only those fields are read. They write nothing to Antigravity's data; account name, email and conversation titles never reach the log.
 - Grok Bot Usage sends the Cursor app's access token only to `api2.cursor.sh` (`GetSandUsageStatus`), over https, and only while Grok Bot is installed. The token is read from Cursor's state database. When Cursor has sealed it, the plugin reads the macOS login-keychain item `Cursor Safe Storage` / `Cursor Key` once, derives the safeStorage key in memory, and does not log, show or store the password or the token. A denial is not asked again until the key is pressed. Grok Bot's own encrypted secret store is not decrypted. Grok Bot Sessions and the open key only read local files (and, for the session key, whether a pid still belongs to a Grok process) or hand `grokbot://app/v1/open` to the system opener. Chat text is not logged.
+- Cursor Usage sends that same access token only to `api2.cursor.sh` (`GetCurrentPeriodUsage`, and `GetPlanInfo` when the period body does not name the plan), over https, with redirects refused. It is not logged or written. Cursor Sessions reads composer titles, status and times from the state database and does not select message text. Open Cursor only hands `cursor://` to the system opener.
 - Kimi Usage sends a Moonshot API key, only when one is set, as a Bearer token to `https://api.moonshot.cn/v1/users/me/balance` or `https://api.moonshot.ai/v1/users/me/balance`. It is not sent to the Kimi Code quota host, not written to disk, and not logged or drawn. The plugin setting is stored by FlexDesigner with the other settings, in the same way as the Claude proxy password.
 - DeepSeek Usage sends its API key only as a Bearer token to `https://api.deepseek.com/user/balance`, over https, with redirects refused. The key is not logged, drawn or written into an error. The session key reads nothing. Open DeepSeek only hands `https://chat.deepseek.com/` to the system opener.
 - No credentials or personal data are stored in this repository. Contributors: run `npm run setup:hooks` once, list your own identifiers (user name, hostname, device serial, email) in the git-ignored `.privacy-denylist.local`, and run `npm run check:privacy` before pushing; the rules are in [CLAUDE.md](CLAUDE.md#privacy-rules-mandatory).
@@ -327,10 +362,10 @@ Install from [Flexgate](https://flexgate.enilinx.com/), or download the `.flexpl
 | Antigravity CLI program, agy | auto-detect | Path to the `agy` program, if it is not found on `PATH`, `~/.local/bin` or Homebrew's folders |
 | Grok Bot user-data folder | auto-detect | Override the Electron userData folder that holds the session marker and client mirror |
 | Grok Bot data root | auto-detect | Override `$SAND_DATA_ROOT` or `~/.grokbot` (local-exec daemon) |
-| Cursor state database | auto-detect | Override Cursor's `state.vscdb` for the token Grok Bot Usage sends to Cursor |
+| Cursor state database | auto-detect | Override Cursor's `state.vscdb`. Grok Bot Usage and Cursor Usage read the access token there; Cursor Sessions reads chat titles, status and times from the same file |
 | DeepSeek API key | empty | Key for the DeepSeek balance. Empty uses `DEEPSEEK_API_KEY` |
 
-**Per key** (Claude Usage; the Kimi, Gemini, Antigravity and Grok Bot keys are described above):
+**Per key** (Claude Usage; the Kimi, Gemini, Antigravity, Grok Bot and Cursor keys are described above):
 
 | Setting | Default | Description |
 | --- | --- | --- |

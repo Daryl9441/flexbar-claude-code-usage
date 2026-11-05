@@ -14,6 +14,7 @@ import { UsageKeys } from '../usageKey';
 
 import { ANTIGRAVITY } from './antigravity';
 import { CLAUDE } from './claude';
+import { CURSOR } from './cursor';
 import { DEEPSEEK } from './deepseek';
 import { GEMINI } from './gemini';
 import { GROKBOT } from './grokbot';
@@ -27,6 +28,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
   GEMINI,
   ANTIGRAVITY,
   GROKBOT,
+  CURSOR,
   DEEPSEEK,
 ];
 

@@ -385,6 +385,72 @@
                 "data": {}
             },
             {
+                "title": "$CursorUsage.Title",
+                "tip": "$CursorUsage.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.cursor_usage",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-chart-donut",
+                    "width": 240
+                },
+                "data": {
+                    "metric": "",
+                    "showResetTime": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$CursorSession.Title",
+                "tip": "$CursorSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.cursor_session",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-message-outline",
+                    "width": 240
+                },
+                "data": {
+                    "projectFilter": "",
+                    "idleMinutes": 15,
+                    "showProject": true,
+                    "showMark": true
+                }
+            },
+            {
+                "title": "$CursorNewSession.Title",
+                "tip": "$CursorNewSession.Tip",
+                "cid": "dev.sese.flexbar_claude_code_usage.cursor_newsession",
+                "config": {
+                    "keyType": "default",
+                    "clickable": true,
+                    "platform": [
+                        "windows",
+                        "mac",
+                        "linux"
+                    ]
+                },
+                "style": {
+                    "icon": "mdi mdi-open-in-app",
+                    "width": 120
+                },
+                "data": {}
+            },
+            {
                 "title": "$DeepseekUsage.Title",
                 "tip": "$DeepseekUsage.Tip",
                 "cid": "dev.sese.flexbar_claude_code_usage.deepseek_usage",
@@ -497,7 +563,7 @@
                 "GrokbotDataRoot": "Grok Bot data root (optional)",
                 "GrokbotDataRootHint": "Where local-exec-daemon.json lives. Empty uses $SAND_DATA_ROOT or ~/.grokbot.",
                 "CursorStateDb": "Cursor state database (optional)",
-                "CursorStateDbHint": "Cursor's state.vscdb, read-only, for the access token Grok Bot's weekly allowance is requested with. Empty uses Cursor's own globalStorage database. Grok Bot and Cursor must be the same account.",
+                "CursorStateDbHint": "Cursor's state.vscdb, read-only. Grok Bot Usage and Cursor Usage request allowances with the access token in it. Cursor Sessions reads chat titles, status and times from the same file, not message text. Empty uses Cursor's own globalStorage database.",
                 "DeepseekApiKey": "DeepSeek API key",
                 "DeepseekApiKeyHint": "Key for GET https://api.deepseek.com/user/balance. Empty uses DEEPSEEK_API_KEY. Stored with the other plugin settings and sent only as a Bearer token to that URL. Never shown on a key."
             },
@@ -840,6 +906,64 @@
                     "appHint": "Opens Grok Bot with grokbot://app/v1/open, which focuses the app and sends no prompt. There is no deep link that starts a blank chat, and the in-app New chat control can keep an existing draft, so this key does not press it."
                 }
             },
+            "CursorUsage": {
+                "Title": "Cursor Usage",
+                "Tip": "Shows how much of Cursor's included plan usage is used, from the Cursor account signed in on this computer",
+                "UI": {
+                    "metric": "Usage limit",
+                    "metricIncluded": "Included (used)",
+                    "metricAuto": "Auto (used)",
+                    "metricApi": "API (used)",
+                    "metricOndemand": "On-demand (used)",
+                    "lang": "Key text language",
+                    "showResetTime": "Show time until reset",
+                    "showMark": "Show Cursor mark",
+                    "checking": "Checking…",
+                    "connected": "Included {percent}% used · {plan}",
+                    "planUnknown": "plan not named",
+                    "notAvailable": "Not available: {error}",
+                    "problemNotInstalled": "Cursor is not installed",
+                    "problemSignedOut": "Cursor is not signed in",
+                    "problemExpired": "The Cursor login was rejected",
+                    "problemKeychain": "The keychain did not hand over the Cursor login",
+                    "problemUnusable": "The stored Cursor login is not a usable access token",
+                    "problemUnreadable": "Cursor's state database could not be read",
+                    "problemPooled": "This account uses a pooled allowance with no per-account percentage",
+                    "problemNoAllowance": "This account has no included usage percentage",
+                    "problemParse": "Cursor returned an unrecognized usage response",
+                    "problemNetwork": "The usage request did not reach Cursor",
+                    "problemHttp": "Cursor's usage service failed",
+                    "problemRateLimited": "Cursor rate-limited the usage request",
+                    "hintAccount": "The percentage is the included plan usage of the account the Cursor app is signed into. The plugin reads that login the same way Grok Bot Usage does, and does not log or write the token.",
+                    "hintInstall": "Install the Cursor app. Without it, this key does not ask for a number.",
+                    "hintPooled": "A pooled team allowance has no per-account percentage, so the key does not show a meter.",
+                    "hintNoAllowance": "Cursor answered, and this account has no included usage percentage."
+                }
+            },
+            "CursorSession": {
+                "Title": "Cursor Sessions",
+                "Tip": "Shows whether a Cursor chat is generating, waiting for you, or recently finished",
+                "UI": {
+                    "projectFilter": "Chat filter",
+                    "projectFilterHint": "Part of a chat's name or project. Empty shows every recent chat.",
+                    "idleMinutes": "Idle after (minutes)",
+                    "lang": "Key text language",
+                    "showProject": "Show project name",
+                    "showMark": "Show Cursor mark",
+                    "checking": "Checking…",
+                    "found": "{project}: {state}",
+                    "notFound": "No Cursor chat in {dir}",
+                    "limitHint": "Working and Waiting for you come from Cursor's composer status, not from message text. A finished chat stays until Idle after. Cursor has no session-marker file, so an open window is not shown on its own."
+                }
+            },
+            "CursorNewSession": {
+                "Title": "Open Cursor",
+                "Tip": "Opens Cursor. A blank new chat cannot be started from outside the app",
+                "UI": {
+                    "lang": "Key text language",
+                    "appHint": "Opens Cursor with cursor://, which focuses the app and sends no prompt. Documented deeplinks pre-fill a prompt, command or rule, and none of them starts an empty chat, so this key does not use them."
+                }
+            },
             "DeepseekUsage": {
                 "Title": "DeepSeek Usage",
                 "Tip": "Shows the DeepSeek API account balance (total, granted and topped up)",
@@ -934,7 +1058,7 @@
                 "GrokbotDataRoot": "Grok Bot 数据根目录（可选）",
                 "GrokbotDataRootHint": "local-exec-daemon.json 所在目录。留空则使用 $SAND_DATA_ROOT 或 ~/.grokbot。",
                 "CursorStateDb": "Cursor 状态数据库（可选）",
-                "CursorStateDbHint": "只读打开 Cursor 的 state.vscdb，用其中的访问令牌请求 Grok Bot 的每周额度。留空则使用 Cursor 自己的 globalStorage 数据库。Grok Bot 与 Cursor 必须是同一个账号。",
+                "CursorStateDbHint": "只读打开 Cursor 的 state.vscdb。Grok Bot 用量和 Cursor 用量用其中的访问令牌请求额度。Cursor 会话只读取对话标题、状态和时间，不读取消息正文。留空则使用 Cursor 自己的 globalStorage 数据库。",
                 "DeepseekApiKey": "DeepSeek API 密钥",
                 "DeepseekApiKeyHint": "用于 GET https://api.deepseek.com/user/balance 的密钥。留空则使用 DEEPSEEK_API_KEY。与其他插件设置一起保存，只作为 Bearer 令牌发给该地址，不会显示在按键上。"
             },
@@ -1275,6 +1399,64 @@
                 "UI": {
                     "lang": "按键文字语言",
                     "appHint": "使用 grokbot://app/v1/open 打开 Grok Bot，该链接只把应用调到前台，不发送内容。没有能开始空白对话的深链，应用内的 New chat 还可能保留未发送的草稿，因此此按键不会去按它。"
+                }
+            },
+            "CursorUsage": {
+                "Title": "Cursor 用量",
+                "Tip": "显示 Cursor 套餐内用量已用多少，来自本机登录的 Cursor 账号",
+                "UI": {
+                    "metric": "用量限制",
+                    "metricIncluded": "套餐（已用）",
+                    "metricAuto": "Auto（已用）",
+                    "metricApi": "API（已用）",
+                    "metricOndemand": "按量（已用）",
+                    "lang": "按键文字语言",
+                    "showResetTime": "显示距重置的时间",
+                    "showMark": "显示 Cursor 标记",
+                    "checking": "正在检查…",
+                    "connected": "套餐已用 {percent}% · {plan}",
+                    "planUnknown": "未标明方案",
+                    "notAvailable": "不可用：{error}",
+                    "problemNotInstalled": "未安装 Cursor",
+                    "problemSignedOut": "Cursor 未登录",
+                    "problemExpired": "Cursor 登录被拒绝",
+                    "problemKeychain": "钥匙串没有交出 Cursor 登录",
+                    "problemUnusable": "保存的 Cursor 登录不是可用的访问令牌",
+                    "problemUnreadable": "无法读取 Cursor 的状态数据库",
+                    "problemPooled": "此账号使用共享额度，没有个人百分比",
+                    "problemNoAllowance": "此账号没有套餐内用量百分比",
+                    "problemParse": "Cursor 返回了无法识别的用量数据",
+                    "problemNetwork": "用量请求没有到达 Cursor",
+                    "problemHttp": "Cursor 的用量服务失败",
+                    "problemRateLimited": "Cursor 限制了用量请求",
+                    "hintAccount": "这个百分比是 Cursor 应用当前登录账号的套餐内用量。插件按 Grok Bot 用量同一方式读取该登录，不会记录或写回令牌。",
+                    "hintInstall": "请安装 Cursor。未安装时，此按键不会查询数字。",
+                    "hintPooled": "团队共享额度没有个人百分比，因此按键不显示仪表。",
+                    "hintNoAllowance": "Cursor 已回答，此账号没有套餐内用量百分比。"
+                }
+            },
+            "CursorSession": {
+                "Title": "Cursor 会话",
+                "Tip": "显示 Cursor 对话是在生成、在等你，还是刚刚结束",
+                "UI": {
+                    "projectFilter": "对话筛选",
+                    "projectFilterHint": "对话名称或项目名的一部分。留空则显示最近的对话。",
+                    "idleMinutes": "空闲判定（分钟）",
+                    "lang": "按键文字语言",
+                    "showProject": "显示项目名",
+                    "showMark": "显示 Cursor 标记",
+                    "checking": "正在检查…",
+                    "found": "{project}：{state}",
+                    "notFound": "在 {dir} 中没有 Cursor 对话",
+                    "limitHint": "“正在工作”和“等待你”来自 Cursor 的 composer 状态，不来自消息正文。已结束的对话会保留到空闲判定时间。Cursor 没有会话标记文件，因此仅打开窗口不会单独显示。"
+                }
+            },
+            "CursorNewSession": {
+                "Title": "打开 Cursor",
+                "Tip": "打开 Cursor。应用外部无法开始一个空白新对话",
+                "UI": {
+                    "lang": "按键文字语言",
+                    "appHint": "使用 cursor:// 打开 Cursor，该链接只把应用调到前台，不发送内容。文档中的深链都会预填提示、命令或规则，没有能开始空白对话的链接，因此此按键不会使用它们。"
                 }
             },
             "DeepseekUsage": {
