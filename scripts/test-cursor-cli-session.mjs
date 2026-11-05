@@ -77,4 +77,42 @@ describe('Cursor Agent CLI sessions', () => {
     const d = await p.describe('', null, { idleMinutes: 30 });
     assert.equal(d.success, false);
   });
+
+  test('ps parsing: --resume id and --workspace with spaces; worker-server ignored', () => {
+    const ps = [
+      ' 101 /Users/you/.local/bin/agent --use-system-ca /x/index.js --resume ' + ID + ' --workspace /a b',
+      ' 102 /Users/you/.local/bin/agent --use-system-ca /x/index.js --workspace /Users/you/My Work/out --model m -p',
+      ' 103 /x/node /x/index.js worker-server',
+      ' 104 /usr/bin/vim --workspace /nope',
+    ].join('\n');
+    const live = Cli.parseAgentProcesses(ps);
+    assert.deepEqual([...live.resumeIds], [ID]);
+    assert.deepEqual([...live.workspaces], ['/Users/you/My Work/out']);
+  });
+
+  test('live process makes the session working; workspace picks newest for that cwd', () => {
+    const A = '00000000-0000-4000-8000-00000000000a';
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const rows = [
+      { id: ID, updatedAtMs: NOW - 5000, cwd: '/r' },
+      { id: A, updatedAtMs: NOW - 9000, cwd: '/w/' },
+      { id: B, updatedAtMs: NOW - 1000, cwd: '/w' },
+    ];
+    const live = Cli.parseAgentProcesses(` 1 /h/.local/bin/cursor-agent --resume=${ID}\n 2 /h/.local/bin/agent --workspace /w -p`);
+    const out = Object.fromEntries(Cli.cliComposersFromRows(rows, live).map(c => [c.id, c.generating]));
+    assert.deepEqual(out, { [ID]: true, [A]: false, [B]: true });
+    assert.equal(Cli.cliComposersFromRows(rows).some(c => c.generating), false);
+  });
+
+  test('key shows working while alive, done once gone, done when ps fails', async () => {
+    const home = fakeHome();
+    const mk = listProcesses => S.createCursorSessionProvider({
+      home, platform: 'darwin', env: {}, now: () => NOW, listProcesses,
+      exists: f => f.startsWith(home) && fs.existsSync(f) ? true : f === '/Applications/Cursor.app',
+    });
+    const data = { idleMinutes: 30 };
+    assert.equal((await mk(async () => ` 9 /u/.local/bin/agent --resume ${ID}`).describe('', null, data)).state, 'working');
+    assert.equal((await mk(async () => '').describe('', null, data)).state, 'done');
+    assert.equal((await mk(async () => { throw new Error('x'); }).describe('', null, data)).state, 'done');
+  });
 });

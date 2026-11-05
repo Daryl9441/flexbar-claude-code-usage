@@ -16,7 +16,13 @@ import { promises as fsp } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { loadSqlite } from '../grokbot/usageAuth';
-import { cliComposersFromRows, readCliRows } from './cliScan';
+import {
+  cliComposersFromRows,
+  listProcesses,
+  liveAgents,
+  ProcessLister,
+  readCliRows,
+} from './cliScan';
 
 const MAX_COMPOSERS = 36;
 const MIN_MS = Date.UTC(2020, 0, 1);
@@ -96,6 +102,8 @@ export type ScanInput = {
   /** ~/.cursor/chats. Omitted: no Agent CLI scan (app composers only). */
   cliChatsDir?: string;
   readCliRows?: (chatsDir: string) => Promise<unknown[]>;
+  /** `ps` text for live agent detection. Defaults to /bin/ps. */
+  listProcesses?: ProcessLister;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -285,7 +293,10 @@ async function cliComposers(input: ScanInput): Promise<CursorComposer[]> {
   if (!input.cliChatsDir) return [];
   try {
     const read = input.readCliRows ?? readCliRows;
-    return cliComposersFromRows(await read(input.cliChatsDir));
+    const rows = await read(input.cliChatsDir);
+    if (!rows.length) return [];
+    const live = await liveAgents(input.listProcesses ?? listProcesses);
+    return cliComposersFromRows(rows, live);
   } catch {
     return [];
   }

@@ -50,6 +50,7 @@ export type CursorSessionDeps = {
   readRows?: (databasePath: string) => Promise<unknown[]>;
   /** Agent CLI meta reader. When readRows is stubbed and this is not, CLI scan is off. */
   readCliRows?: (chatsDir: string) => Promise<unknown[]>;
+  listProcesses?: () => Promise<string>;
 };
 
 function idleMsOf(data: KeyData | undefined): number {
@@ -162,6 +163,7 @@ class CursorSessionSource implements SessionSource {
       readRows?: (databasePath: string) => Promise<unknown[]>;
       cliChatsDir?: string;
       readCliRows?: (chatsDir: string) => Promise<unknown[]>;
+      listProcesses?: () => Promise<string>;
       now: () => number;
     }
   ) {}
@@ -274,6 +276,7 @@ class CursorSessionSource implements SessionSource {
         readRows: this.deps.readRows,
         cliChatsDir: this.deps.cliChatsDir,
         readCliRows: this.deps.readCliRows,
+        listProcesses: this.deps.listProcesses,
       });
     } catch (error) {
       this.options.logger?.warn?.(
@@ -338,6 +341,7 @@ export function createCursorSessionProvider(
         exists,
         readRows: deps.readRows,
         readCliRows: deps.readCliRows,
+        listProcesses: deps.listProcesses,
         now,
       });
     },
@@ -348,11 +352,13 @@ export function createCursorSessionProvider(
         exists,
         readRows: deps.readRows,
         readCliRows: deps.readCliRows,
+        listProcesses: deps.listProcesses,
       });
       const source = new CursorSessionSource(
         { location: where.databasePath, config, onChange() {} },
         { ...where, exists, readRows: deps.readRows,
-        readCliRows: deps.readCliRows, now }
+        readCliRows: deps.readCliRows,
+        listProcesses: deps.listProcesses, now }
       );
       source.applySnapshot(snapshot);
       const { status, others } = source.getStatus(
