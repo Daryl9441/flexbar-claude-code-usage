@@ -15,7 +15,13 @@ import type { Lang } from '../sessionView';
 export type { Lang, RunningSession, SessionState, SessionStatus };
 
 export type ProviderId =
-  'claude' | 'kimi' | 'gemini' | 'antigravity' | 'grokbot' | 'deepseek';
+  | 'claude'
+  | 'kimi'
+  | 'gemini'
+  | 'antigravity'
+  | 'grokbot'
+  | 'cursor'
+  | 'deepseek';
 
 /** The three key types every provider has. */
 export type KeyKind = 'usage' | 'session' | 'newsession';
@@ -88,8 +94,9 @@ export type PluginConfig = {
    */
   moonshotSite?: string;
   /**
-   * Cursor state database holding the access token Grok Bot's weekly
-   * allowance is read with (default: Cursor's globalStorage/state.vscdb)
+   * Cursor state database (default: Cursor's globalStorage/state.vscdb).
+   * Grok Bot usage and Cursor usage read the access token from it. Cursor
+   * sessions read composer titles, status and times from the same file.
    */
   cursorStateDb?: string;
   [key: string]: unknown;
