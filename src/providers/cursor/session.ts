@@ -8,6 +8,7 @@
  * chat is never marked Working from message text.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { safeErrorMessage } from '../../redact';
@@ -47,6 +48,8 @@ export type CursorSessionDeps = {
   home?: string;
   now?: () => number;
   readRows?: (databasePath: string) => Promise<unknown[]>;
+  /** Agent CLI meta reader. When readRows is stubbed and this is not, CLI scan is off. */
+  readCliRows?: (chatsDir: string) => Promise<unknown[]>;
 };
 
 function idleMsOf(data: KeyData | undefined): number {
@@ -157,6 +160,8 @@ class CursorSessionSource implements SessionSource {
       appCandidates: string[];
       exists: (file: string) => boolean;
       readRows?: (databasePath: string) => Promise<unknown[]>;
+      cliChatsDir?: string;
+      readCliRows?: (chatsDir: string) => Promise<unknown[]>;
       now: () => number;
     }
   ) {}
@@ -267,6 +272,8 @@ class CursorSessionSource implements SessionSource {
         appCandidates: this.deps.appCandidates,
         exists: this.deps.exists,
         readRows: this.deps.readRows,
+        cliChatsDir: this.deps.cliChatsDir,
+        readCliRows: this.deps.readCliRows,
       });
     } catch (error) {
       this.options.logger?.warn?.(
@@ -304,6 +311,10 @@ function layout(
     databasePath: cursorStateDb(config, env, home, platform),
     userDataDir: cursorUserDataDir(config, env, home, platform),
     appCandidates: cursorAppCandidates(home, platform, env),
+    cliChatsDir:
+      deps.readRows && !deps.readCliRows
+        ? undefined
+        : path.join(home ?? os.homedir(), '.cursor', 'chats'),
   };
 }
 
@@ -326,6 +337,7 @@ export function createCursorSessionProvider(
         ...where,
         exists,
         readRows: deps.readRows,
+        readCliRows: deps.readCliRows,
         now,
       });
     },
@@ -335,10 +347,12 @@ export function createCursorSessionProvider(
         ...where,
         exists,
         readRows: deps.readRows,
+        readCliRows: deps.readCliRows,
       });
       const source = new CursorSessionSource(
         { location: where.databasePath, config, onChange() {} },
-        { ...where, exists, readRows: deps.readRows, now }
+        { ...where, exists, readRows: deps.readRows,
+        readCliRows: deps.readCliRows, now }
       );
       source.applySnapshot(snapshot);
       const { status, others } = source.getStatus(

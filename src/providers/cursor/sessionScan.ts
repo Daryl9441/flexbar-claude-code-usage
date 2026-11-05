@@ -16,6 +16,7 @@ import { promises as fsp } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { loadSqlite } from '../grokbot/usageAuth';
+import { cliComposersFromRows, readCliRows } from './cliScan';
 
 const MAX_COMPOSERS = 36;
 const MIN_MS = Date.UTC(2020, 0, 1);
@@ -71,6 +72,8 @@ export type CursorComposer = {
   awaiting: boolean;
   generating: boolean;
   at: number;
+  /** 'cli' for Agent CLI / grok-delegate runs; absent for app composers. */
+  source?: 'cli';
 };
 
 export type CursorSnapshot = {
@@ -90,6 +93,9 @@ export type ScanInput = {
   exists: (file: string) => boolean;
   /** Defaults to the sqlite reader. Tests pass a stub. */
   readRows?: (databasePath: string) => Promise<unknown[]>;
+  /** ~/.cursor/chats. Omitted: no Agent CLI scan (app composers only). */
+  cliChatsDir?: string;
+  readCliRows?: (chatsDir: string) => Promise<unknown[]>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -256,7 +262,47 @@ export async function readComposerRows(
   }
 }
 
+/** App composers win on id clash; CLI rows fill the rest. */
+export function mergeComposers(
+  app: readonly CursorComposer[],
+  cli: readonly CursorComposer[]
+): CursorComposer[] {
+  const byId = new Map<string, CursorComposer>();
+  for (const item of app) byId.set(item.id, item);
+  for (const item of cli) if (!byId.has(item.id)) byId.set(item.id, item);
+  return [...byId.values()]
+    .sort((a, b) => {
+      const rank = (item: CursorComposer) =>
+        item.awaiting ? 0 : item.generating ? 1 : 2;
+      const byRank = rank(a) - rank(b);
+      if (byRank !== 0) return byRank;
+      return b.at - a.at;
+    })
+    .slice(0, MAX_COMPOSERS);
+}
+
+async function cliComposers(input: ScanInput): Promise<CursorComposer[]> {
+  if (!input.cliChatsDir) return [];
+  try {
+    const read = input.readCliRows ?? readCliRows;
+    return cliComposersFromRows(await read(input.cliChatsDir));
+  } catch {
+    return [];
+  }
+}
+
 export async function scanCursor(input: ScanInput): Promise<CursorSnapshot> {
+  const snapshot = await scanCursorApp(input);
+  const cli = await cliComposers(input);
+  if (!cli.length) return snapshot;
+  return {
+    installed: true,
+    unreadable: snapshot.unreadable,
+    composers: mergeComposers(snapshot.composers, cli),
+  };
+}
+
+async function scanCursorApp(input: ScanInput): Promise<CursorSnapshot> {
   const installed = [
     input.databasePath,
     input.userDataDir,
