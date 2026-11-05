@@ -3,11 +3,13 @@
  * Pure: no network and no disk.
  *
  * Grok Bot's meter is one weekly `usagePercent` from GetSandUsageStatus.
- * Cursor's own dashboard reports the billing-cycle included pool
- * (`planUsage.totalPercentUsed`) plus the auto and API splits, and an
- * optional on-demand cap. Amounts elsewhere in the body are cents; this
- * decoder only keeps percentages and the cycle end. A pooled team allowance
- * with no per-account percentage is a refusal, not a zero.
+ * Cursor's included meter is `includedSpend / limit` when both are present:
+ * that ratio is the billing-cycle "included usage" percentage. Auto and API
+ * stay on their own percent fields. `totalPercentUsed` is a separate blend
+ * of those pools, so it fills the included meter only when the spend ratio
+ * is absent. Amounts elsewhere in the body share one unit; this decoder
+ * keeps percentages and the cycle end. A pooled team allowance with no
+ * per-account percentage is a refusal, not a zero.
  */
 import { planLabelOf, resetInstant } from '../grokbot/usageDecode';
 import { UsageMetric } from '../types';
@@ -87,6 +89,35 @@ export function periodPlanLabel(body: unknown): string | null {
   );
 }
 
+/**
+ * Included-plan percent. The spend ratio wins when Cursor sent both
+ * numbers; a reported `totalPercentUsed` is the fallback, then total
+ * spend over the same limit.
+ */
+function includedPercent(plan: Record<string, unknown>): number | null {
+  const limit = finiteNumber(pick(plan, 'limit'));
+  const includedSpend = finiteNumber(
+    pick(plan, 'includedSpend', 'included_spend')
+  );
+  if (
+    limit !== null &&
+    limit > 0 &&
+    includedSpend !== null &&
+    includedSpend >= 0
+  ) {
+    return usedPercent((includedSpend / limit) * 100);
+  }
+  const reported = usedPercent(
+    pick(plan, 'totalPercentUsed', 'total_percent_used')
+  );
+  if (reported !== null) return reported;
+  const spent = finiteNumber(pick(plan, 'totalSpend', 'total_spend'));
+  if (limit !== null && limit > 0 && spent !== null && spent >= 0) {
+    return usedPercent((spent / limit) * 100);
+  }
+  return null;
+}
+
 function pushPercent(
   metrics: UsageMetric[],
   id: string,
@@ -113,18 +144,7 @@ export function decodePeriodUsage(body: unknown): PeriodUsage | null {
   const planLabel = periodPlanLabel(body);
   const metrics: UsageMetric[] = [];
 
-  let included = usedPercent(
-    pick(plan, 'totalPercentUsed', 'total_percent_used')
-  );
-  if (included === null) {
-    const limit = finiteNumber(pick(plan, 'limit'));
-    const spent = finiteNumber(
-      pick(plan, 'includedSpend', 'included_spend', 'totalSpend', 'total_spend')
-    );
-    if (limit !== null && limit > 0 && spent !== null && spent >= 0) {
-      included = usedPercent((spent / limit) * 100);
-    }
-  }
+  const included = includedPercent(plan);
   pushPercent(
     metrics,
     INCLUDED_METRIC_ID,

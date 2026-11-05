@@ -1,6 +1,7 @@
 /**
- * Cursor usage meter: the included-plan percentage the dashboard shows,
- * plus the auto, API and on-demand splits when Cursor reports them.
+ * Cursor usage meter: the included-plan percentage (`includedSpend / limit`
+ * when both are in the period body, otherwise `totalPercentUsed`), plus
+ * the auto, API and on-demand splits when Cursor reports them.
  *
  * POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage
  * Connect-RPC, empty JSON body, Authorization: Bearer <Cursor access token>.

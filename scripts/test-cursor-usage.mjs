@@ -2,7 +2,9 @@
 // Cursor token lookup are stubbed, and the real home folder is never read.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -122,6 +124,34 @@ describe('Cursor usage decode', () => {
     );
     assert.equal(decoded.metrics[0].resetsAt, new Date(Number(CYCLE_END)).toISOString());
     assert.equal(JSON.stringify(decoded).includes(PLANTED), false);
+  });
+
+  test('included spend over the plan limit is the included meter', () => {
+    const decoded = D.decodePeriodUsage({
+      planUsage: {
+        includedSpend: 758,
+        limit: 1000,
+        totalPercentUsed: 3.1,
+        autoPercentUsed: 3.3,
+        apiPercentUsed: 0.7,
+      },
+    });
+    assert.deepEqual(
+      decoded.metrics.map(metric => [metric.id, metric.percent]),
+      [
+        ['included', 76],
+        ['auto', 3],
+        ['api', 1],
+      ]
+    );
+    const zeroSpend = D.decodePeriodUsage({
+      planUsage: { includedSpend: 0, limit: 1000, totalPercentUsed: 40 },
+    });
+    assert.equal(zeroSpend.metrics[0].percent, 0);
+    const over = D.decodePeriodUsage({
+      planUsage: { includedSpend: 1500, limit: 1000, totalPercentUsed: 4 },
+    });
+    assert.equal(over.metrics[0].percent, 100);
   });
 
   test('snake_case fields and a spend/limit fallback still make a meter', () => {
@@ -380,5 +410,49 @@ describe('Cursor login reuse', () => {
         return true;
       }
     );
+  });
+
+  test('the immutable fallback reads the token cell and does not write a WAL', async t => {
+    const sqlite = process.getBuiltinModule?.('node:sqlite');
+    if (!sqlite?.DatabaseSync) {
+      t.skip('node:sqlite not available');
+      return;
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cursor-login-test-'));
+    const jwt = fakeJwt('immutable');
+    try {
+      const file = path.join(dir, 'state.vscdb');
+      const db = new sqlite.DatabaseSync(file);
+      db.exec('CREATE TABLE ItemTable (key TEXT, value TEXT)');
+      db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run(
+        'cursorAuth/accessToken',
+        jwt
+      );
+      db.close();
+      const opened = await Login.loadCursorAccessToken(file, {
+        readToken: async () => {
+          throw new GrokText.GrokbotUsageError(
+            'state-unreadable',
+            'database is larger than the copy cap'
+          );
+        },
+      });
+      assert.equal(opened, jwt);
+      assert.equal(fs.existsSync(`${file}-wal`), false);
+      assert.equal(fs.existsSync(`${file}-shm`), false);
+
+      const link = path.join(dir, 'linked.vscdb');
+      fs.symlinkSync(file, link);
+      await assert.rejects(
+        () => Login.readStoredCellImmutable(link),
+        error => {
+          assert.equal(error.problem, 'state-unreadable');
+          assert.equal(error.message.includes(jwt), false);
+          return true;
+        }
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

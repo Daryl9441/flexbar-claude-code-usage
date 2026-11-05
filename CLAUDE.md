@@ -395,9 +395,10 @@ outside the repository with `assert` changed to `with` in
   (`login.ts`), which calls Grok Bot's `readCursorAccessToken` and, only
   when that reader reports the database unreadable, one immutable
   `ItemTable` lookup passed through `openStoredCursorToken`. The token is
-  not logged or written. `usageDecode.ts` turns `planUsage` percents (and an
-  individual on-demand cap) into meters; a pooled team plan with no
-  per-account percent is a refusal. Sessions: `session.ts` /
+  not logged or written. `usageDecode.ts` uses `includedSpend / limit` for
+  the included meter when both are present, otherwise `totalPercentUsed`,
+  plus the auto and API percents and an individual on-demand cap. A pooled
+  team plan with no per-account percent is a refusal. Sessions: `session.ts` /
   `sessionScan.ts` read composer titles, status and times from `cursorDiskKV`
   (`composerData:` rows) with an immutable query that does not select
   message text. Generating is Working, a waiting status is Question, a

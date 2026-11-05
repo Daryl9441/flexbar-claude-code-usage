@@ -4,7 +4,7 @@
     "version": "0.4.2",
     "author": "Sese-Schneider",
     "entry": "backend/plugin.cjs",
-    "description": "Display your Claude Code, Kimi, Gemini, Antigravity, Grok Bot and DeepSeek usage on your Flexbar",
+    "description": "Display your Claude Code, Kimi, Gemini, Antigravity, Grok Bot, Cursor and DeepSeek usage on your Flexbar",
     "repo": "https://github.com/Sese-Schneider/flexbar-claude-code-usage",
     "sdk": {
         "version": "1.0.0"
@@ -531,7 +531,7 @@
                 }
             },
             "Config": {
-                "Description": "Shows usage for Claude Code, Kimi, Gemini, Antigravity, Grok Bot and DeepSeek. Claude, Gemini, Antigravity and Grok Bot use logins already on this computer. DeepSeek balance and the optional Kimi API balance need an API key below; leave a key empty to use the matching environment variable. The refresh interval applies to every provider.",
+                "Description": "Shows usage for Claude Code, Kimi, Gemini, Antigravity, Grok Bot, Cursor and DeepSeek. Claude, Gemini, Antigravity, Grok Bot and Cursor use logins already on this computer. DeepSeek balance and the optional Kimi API balance need an API key below; leave a key empty to use the matching environment variable. The refresh interval applies to every provider.",
                 "CredentialsPath": "Credentials file (optional override)",
                 "PollInterval": "Refresh interval (seconds)",
                 "Checking": "Checking…",
@@ -1026,7 +1026,7 @@
                 }
             },
             "Config": {
-                "Description": "显示 Claude Code、Kimi、Gemini、Antigravity、Grok Bot 和 DeepSeek 的用量。Claude、Gemini、Antigravity 和 Grok Bot 使用本机已有的登录。DeepSeek 余额和可选的 Kimi API 余额需要在下方填写 API 密钥；留空则使用对应的环境变量。刷新间隔对所有服务都有效。",
+                "Description": "显示 Claude Code、Kimi、Gemini、Antigravity、Grok Bot、Cursor 和 DeepSeek 的用量。Claude、Gemini、Antigravity、Grok Bot 和 Cursor 使用本机已有的登录。DeepSeek 余额和可选的 Kimi API 余额需要在下方填写 API 密钥；留空则使用对应的环境变量。刷新间隔对所有服务都有效。",
                 "CredentialsPath": "凭据文件（可选，覆盖默认路径）",
                 "PollInterval": "刷新间隔（秒）",
                 "Checking": "正在检查…",
