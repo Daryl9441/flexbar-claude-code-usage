@@ -98,7 +98,8 @@ export function createAntigravitySessionProvider(
   deps: AntigravitySessionDeps = {}
 ): SessionProvider {
   const platform = deps.platform ?? process.platform;
-  const probe = deps.probe ?? (() => createProcessProbe({ platform }));
+  const makeProbe = (root: string) =>
+    deps.probe ? deps.probe() : createProcessProbe({ platform, root });
   const post = deps.post === undefined ? createPost() : deps.post;
   const readDb = deps.readDb ?? (() => createDbReader());
   const installed =
@@ -118,7 +119,7 @@ export function createAntigravitySessionProvider(
       root: location,
       onChange,
       logger,
-      probe: probe(),
+      probe: makeProbe(location),
       post,
       readDb: readDb(),
       installed: () => installed(config ?? {}),

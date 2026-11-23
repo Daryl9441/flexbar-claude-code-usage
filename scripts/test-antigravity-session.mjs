@@ -389,6 +389,43 @@ describe('process probe (ps + lsof)', () => {
     assert.equal(token.reveal(), TOKEN);
     assert.ok(token.same(new Procs.CsrfToken(TOKEN)));
   });
+
+  test('Antigravity 2.34+ servers without --csrf_token resolve token and httpPort from daemon/*.json', async () => {
+    const root = tempRoot();
+    const daemonDir = path.join(root, 'antigravity', 'daemon');
+    fs.mkdirSync(daemonDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(daemonDir, 'hub_50211.json'),
+      JSON.stringify({ pid: 301, httpsPort: 50210, httpPort: 50211, lsVersion: '2.34.0', csrfToken: TOKEN })
+    );
+    if (MKFIFO) {
+      mkfifo(path.join(daemonDir, 'hub_pipe.json'));
+    }
+    const run = async (file, args) => {
+      if (file === '/bin/ps') {
+        return {
+          stdout:
+            '  301  4242     01:00:00 /Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --subclient_type hub --app_data_dir antigravity --https_server_port 0 --read_host_bridge_token_from_stdin\n',
+          ok: true,
+        };
+      }
+      if (args.includes('301')) {
+        return {
+          stdout: 'p301\nf7\nn127.0.0.1:50210\nf8\nn127.0.0.1:50211\nf10\nn127.0.0.1:50999\n',
+          ok: true,
+        };
+      }
+      return { stdout: '', ok: false };
+    };
+    const probe = Procs.createProcessProbe({ platform: 'darwin', run, uid: 4242, now: () => FIXED, root });
+    const snap = await probe.snapshot();
+    assert.equal(snap.servers.length, 1);
+    assert.equal(snap.servers[0].pid, 301);
+    assert.equal(snap.servers[0].product, 'app');
+    assert.equal(snap.servers[0].token.reveal(), TOKEN);
+    // httpPort 50211 is tried before higher port 50999; httpsPort 50210 is excluded
+    assert.deepEqual(snap.servers[0].ports, [50211, 50999]);
+  });
 });
 
 describe('loopback RPC', () => {
@@ -443,6 +480,23 @@ describe('loopback RPC', () => {
     assert.deepEqual(unavailable, { ok: false, reason: 'error', detail: 'unavailable' });
     const none = await Rpc.fetchTrajectories(server(1, 'app', []), fakePost(() => ok({})));
     assert.equal(none.reason, 'unreachable');
+    // a non-Connect plain-text 401 on a higher port (e.g. a sidecar/bridge port)
+    // does not abort before trying the Connect port
+    const mixed = fakePost(port =>
+      port === 50999
+        ? { status: 401, body: 'unauthorized\n' }
+        : ok({ [ID(2)]: summary() })
+    );
+    const recovered = await Rpc.fetchTrajectories(server(101, 'app', [50999, 50211]), mixed);
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.port, 50211);
+    assert.deepEqual(mixed.calls.map(c => c.port), [50999, 50211]);
+    // when no other port answers, plain-text 401 still reports rejected
+    const plainRejected = await Rpc.fetchTrajectories(
+      server(101, 'app', [50999]),
+      fakePost(() => ({ status: 401, body: 'unauthorized\n' }))
+    );
+    assert.deepEqual(plainRejected, { ok: false, reason: 'rejected', detail: 'HTTP 401' });
   });
 
   test('the default transport posts to 127.0.0.1 only, with a timeout and no agent', async () => {

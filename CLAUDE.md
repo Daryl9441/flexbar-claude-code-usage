@@ -335,10 +335,11 @@ outside the repository with `assert` changed to `with` in
   `antigravity-ide/` for the IDE; `antigravityUserDataDir` for the Electron
   user data; `antigravityPathSetting`; `installedProducts`).
   `languageServer.ts` is shared by both keys: the app's and the IDE's
-  language server from a `ps` command line (`--app_data_dir`, the
-  `--csrf_token` credential, reserved ports), `lsof` loopback ports, and the
-  127.0.0.1-only Connect-JSON POST (token in the `x-codeium-csrf-token`
-  header only). Usage: `usage.ts` (`usageSource`: app first, then IDE,
+  language server from a `ps` command line (`--app_data_dir`, reserved ports,
+  and `--csrf_token` or, on Antigravity 2.34+, `<dataDir>/daemon/*.json`
+  matched by `pid` for `csrfToken`, `httpPort` and `httpsPort`), `lsof`
+  loopback ports, and the 127.0.0.1-only Connect-JSON POST (token in the
+  `x-codeium-csrf-token` header only). Usage: `usage.ts` (`usageSource`: app first, then IDE,
   `RetrieveUserQuotaSummary`, forced refreshes, keep-last; a press cycles
   the plan, credit overages and each group limit as percent left, with the
   group name drawn on the page),

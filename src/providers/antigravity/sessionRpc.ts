@@ -165,11 +165,16 @@ export async function fetchTrajectories(
     if (isTlsPortReply(result.status, result.body)) continue;
     const code = connectCode(result.body);
     if (result.status === 401 || result.status === 403) {
-      return {
+      const rejected: RpcOutcome = {
         ok: false,
         reason: 'rejected',
         detail: code ?? `HTTP ${result.status}`,
       };
+      // Connect-JSON 401/403 came from the RPC port itself; a plain-text
+      // 401/403 may be another listener on the same process, so try the rest.
+      if (code !== null) return rejected;
+      last = rejected;
+      continue;
     }
     last = {
       ok: false,

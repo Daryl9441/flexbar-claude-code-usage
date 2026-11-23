@@ -22,10 +22,13 @@ import { promises as fsp } from 'node:fs';
 import { inspect } from 'node:util';
 
 import {
+  createDaemonLookup,
   flagValue,
   loopbackPorts,
   parseLsofNames,
   parseServerCommand,
+  parseServerProcess,
+  resolveServerCommand,
   toolPaths,
 } from './languageServer';
 import type { AntigravityProduct } from './paths';
@@ -225,6 +228,8 @@ export type ProbeOptions = {
   /** Linux: the cwd of a pid (default: readlink /proc/<pid>/cwd) */
   readCwd?: (pid: number) => Promise<string | null>;
   now?: () => number;
+  /** Folder holding antigravity/ and antigravity-ide/ (for daemon/*.json) */
+  root?: string | null;
 };
 
 export interface ProcessProbe {
@@ -284,18 +289,32 @@ export function createProcessProbe(
           ? await run(psPath, ['-axww', '-o', 'pid=,uid=,etime=,command='])
           : await run(psPath, ['-e', '-ww', '-o', 'pid=,uid=,etime=,args=']);
       if (!ps.ok && !ps.stdout) return null;
-      const servers: (LanguageServer & { exclude: number[] })[] = [];
+      const lookupDaemon = createDaemonLookup(options.root);
+      const servers: (LanguageServer & {
+        exclude: number[];
+        preferredPort: number | null;
+      })[] = [];
       const clis: AgyProcess[] = [];
       for (const row of parsePs(ps.stdout, now())) {
         if (uid !== null && row.uid !== null && row.uid !== uid) continue;
-        const server = inspectServer(row.command);
-        if (server) {
-          servers.push({
-            pid: row.pid,
-            startedAt: row.startedAt,
-            ...server,
-            ports: null,
-          });
+        const proc = parseServerProcess(row.command);
+        if (proc) {
+          const resolved = resolveServerCommand(
+            row.pid,
+            proc,
+            lookupDaemon(proc, row.pid)
+          );
+          if (resolved) {
+            servers.push({
+              pid: row.pid,
+              startedAt: row.startedAt,
+              product: resolved.product,
+              token: new CsrfToken(resolved.token),
+              exclude: resolved.skipPorts,
+              preferredPort: resolved.preferredPort ?? null,
+              ports: null,
+            });
+          }
         } else if (isAgySession(row.command)) {
           clis.push({ pid: row.pid, startedAt: row.startedAt, cwd: null });
         }
@@ -318,7 +337,11 @@ export function createProcessProbe(
           '-Fpn',
         ]);
         const names = parseLsofNames(lsof.stdout).get(server.pid) ?? [];
-        const ports = loopbackPorts(names, server.exclude);
+        const ports = loopbackPorts(
+          names,
+          server.exclude,
+          server.preferredPort
+        );
         server.ports = ports;
         if (ports.length > 0) {
           portCache.set(server.pid, {

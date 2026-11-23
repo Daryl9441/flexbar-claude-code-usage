@@ -93,10 +93,11 @@ export class AntigravityUsageError extends ProviderError {
   }
 }
 
-// a token that slipped into some text: CSRF flags and header values
+// a token that slipped into some text: CSRF flags, daemon JSON and header values
 const LOCAL_SECRETS: RegExp[] = [
   /(--(?:extension_server_)?csrf_token[= ]+)\S+/gi,
   /(--host_bridge_token[= ]+)\S+/gi,
+  /(["']?csrfToken["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
   /(x-codeium-csrf-token["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
 ];
 

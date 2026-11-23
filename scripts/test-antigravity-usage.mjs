@@ -335,6 +335,96 @@ describe('language server discovery', () => {
     }, servers[0]);
     assert.deepEqual(failing, []);
   });
+
+  test('Antigravity 2.34+ servers without --csrf_token read daemon/hub_*.json by pid', async () => {
+    const root = tmpDir('daemon-root');
+    const daemonDir = path.join(root, 'antigravity', 'daemon');
+    fs.mkdirSync(daemonDir, { recursive: true });
+    // stale file for another pid, older file for the same pid, and the live file
+    fs.writeFileSync(
+      path.join(daemonDir, 'hub_43000.json'),
+      JSON.stringify({ pid: 9999, httpsPort: 42999, httpPort: 43000, csrfToken: TOKEN_OTHER })
+    );
+    const oldFile = path.join(daemonDir, 'hub_43001.json');
+    fs.writeFileSync(
+      oldFile,
+      JSON.stringify({ pid: 4300, httpsPort: 43000, httpPort: 43001, csrfToken: TOKEN_OTHER })
+    );
+    const oldTime = new Date('2026-10-01T00:00:00Z');
+    fs.utimesSync(oldFile, oldTime, oldTime);
+    const liveFile = path.join(daemonDir, 'hub_43002.json');
+    fs.writeFileSync(
+      liveFile,
+      JSON.stringify({
+        pid: 4300,
+        httpsPort: 43001,
+        httpPort: 43002,
+        lsVersion: '2.34.0',
+        csrfToken: TOKEN_APP,
+      })
+    );
+    // symlink, malformed JSON and bad token files are ignored
+    const outside = path.join(root, 'outside.json');
+    fs.writeFileSync(
+      outside,
+      JSON.stringify({ pid: 4301, httpsPort: 43011, httpPort: 43012, csrfToken: TOKEN_IDE })
+    );
+    fs.symlinkSync(outside, path.join(daemonDir, 'hub_43012.json'));
+    fs.writeFileSync(path.join(daemonDir, 'hub_bad.json'), '{not json');
+    fs.writeFileSync(
+      path.join(daemonDir, 'hub_badtok.json'),
+      JSON.stringify({ pid: 4302, httpPort: 43022, csrfToken: 'a"b;c' })
+    );
+
+    const noFlagCmd = `${APP_EXE} --standalone --override_ide_name antigravity --subclient_type hub --https_server_port 0 --app_data_dir antigravity --read_host_bridge_token_from_stdin`;
+    const machine = fakeMachine([
+      {
+        pid: 4300,
+        product: 'app',
+        token: TOKEN_APP,
+        command: noFlagCmd,
+        // higher non-Connect port 43099 returns 401; httpPort 43002 must come first, httpsPort 43001 skipped
+        ports: {
+          43001: () => TLS_ANSWER,
+          43002: routes({ RetrieveUserQuotaSummary: ok(summary()) }),
+          43099: () => ({ status: 401, contentType: 'text/plain', text: 'unauthorized\n' }),
+        },
+      },
+      {
+        pid: 4301,
+        product: 'app',
+        token: TOKEN_IDE,
+        command: noFlagCmd,
+        ports: { 43012: routes({}) },
+      },
+      {
+        pid: 4302,
+        product: 'app',
+        token: TOKEN_OTHER,
+        command: noFlagCmd,
+        ports: { 43022: routes({}) },
+      },
+    ]);
+
+    const found = await P.findServers(machine.run, UID, '/bin/ps', root);
+    assert.deepEqual(found, [
+      { pid: 4300, product: 'app', token: TOKEN_APP, skipPorts: [43001], preferredPort: 43002 },
+    ]);
+    const ports = await P.serverPorts(machine.run, found[0], '/usr/sbin/lsof');
+    assert.deepEqual(ports, [43002, 43099]);
+    // preferredPort is never added when lsof does not list it for that pid
+    assert.deepEqual(P.parseListeningPorts('p4300\nf1\nn127.0.0.1:43099\n', [43001], 43002), [43099]);
+
+    // end-to-end usage fetch hits httpPort 43002 on the very first RPC
+    const { src } = source(machine);
+    const metrics = await src.fetch({ antigravityDir: root, antigravityPath: CONFIG.antigravityPath });
+    assert.equal(metrics.find(m => m.id === 'gemini-5h').percent, 60);
+    assert.equal(metrics.find(m => m.id === 'gemini-weekly').percent, 18);
+    assert.deepEqual(
+      machine.calls.post.map(c => c.port),
+      [43002]
+    );
+  });
 });
 
 // --- Connect replies ----------------------------------------------------------
@@ -1265,9 +1355,13 @@ describe('texts', () => {
 
   test('log text masks CSRF tokens', () => {
     const text = T.antigravityErrorText(
-      new Error(`failed: language_server --csrf_token ${TOKEN_APP} --host_bridge_token=${TOKEN_OTHER} x-codeium-csrf-token: ${TOKEN_IDE}`)
+      new Error(
+        `failed: language_server --csrf_token ${TOKEN_APP} --host_bridge_token=${TOKEN_OTHER} x-codeium-csrf-token: ${TOKEN_IDE} {"csrfToken":"${token(5)}"}`
+      )
     );
-    for (const secret of [TOKEN_APP, TOKEN_OTHER, TOKEN_IDE]) assert.ok(!text.includes(secret), text);
+    for (const secret of [TOKEN_APP, TOKEN_OTHER, TOKEN_IDE, token(5)]) {
+      assert.ok(!text.includes(secret), text);
+    }
     assert.match(text, /\[redacted\]/);
     assert.ok(T.antigravityErrorText(new Error('y'.repeat(500))).length <= 241);
   });

@@ -280,6 +280,7 @@ export function createAntigravityUsageSource(
 
   let servers: LanguageServer[] | null = null;
   let discoveredAt = 0;
+  let discoveredRoot = '';
   /** pid → the port that answered */
   const working = new Map<number, number>();
   let lastForceAt = 0;
@@ -356,14 +357,20 @@ export function createAntigravityUsageSource(
   // --- language servers ------------------------------------------------------
 
   async function discover(
-    force: boolean
+    force: boolean,
+    root: string
   ): Promise<{ list: LanguageServer[]; fresh: boolean }> {
-    if (!force && servers && now() - discoveredAt < DISCOVERY_TTL_MS) {
+    if (
+      !force &&
+      servers &&
+      discoveredRoot === root &&
+      now() - discoveredAt < DISCOVERY_TTL_MS
+    ) {
       return { list: servers, fresh: false };
     }
     let found: LanguageServer[];
     try {
-      found = await findServers(run, uid(), tools().ps);
+      found = await findServers(run, uid(), tools().ps, root);
     } catch (error) {
       servers = null;
       throw new AntigravityUsageError(
@@ -373,6 +380,7 @@ export function createAntigravityUsageSource(
     }
     servers = found;
     discoveredAt = now();
+    discoveredRoot = root;
     for (const pid of [...working.keys()]) {
       if (!found.some(s => s.pid === pid)) working.delete(pid);
     }
@@ -394,9 +402,10 @@ export function createAntigravityUsageSource(
     method: string,
     body: unknown,
     maxBytes: number,
+    root: string,
     forced?: ForcedCall
   ): Promise<Answer | null> {
-    let { list, fresh } = await discover(false);
+    let { list, fresh } = await discover(false, root);
     let transport = 'no open port';
     let current = body;
     let timeoutMs = forced?.timeoutMs ?? RPC_TIMEOUT_MS;
@@ -414,7 +423,7 @@ export function createAntigravityUsageSource(
     for (let round = 0; round < 2; round++) {
       if (round === 1) {
         if (fresh) break;
-        ({ list, fresh } = await discover(true));
+        ({ list, fresh } = await discover(true, root));
       }
       if (list.length === 0) return null;
       let refused: Answer | null = null;
@@ -529,9 +538,17 @@ export function createAntigravityUsageSource(
   }
 
   /** GetUserStatus, cached for `ttl`; null when it cannot be read. */
-  async function userStatus(ttl: number): Promise<StatusInfo | null> {
+  async function userStatus(
+    ttl: number,
+    root: string
+  ): Promise<StatusInfo | null> {
     if (status && now() - status.at < ttl) return status.info;
-    const answer = await call(STATUS_METHOD, STATUS_BODY, STATUS_MAX_BYTES);
+    const answer = await call(
+      STATUS_METHOD,
+      STATUS_BODY,
+      STATUS_MAX_BYTES,
+      root
+    );
     if (!answer) return null;
     const { result } = answer;
     let info: StatusInfo;
@@ -554,8 +571,8 @@ export function createAntigravityUsageSource(
     );
   }
 
-  async function quota(force: boolean): Promise<Answer | null> {
-    if (!force) return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES);
+  async function quota(force: boolean, root: string): Promise<Answer | null> {
+    if (!force) return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES, root);
     const forced: ForcedCall = {
       timeoutMs: FORCED_RPC_TIMEOUT_MS,
       fallback: QUOTA_BODY,
@@ -567,6 +584,7 @@ export function createAntigravityUsageSource(
         QUOTA_METHOD,
         QUOTA_FORCED_BODY,
         QUOTA_MAX_BYTES,
+        root,
         forced
       );
     } finally {
@@ -578,7 +596,7 @@ export function createAntigravityUsageSource(
       answer?.result.kind === 'connect' &&
       RETRY_UNFORCED.has(answer.result.code)
     ) {
-      return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES);
+      return call(QUOTA_METHOD, QUOTA_BODY, QUOTA_MAX_BYTES, root);
     }
     return answer;
   }
@@ -586,11 +604,12 @@ export function createAntigravityUsageSource(
   /** The quota without groups: per-model quota, or why there is none. */
   async function withoutGroups(
     answer: Answer | null,
-    config: PluginConfig
+    config: PluginConfig,
+    root: string
   ): Promise<UsageMetric[]> {
     let info: StatusInfo | null = null;
     try {
-      info = await userStatus(STATUS_FALLBACK_TTL_MS);
+      info = await userStatus(STATUS_FALLBACK_TTL_MS, root);
     } catch {
       info = null;
     }
@@ -621,9 +640,10 @@ export function createAntigravityUsageSource(
         'The Antigravity usage key finds Antigravity with ps and lsof (macOS and Linux only)'
       );
     }
+    const root = antigravityRoot(config, homeDir());
     const force =
       (wantForce && now() - lastForceAt >= FORCE_MIN_GAP_MS) || forceDue();
-    const answer = await quota(force);
+    const answer = await quota(force, root);
     if (!answer) throw notRunning(config);
     const { result } = answer;
     if (result.kind !== 'ok') {
@@ -638,7 +658,7 @@ export function createAntigravityUsageSource(
     let metrics = groupMetrics(parsed);
     modelMode = false;
     if (metrics.length === 0) {
-      metrics = await withoutGroups(answer, config);
+      metrics = await withoutGroups(answer, config, root);
       modelMode = true;
     }
     // a passed reset asks for a refresh, unless this was one already
@@ -756,9 +776,10 @@ export function createAntigravityUsageSource(
   async function describe(config: PluginConfig): Promise<UsageDescription> {
     try {
       const metrics = await fetchOnce(config, true);
+      const root = antigravityRoot(config, homeDir());
       let tier: string | null = null;
       try {
-        tier = (await userStatus(STATUS_TTL_MS))?.tier ?? null;
+        tier = (await userStatus(STATUS_TTL_MS, root))?.tier ?? null;
       } catch {
         tier = null;
       }
@@ -821,13 +842,14 @@ export function createAntigravityUsageSource(
     },
     describe,
     async preparePress(config) {
+      const root = antigravityRoot(config, homeDir());
       try {
-        fileOverage = readCreditOverage(antigravityRoot(config, homeDir()));
+        fileOverage = readCreditOverage(root);
       } catch {
         fileOverage = null;
       }
       try {
-        await userStatus(STATUS_TTL_MS);
+        await userStatus(STATUS_TTL_MS, root);
       } catch {
         // the quota pages still rotate when the plan cannot be read
       }

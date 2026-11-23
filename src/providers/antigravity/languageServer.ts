@@ -6,11 +6,13 @@
  *
  * The desktop app and the IDE each start a language server (LS) that
  * answers Connect-JSON requests on 127.0.0.1. Its command line names the
- * product (`--app_data_dir antigravity` / `antigravity-ide`) and carries the
- * CSRF token every request must send (`--csrf_token`, never
- * `--extension_server_csrf_token`); `lsof` lists the loopback ports it
- * listens on. The agy CLI runs its language server inside its own process
- * without a visible token, so it is not found here.
+ * product (`--app_data_dir antigravity` / `antigravity-ide`). Older servers
+ * pass the CSRF token on the command line (`--csrf_token`, never
+ * `--extension_server_csrf_token`); newer servers (Antigravity 2.31+, and
+ * exclusively from 2.34+) write `<dataDir>/daemon/hub_<port>.json` with
+ * `{ pid, httpPort, httpsPort, csrfToken }`. `lsof` lists the loopback ports
+ * the process listens on. The agy CLI runs its language server inside its own
+ * process without a visible token, so it is not found here.
  *
  * The CSRF token is a credential: callers keep it in memory only (never
  * logged, stored, shown or put on a child process's command line) and send
@@ -20,6 +22,7 @@
  */
 import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 
 /** The programs with a language server of their own. */
 export type ServerProduct = 'app' | 'ide';
@@ -29,6 +32,17 @@ const DATA_DIRS: Readonly<Record<string, ServerProduct>> = {
   antigravity: 'app',
   'antigravity-ide': 'ide',
 };
+
+/** Product → data folder name under antigravityRoot(). */
+const PRODUCT_DATA_DIR: Readonly<Record<ServerProduct, string>> = {
+  app: 'antigravity',
+  ide: 'antigravity-ide',
+};
+
+/** Largest daemon metadata file read (`hub_<port>.json` is ~150 B). */
+const MAX_DAEMON_BYTES = 16 * 1024;
+/** Newest `.json` files inspected per `daemon/` folder. */
+const MAX_DAEMON_FILES = 64;
 
 /**
  * The executable at the start of a command line: an absolute path ending
@@ -64,21 +78,69 @@ function basename(value: string): string {
   );
 }
 
-/** A language server of the app or the IDE, as its command line shows it. */
+/** A language server process before its daemon file is consulted. */
+export type ServerProcess = {
+  product: ServerProduct;
+  /** CSRF token from `--csrf_token`, or null when read from a daemon file */
+  token: string | null;
+  /** Ports this server's flags reserve for something else */
+  skipPorts: number[];
+  /** Absolute `--app_data_dir` path when the command line passes one */
+  dataDirPath?: string;
+};
+
+/** Metadata read from `<dataDir>/daemon/hub_<port>.json`. */
+export type DaemonServer = {
+  pid: number;
+  /** CSRF token (credential): memory only */
+  token: string;
+  /** Plain-HTTP Connect port reported by the server, or null */
+  httpPort: number | null;
+  /** HTTPS port reported by the server (excluded from plain-HTTP probes), or null */
+  httpsPort: number | null;
+};
+
+/** Looks up daemon metadata for a running language server process. */
+export type DaemonLookup = (
+  proc: Pick<ServerProcess, 'product' | 'dataDirPath'>,
+  pid: number
+) => DaemonServer | null;
+
+/** A language server of the app or the IDE, ready to query. */
 export type ServerCommand = {
   product: ServerProduct;
   /** CSRF token for this server: a credential (memory only) */
   token: string;
-  /** Ports this server's flags reserve for something else */
+  /** Ports reserved for something else (flags and daemon `httpsPort`) */
   skipPorts: number[];
+  /** Plain-HTTP Connect port from the daemon file (tried first when lsof lists it) */
+  preferredPort?: number;
 };
 
+function validPort(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : NaN;
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
+}
+
+/** JSON.parse for objects that never throws (never quotes credential files). */
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The Antigravity language server a `ps` command line runs, or null. Only
- * the app's and the IDE's servers qualify: the executable sits in an
- * Antigravity folder and the data folder is theirs.
+ * The Antigravity language server process a `ps` command line runs, with or
+ * without `--csrf_token`. Only the app's and the IDE's servers qualify: the
+ * executable sits in an Antigravity folder and the data folder is theirs. A
+ * malformed `--csrf_token` is rejected.
  */
-export function parseServerCommand(command: string): ServerCommand | null {
+export function parseServerProcess(command: string): ServerProcess | null {
   const exe = EXE_RE.exec(command)?.[1];
   if (!exe || !/antigravity/i.test(exe)) return null;
   // a space may only sit inside an app bundle's name ("Antigravity IDE.app"),
@@ -90,15 +152,173 @@ export function parseServerCommand(command: string): ServerCommand | null {
   const dataDir = flagValue(args, 'app_data_dir');
   const product = dataDir ? DATA_DIRS[basename(dataDir)] : undefined;
   if (!product) return null;
-  const token = flagValue(args, 'csrf_token');
-  if (!token || !TOKEN_RE.test(token)) return null;
+  const rawToken = flagValue(args, 'csrf_token');
+  if (rawToken !== null && !TOKEN_RE.test(rawToken)) return null;
   const skipPorts: number[] = [];
   for (const flag of OTHER_PORT_FLAGS) {
     const port = Number(flagValue(args, flag));
     if (Number.isInteger(port) && port > 0 && port < 65536)
       skipPorts.push(port);
   }
-  return { product, token, skipPorts };
+  return {
+    product,
+    token: rawToken,
+    skipPorts,
+    ...(dataDir && path.isAbsolute(dataDir) ? { dataDirPath: dataDir } : {}),
+  };
+}
+
+/**
+ * The Antigravity language server a `ps` command line runs when it carries a
+ * valid `--csrf_token` flag, or null.
+ */
+export function parseServerCommand(command: string): ServerCommand | null {
+  const proc = parseServerProcess(command);
+  if (!proc || !proc.token) return null;
+  return {
+    product: proc.product,
+    token: proc.token,
+    skipPorts: proc.skipPorts,
+  };
+}
+
+/**
+ * Combines a `ps` language server process with optional daemon metadata for
+ * the same PID (`<dataDir>/daemon/hub_<port>.json`). Returns null when neither
+ * provides a valid CSRF token.
+ */
+export function resolveServerCommand(
+  pid: number,
+  proc: ServerProcess,
+  daemon: DaemonServer | null
+): ServerCommand | null {
+  const matched = daemon && daemon.pid === pid ? daemon : null;
+  const token = proc.token ?? matched?.token ?? null;
+  if (!token || !TOKEN_RE.test(token)) return null;
+  const skipPorts = [...proc.skipPorts];
+  if (
+    matched?.httpsPort !== null &&
+    matched?.httpsPort !== undefined &&
+    !skipPorts.includes(matched.httpsPort)
+  ) {
+    skipPorts.push(matched.httpsPort);
+  }
+  return {
+    product: proc.product,
+    token,
+    skipPorts,
+    ...(matched?.httpPort !== null && matched?.httpPort !== undefined
+      ? { preferredPort: matched.httpPort }
+      : {}),
+  };
+}
+
+function readDaemonFile(file: string): DaemonServer | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(
+      file,
+      fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0)
+    );
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_DAEMON_BYTES) {
+      return null;
+    }
+    const buf = Buffer.alloc(stat.size);
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+    const raw = parseJsonObject(buf.subarray(0, bytesRead).toString('utf8'));
+    if (!raw) return null;
+    const pid = typeof raw.pid === 'number' ? raw.pid : NaN;
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    const token = typeof raw.csrfToken === 'string' ? raw.csrfToken : '';
+    if (!TOKEN_RE.test(token)) return null;
+    return {
+      pid,
+      token,
+      httpPort: validPort(raw.httpPort),
+      httpsPort: validPort(raw.httpsPort),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // ignore close errors
+      }
+    }
+  }
+}
+
+/**
+ * Reads regular, non-symlink `.json` files in a `daemon/` folder (newest
+ * first, capped at MAX_DAEMON_FILES) and indexes them by `pid`. Missing,
+ * linked, oversized or malformed files are skipped without throwing.
+ */
+export function readDaemonDir(dir: string): Map<number, DaemonServer> {
+  const byPid = new Map<number, DaemonServer>();
+  if (!dir || !path.isAbsolute(dir)) return byPid;
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return byPid;
+  }
+  const candidates: { file: string; mtimeMs: number }[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    const file = path.join(dir, name);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(file);
+    } catch {
+      continue;
+    }
+    if (!st.isFile() || st.isSymbolicLink()) continue;
+    if (st.size <= 0 || st.size > MAX_DAEMON_BYTES) continue;
+    candidates.push({ file, mtimeMs: st.mtimeMs });
+  }
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  for (const candidate of candidates.slice(0, MAX_DAEMON_FILES)) {
+    const info = readDaemonFile(candidate.file);
+    if (info && !byPid.has(info.pid)) byPid.set(info.pid, info);
+  }
+  return byPid;
+}
+
+/**
+ * Lazy per-scan lookup over `<dataDir>/daemon/*.json` under `root`. Each
+ * `daemon/` directory is read at most once, and only when a matching process
+ * is seen in `ps`.
+ */
+export function createDaemonLookup(root?: string | null): DaemonLookup {
+  const cache = new Map<string, Map<number, DaemonServer>>();
+  const load = (dir: string): Map<number, DaemonServer> => {
+    let found = cache.get(dir);
+    if (!found) {
+      found = readDaemonDir(dir);
+      cache.set(dir, found);
+    }
+    return found;
+  };
+  return (proc, pid) => {
+    const dirs: string[] = [];
+    if (proc.dataDirPath) dirs.push(path.join(proc.dataDirPath, 'daemon'));
+    if (root) {
+      const fromRoot = path.join(
+        root,
+        PRODUCT_DATA_DIR[proc.product],
+        'daemon'
+      );
+      if (!dirs.includes(fromRoot)) dirs.push(fromRoot);
+    }
+    for (const dir of dirs) {
+      const found = load(dir).get(pid);
+      if (found) return found;
+    }
+    return null;
+  };
 }
 
 /** `lsof -F` output: pid → names (`n` lines). */
@@ -118,12 +338,13 @@ export function parseLsofNames(stdout: string): Map<number, string[]> {
 
 /**
  * Loopback listener ports (127.0.0.1 / localhost) from lsof names, highest
- * first (the plain-HTTP Connect port is the higher of the two the servers
- * open), without the ones in `exclude`.
+ * first (with `preferredPort` first only when lsof actually lists it), without
+ * the ones in `exclude`.
  */
 export function loopbackPorts(
   names: readonly string[],
-  exclude: readonly number[] = []
+  exclude: readonly number[] = [],
+  preferredPort: number | null = null
 ): number[] {
   const ports = new Set<number>();
   for (const name of names) {
@@ -132,7 +353,11 @@ export function loopbackPorts(
     const port = Number(m[1]);
     if (port > 0 && port < 65536 && !exclude.includes(port)) ports.add(port);
   }
-  return [...ports].sort((a, b) => b - a);
+  const sorted = [...ports].sort((a, b) => b - a);
+  if (preferredPort !== null && ports.has(preferredPort)) {
+    return [preferredPort, ...sorted.filter(p => p !== preferredPort)];
+  }
+  return sorted;
 }
 
 function firstExisting(candidates: string[]): string {
